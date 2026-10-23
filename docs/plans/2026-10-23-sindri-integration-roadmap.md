@@ -1,6 +1,6 @@
 # Pulse + Sindri integration roadmap
 
-**Status:** Planning only. This revision incorporates the independent roadmap review. No application code has been changed, no tests have been run, and no production instance has been touched.
+**Status:** Planning only. Phase 0 preparation is authorized. The separate [Phase 0 contracts](2026-10-23-sindri-phase-0-contracts.md) record the proposed public feature allowlist, gateway and Komodo protocols, action scope and safety defaults, cases, metrics, Discord identity, and release gate. No Phase 1 feature implementation or production change has been made.
 
 ## Workspace and baseline
 
@@ -8,14 +8,14 @@
 - Upstream: remote `upstream` = `https://github.com/rcourtman/Pulse.git`.
 - Working branch: `feature/sindri-integration`, originally created from fork `main` at `7374abf19b434c9a275df730d28234bea3943774`.
 - The published branch includes planning checkpoint `beabcd7082446ce0c4cccd472dce3b41d3be7bd3` on that fork baseline.
-- Fork `origin/main` is 0 commits ahead and 3 commits behind `upstream/main` at `9fb404604b006822ef3a007442bc5ac5d1a8a900`.
+- Fork `origin/main` is 0 commits ahead and 10 commits behind current `upstream/main` at `ece25327105f8be262dc9639caa4ce08282c77cc`.
 - The Sindri reference checkout was inspected read-only and left unchanged.
 
 ### Upstream review and history-preserving integration
 
-The three upstream-only commits are merge commit `9fb404604`, `208f0cbf1` (“Preserve backup-age incidents across unknown success dates”), and `6fb43d930` (a follow-up correction to its browser proof fixture). The substantive change is in `internal/alerts/backup_snapshot.go`: a still-listed backup with a missing, zero, or future success timestamp no longer counts as recovery, and the newest usable provider timestamp wins. Its tests cover provider order, linked/orphan subjects, occurrence retention, and exclusions/removal. This is a safety-relevant alert correctness fix, not a Sindri feature dependency.
+The initial upstream review covered merge commit `9fb404604`, `208f0cbf1` (“Preserve backup-age incidents across unknown success dates”), and `6fb43d930` (a browser proof fixture correction). The substantive alert change is in `internal/alerts/backup_snapshot.go`: a listed backup with a missing, zero, or future success timestamp no longer counts as recovery, and the newest usable provider timestamp wins. Tests cover provider order, linked/orphan subjects, occurrence retention, and exclusions/removal.
 
-The implementation baseline remains a pending approval decision. If the reviewed `upstream/main` commits are accepted, fetch upstream and merge `upstream/main` into the existing `feature/sindri-integration` branch. This branch already contains a published checkpoint commit, so a fast-forward-only update from fork `main` is no longer possible. Preserve the published checkpoint as an ancestor: do not reset, rebase, recreate, or force-push the branch. Resolve any conflicts in a reviewable merge commit, run relevant tests, then push the ordinary fast-forward update to the remote feature branch. Do not perform this integration until explicitly approved. If upstream is declined, keep the branch base and account for the backup-age fix before changing related alert semantics.
+Before synchronization, a fresh fetch found upstream at `ece25327105f8be262dc9639caa4ce08282c77cc`. The intervening changes were reviewed: `92f20dafd` hides Re-investigate while a fix remains queued, avoiding duplicate action plans; `d07080e8f` and its current merge lineage retain snapshot warnings when a listed snapshot has an invalid date and add lifecycle, policy, identity, and real-consumer browser proof. These are first-party Pulse changes with no API/schema or dependency changes. The public verification record contains only a synthetic UI scenario and no credentials or deployment values. The newer reviewed tip is integrated by merge commit `80b04593ee49a326f404ce98c5e50cf61439eba1`, with prior branch head `71ad40bda11140b7d798827cab584b9f44edd5b8` as first parent and upstream as second parent. The published checkpoint `63e1d72afd47fda39b37205b7fd3c7a4436dc696` remains an ancestor. Preserve this history; do not reset, rebase, recreate, or force-push it. The local checkpoint still needs a normal fast-forward push to the feature branch.
 
 ## Architecture and file ownership
 
@@ -42,7 +42,7 @@ Use one deployment-level `ForkProfile`, validated by a central backend capabilit
 - Adding a public feature means maintaining its implementation in this fork and passing its required validation gates. A feature absent from the fork is not enabled by setting a flag.
 - Invalid profile values, missing policy state, or resolver errors fail closed for the affected feature. There are no per-feature conditional bypasses outside the resolver and the canonical enforcement boundary.
 
-The initial allowlist, how operators configure the single profile, and which existing public implementations should be exposed remain decisions for Phase 0. This model does not authorize implementation or bypass existing commercial controls.
+The exact target feature IDs, schema version, default-empty state, central backend resolver, and implementation evidence are specified in [Phase 0 contracts](2026-10-23-sindri-phase-0-contracts.md#1-personal-fork-public-feature-profile). Only a complete implementation present in this fork may resolve available; the profile never alters commercial license entitlements. All listed IDs are disabled at Phase 0.
 
 ## Automation controls at the canonical action-admission boundary
 
@@ -71,7 +71,7 @@ Keep all remediation inside Pulse's planner, lifecycle, runner, and capability c
 8. **Database and dispatch failures.** If durable policy, lifecycle, budget, or audit storage is unavailable before admission, deny dispatch. If storage fails after durable admission but before send, reconcile the durable attempt before any retry. If provider work may have been sent but result persistence/evidence fails, mark the outcome uncertain, keep budget/cooldown/concurrency reservations, and reconcile using the runner's durable dispatch record; never blind-retry.
 9. **Actor and approval binding.** Authenticate the individual actor and current role at approval and execution. Preserve separation-of-duties rules. Every required approval binds immutable action/plan identity, policy revision, resource revision, actor, method, and expiry. Approval or Discord identity cannot expand scope.
 
-Numerical budget ceilings, cooldown durations, maximum concurrency, freshness thresholds, and exact allowlist entries are unresolved policy decisions and block enabling remediation. Initial behavior is approval-required and fail-closed.
+The Phase 0 numerical defaults are a three-step plan ceiling, one deployment-wide mutation slot, one mutation per exact target/action per 60 minutes and three per rolling 24 hours, evidence no older than 60 seconds, a 10-minute plan/approval expiry, zero automatic mutation retries, and a 30-minute maximum operation deadline. The integration action allowlist remains empty. These values and their durable reservation semantics are specified in [Phase 0 contracts](2026-10-23-sindri-phase-0-contracts.md#4-initial-typed-pulse-action-scope-and-authorization); they must pass independent safety review before implementation. Limits may be tightened without review; raising them requires a new reviewed checkpoint.
 
 ## Multi-alert cases and multi-step repair plans
 
@@ -83,7 +83,7 @@ A durable case is an operator workflow that references Pulse alert occurrences, 
 - Membership changes, split/merge, reopen, and detach operations are explicit audited events. Preserve source/destination case IDs and old membership so case history is reconstructable. An alert keeps its own lifecycle through every case change.
 - Case lifecycle: `open -> triaging -> awaiting_plan -> awaiting_approval -> executing -> verifying -> resolved -> closed`. `blocked`, `partially_recovered`, and `uncertain` are explicit nonterminal states with a reason and next action. Reopened recurrence adds a new episode/event to the durable case history; it never rewrites the prior resolution.
 - Partial alert recovery moves the case to `partially_recovered`; it remains unresolved while any required occurrence is active, a step result is uncertain, or post-action verification is incomplete. Resolve only with fresh evidence for every required occurrence and no unadjudicated action outcome. Closing is a separate audited operator/workflow decision.
-- Exact correlation windows, topology ownership, case assignment rules, and whether a recurrence reuses a case or creates a linked case require Phase 0 decisions. The durable case model must support either without losing history.
+- The initial correlation window is 15 minutes, keyed by organization, canonical provider/resource identity, alert family, and explicit topology relationships. A recurrence after closure creates a linked case/episode instead of rewriting a resolution. The exact key and lifecycle are specified in [Phase 0 contracts](2026-10-23-sindri-phase-0-contracts.md#5-operational-cases-and-repair-plan-state-machines).
 
 ### Repair plan and step state machines
 
@@ -91,7 +91,7 @@ A repair plan is materialized as an immutable ordered list of typed steps with f
 
 - **Plan states:** `draft -> awaiting_plan_approval -> approved -> executing -> verifying -> succeeded`. Alternative terminal or held outcomes are `rejected`, `expired`, `cancelled`, `failed`, `partially_completed`, `blocked`, and `uncertain`. An uncertain plan remains frozen until durable runner/provider evidence or an explicit operator adjudication resolves it.
 - **Step states:** `blocked -> awaiting_step_approval -> ready -> admitted -> executing -> succeeded`; allowed outcomes are `failed`, `uncertain`, `cancelled`, or `blocked`. Each step has a stable step ID and hash, its own exact resource/action identity, freshness check, approval evidence, and durable dispatch attempt.
-- **Plan-level approval** reviews and binds the entire ordered plan hash and its target/action envelope. Every multi-step repair plan requires it. **Step-level approval** is additionally required for each step marked by policy as needing a second, narrower review; both approvals are required for that step. Neither approval can add or broaden steps, and changing any step invalidates the plan approval and affected step approvals. Approval matrix and actor-separation rules are policy-versioned.
+- **Plan-level approval** reviews and binds the entire ordered plan hash and its target/action envelope. Every multi-step repair plan requires it. **Step-level approval** is required for every mutating step and binds that exact step hash and target; both plan and step approvals are required before dispatch. Neither approval can add or broaden steps, and changing any step invalidates both approvals. Requester and approver must differ. Approval rules are policy-versioned.
 - Admission rechecks the current automation controls, actor, plan/step identity, policy and resource revisions, freshness, budget, cooldown, concurrency, and executor capability for each step. Approval of a whole plan does not pre-admit or pre-dispatch later steps.
 - **Stop on failure:** the initial release always stops before admitting later steps when a step fails, is blocked, or has an uncertain outcome, even if later steps appear independent. Completed steps remain recorded; no automatic rollback or compensation is implied. Any compensating action is a new exact typed action with its own policy and approval. No automatic retry is allowed after an uncertain result.
 - An emergency stop blocks all later steps and requests safe cancellation only when explicitly supported. Disable Automation prevents autonomous continuation and requires a human execute request for each remaining eligible step. Neither control fabricates a completed/failed result for an in-flight step.
@@ -100,7 +100,7 @@ Tests must exercise every permitted and rejected transition, concurrent approval
 
 ## Komodo connection setup and credential provenance
 
-The Komodo integration is a monitoring provider only for the initial release. Use an operator-supplied endpoint and an explicitly supplied read-only credential. A guided setup may automatically verify API compatibility, validate authentication/scope, discover authorized projects/resources, map stable provider IDs, and create the Pulse provider connection/poll schedule. It must not scan networks, guess endpoints, or request elevated scopes.
+The Komodo integration is a monitoring provider only for the initial release. The initial API baseline is Core v2.3.3, with the exact four supported resource types and method allowlist recorded in [Phase 0 contracts](2026-10-23-sindri-phase-0-contracts.md#3-komodo-api-resource-identity-and-credentials). Use an operator-supplied endpoint and explicitly supplied read-only credential. A guided setup may automatically verify API compatibility, authentication/scope, discover authorized resources, map stable provider IDs, and create the Pulse provider connection/poll schedule. It must not scan networks, guess endpoints, or request elevated scopes.
 
 - Persist connection identity, operator/creator, creation/update time, endpoint verification metadata, Komodo API/version, selected project/scope, and last verification status.
 - Store the credential only through Pulse's protected secret/configuration path. Preserve provenance as a secret reference/version, source class (operator entry or approved secret store), owner/actor, declared/verified scope, and rotation timestamp. Never place token material in logs, telemetry, error strings, fixtures, planning docs, or plaintext connection metadata.
@@ -128,7 +128,7 @@ Use incremental implementation on `feature/sindri-integration`, one reviewable p
 
 | Phase | Scope and dependency | Gate before proceeding |
 |---|---|---|
-| 0. Baseline and contracts | Approve or decline upstream integration; if accepted, merge `upstream/main` into the published feature branch without rewriting its history. Set the public fork profile/feature list, entitlement boundary, Komodo read scope/credential source, Codex-LB contract, action identity/revision model, exact initial allowlist, approval matrix, case correlation rules, numeric budgets/freshness/cooldowns/concurrency, metrics target, and release/cutover owner. | Branch graph/history recorded; reviewable merge commit if upstream is accepted; no secrets in Git; public/private ownership, contracts, policy values, and owners documented. No application tests are needed for this planning phase. |
+| 0. Baseline and contracts | Preserve and merge the reviewed upstream revision; define the public fork profile and entitlement boundary, Codex-LB and Komodo protocols, action identity/revision and approval model, default-empty operation allowlist, case correlation, numeric safety defaults, metrics budget/recovery, Discord identity, and release/cutover gate. | History-preserving merge and planning specification are reviewable; no secrets in Git; public/private boundary audited; relevant Go tests, frontend checks, and repository-boundary regression recorded. No Phase 1 feature implementation is authorized. |
 | 1. Fork availability profile | Add one validated backend `ForkProfile` and central resolver, API exposure, and frontend presentation. Keep license entitlement responses separate. | Go/API/frontend tests prove public checked-in implementations can be enabled as fork capabilities without creating entitlements, private/unshipped implementations remain unavailable, invalid profile values fail closed, and every direct backend route is enforced. Run Pulse's private-boundary audit. |
 | 2. Codex-LB-only AI | Constrain provider selection and every Patrol/investigation call to the gateway. | `go test ./internal/config ./internal/ai/providers ./internal/ai/chat ./internal/ai`; frontend provider-settings tests. Mock-server tests cover auth, timeout, malformed response, redaction, no fallback, and AI-unavailable operation without breaking monitoring. |
 | 3. Read-only Komodo setup | Add guided connection setup, bounded polling, identity mapping, credential provenance, and unified resource adapters. | `go test ./internal/monitoring ./internal/unifiedresources ./internal/api/configapi` plus provider package tests. Fixtures prove API/scope validation, read-only methods, stable IDs, pagination, freshness/error states, secret-reference rotation/redaction, no duplicate resources, and no action authority from discovery or connection creation. |
@@ -153,18 +153,13 @@ Across implementation phases, run repository formatting/static checks and focuse
 
 ## Open implementation blockers and decisions
 
-1. **Upstream baseline:** approve or decline merging `upstream/main` into the already-published feature branch; if approved, preserve checkpoint ancestry and do not rebase/force-push.
-2. **Fork profile:** choose the initial public feature IDs, their license/source evidence, who configures the single deployment profile, and how missing/invalid profile state is reported. No commercial entitlement may be minted or overridden.
-3. **AI contract:** Codex-LB model/API compatibility, timeout/budget expectations, secret source, and approved endpoint configuration. No live endpoint or credential was inspected.
-4. **Komodo contract:** supported API version, operator-supplied endpoint process, secret store, credential scopes, project/resource mapping, polling limits, and freshness thresholds. No repair parity is in scope for the initial release.
-5. **Action policy:** exact resource/action/argument allowlist; budget dimensions and ceilings; cooldowns; concurrency; evidence freshness; action expiry; actor separation; cancellation capability; and adjudication of irrecoverable uncertain outcomes.
-6. **Control semantics:** authorized actors and audit requirements for enabling automation or clearing Total Emergency Stop; behavior when durable policy storage is unavailable. Fail-closed behavior above is mandatory; actor/role mapping remains to be selected.
-7. **Cases and plans:** correlation window and topology ownership; recurrence case reuse/linking; plan-level and step-level approval matrix; whether any later phase may continue independent steps after failure. Initial release stops on every failed, blocked, or uncertain step.
-8. **Metric budget:** retention horizon, resolutions, disk/WAL budget, backup location/restore target, and latency limits, with existing entitlement behavior preserved.
-9. **Discord identity:** bot/interaction mode, allowed users/roles, revocation behavior, and fallback for approval while Discord is unavailable.
-10. **Release:** release artifact owner, rollback thresholds, operator, and explicit authorization for the single initial production cutover. No deployment is authorized by this plan.
+1. **Independent contract review:** the proposed allowlist, action defaults, emergency-stop authority and second-approver rule, gateway/Komodo contracts, and lifecycle values in the Phase 0 spec must be approved before Phase 1 application work.
+2. **Deployment inputs:** before isolated live-provider qualification, supply protected Codex-LB endpoint/secret reference/model; Komodo Core URL, secret reference, selected resources, poll interval; Discord application/guild/channel/role/user mapping; and metric budget/path/backup/restore targets. These values are absent from this repository.
+3. **Action scope:** integration action allowlist is empty. Any non-empty tuple requires a separately reviewed checkpoint with exact resource IDs, operation/version, canonical arguments, policy/resource revisions, actor authorization, and passing durable safety tests. Komodo repair and SSH parity remain out of scope.
+4. **Storage and recovery:** operator-supplied metric storage budget and recovery destination must be qualified against representative data before enabling 90-day fork retention.
+5. **Release:** name the artifact/release owner, operations owner, rollback operator, and cutover authority before Phase 10. The one-production-cutover decision remains in force; Phase 0 and isolated acceptance authorize no deployment.
 
-These decisions block the corresponding live integrations and any action authority. They do not block planning or future isolated, read-only work. The existing Sindri reports contain additional contract questions; consult them read-only only if a later phase requires those details.
+These inputs block live integrations and action authority. They do not block planning or offline/fixture-based implementation after independent review. The existing Sindri reports remain read-only and should be consulted only if a later phase needs a specific behavior reference.
 
 ## Git checkpoint discipline
 
