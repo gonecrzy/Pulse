@@ -44,6 +44,7 @@ import (
 	"github.com/rcourtman/pulse-go-rewrite/internal/api/resourceapi"
 	"github.com/rcourtman/pulse-go-rewrite/internal/config"
 	"github.com/rcourtman/pulse-go-rewrite/internal/deploy"
+	"github.com/rcourtman/pulse-go-rewrite/internal/forkfeatures"
 	"github.com/rcourtman/pulse-go-rewrite/internal/maintenancesentinel"
 	"github.com/rcourtman/pulse-go-rewrite/internal/metrics"
 	"github.com/rcourtman/pulse-go-rewrite/internal/mock"
@@ -133,6 +134,9 @@ type Router struct {
 	tenantRateLimiter               *TenantRateLimiter
 	endpointRateLimitConfig         *EndpointRateLimitConfig
 	persistence                     *config.ConfigPersistence
+	forkProfileManager              *forkfeatures.Manager
+	forkAccess                      forkfeatures.AccessResolver
+	forkFeatureHandlers             *ForkFeatureHandlers
 	multiTenant                     *config.MultiTenantPersistence
 	oidcMu                          sync.Mutex
 	oidcService                     *OIDCService
@@ -259,6 +263,17 @@ func NewRouter(cfg *config.Config, monitor *monitoring.Monitor, mtMonitor *monit
 		monitorResourceAdapters:         make(map[string]*unifiedresources.MonitorAdapter),
 		monitorSupplementalRecords:      make(map[unifiedresources.DataSource]monitoring.MonitorSupplementalRecordsProvider),
 		startedPatrolOrgs:               make(map[string]bool),
+	}
+	r.forkProfileManager = forkfeatures.NewManager(r.persistence)
+	r.forkAccess = forkfeatures.AccessResolver{
+		Fork: r.forkProfileManager,
+		Commercial: func(ctx context.Context, id forkfeatures.FeatureID) bool {
+			if id != forkfeatures.FeatureAIInvestigation || r.aiSettingsHandler == nil {
+				return false
+			}
+			service := r.aiSettingsHandler.GetAIService(ctx)
+			return service != nil && service.HasLicenseFeature(ai.FeatureAIAutoFix)
+		},
 	}
 	r.ensureChartService()
 	if r.wsHub != nil {
@@ -487,6 +502,10 @@ func (r *Router) setupRoutes() {
 	r.unifiedAgentHandlers.SetReportedIdentityRecorder(r.recordReportedAgentIdentity)
 	r.kubernetesAgentHandlers.SetRecoveryIngestor(r.recoveryHandlers)
 	r.resourceHandlers = NewResourceHandlers(r.config)
+	r.resourceHandlers.SetActionAdmissionAvailability(func(ctx context.Context, _ string) error {
+		_, err := r.forkAccess.Require(ctx, forkfeatures.FeatureGovernedActions)
+		return err
+	})
 	r.resourceHandlers.SetOperatorStateChanged(func(_ string, resourceID string) {
 		seen := make(map[*monitoring.Monitor]struct{})
 		reconcile := func(monitor *monitoring.Monitor) {
@@ -714,6 +733,8 @@ func (r *Router) setupRoutes() {
 
 	// AI settings endpoints
 	r.aiSettingsHandler = NewAISettingsHandler(r.multiTenant, r.mtMonitor, r.agentExecServer)
+	r.aiSettingsHandler.SetForkAccessResolver(r.forkAccess)
+	r.forkFeatureHandlers = NewForkFeatureHandlers(r.forkProfileManager)
 	if r.attentionHandlers != nil {
 		r.attentionHandlers.SetActionLicenseChecker(func(ctx context.Context) bool {
 			service := r.aiSettingsHandler.GetAIService(ctx)
@@ -822,6 +843,14 @@ func (r *Router) setupRoutes() {
 	})
 	r.aiHandler.SetServiceInitializer(func(ctx context.Context, service AIService) {
 		r.wireAIChatDependenciesForService(ctx, service)
+		if guarded, ok := service.(interface {
+			SetInvestigationAdmissionChecker(func(context.Context) error)
+		}); ok {
+			guarded.SetInvestigationAdmissionChecker(func(callCtx context.Context) error {
+				_, err := r.forkAccess.Require(callCtx, forkfeatures.FeatureAIInvestigation)
+				return err
+			})
+		}
 	})
 	// Wire the per-tenant report-narrator resolver into the chat
 	// handler so the pulse_summarize tool can produce AI-narrated
@@ -1176,14 +1205,19 @@ func (r *Router) routeAIFindings(w http.ResponseWriter, req *http.Request) {
 		if !ensureRelayMobileRuntimeRoute(w, req, relayMobileRouteFindingInvestigationMessages) {
 			return
 		}
-		r.aiSettingsHandler.HandleGetInvestigationMessages(w, req)
+		r.withForkCapability(forkfeatures.FeatureAIInvestigation, r.aiSettingsHandler.HandleGetInvestigationMessages)(w, req)
 	case strings.HasSuffix(path, "/investigation"):
 		if !ensureRelayMobileRuntimeRoute(w, req, relayMobileRouteFindingInvestigation) {
 			return
 		}
-		r.aiSettingsHandler.HandleGetInvestigation(w, req)
+		r.withForkCapability(forkfeatures.FeatureAIInvestigation, r.aiSettingsHandler.HandleGetInvestigation)(w, req)
 	case strings.HasSuffix(path, "/reinvestigate"):
 		if !ensureScope(w, req, config.ScopeAIExecute) {
+			return
+		}
+		decision := r.forkAccess.Resolve(req.Context(), forkfeatures.FeatureAIInvestigation)
+		if decision.Source == forkfeatures.SourceForkPublic {
+			r.aiSettingsHandler.HandleForkReinvestigateFinding(w, req)
 			return
 		}
 		r.aiAutoFixEndpoints.HandleReinvestigateFinding(w, req)

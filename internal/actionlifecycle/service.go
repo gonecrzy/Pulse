@@ -119,7 +119,18 @@ type Service struct {
 	OnActionTransition func(orgID string, record unified.ActionAuditRecord)
 	Now                func() time.Time
 	PolicyAdmission    *PolicyAdmissionCoordinator
-	policyAdmissionMu  sync.Mutex
+	// AdmissionAvailability is the centralized deployment capability gate.
+	// It controls whether new actions may enter this lifecycle; it never grants
+	// an action permission or bypasses the lifecycle's existing policy checks.
+	AdmissionAvailability func(context.Context, string) error
+	policyAdmissionMu     sync.Mutex
+}
+
+func (s *Service) requireAdmissionAvailability(ctx context.Context, orgID string) error {
+	if s.AdmissionAvailability == nil {
+		return ErrAdmissionAvailabilityUnavailable
+	}
+	return s.AdmissionAvailability(ctx, strings.TrimSpace(orgID))
 }
 
 type ActionDetail struct {
@@ -152,6 +163,8 @@ const (
 type PolicyAdmissionCoordinator struct{ mu sync.RWMutex }
 
 var dispatchWorkerSequence atomic.Uint64
+
+var ErrAdmissionAvailabilityUnavailable = errors.New("action admission availability check is unavailable")
 
 func (s *Service) admissionCoordinator() *PolicyAdmissionCoordinator {
 	s.policyAdmissionMu.Lock()
@@ -438,6 +451,9 @@ func (s *Service) Plan(ctx context.Context, orgID string, req unified.ActionRequ
 // calls plain Plan so a public request can never claim a first-party origin.
 func (s *Service) PlanWithOptions(ctx context.Context, orgID string, req unified.ActionRequest, opts PlanOptions) (unified.ActionPlan, error) {
 	orgID = strings.TrimSpace(orgID)
+	if err := s.requireAdmissionAvailability(ctx, orgID); err != nil {
+		return unified.ActionPlan{}, err
+	}
 	opts.Actor = unified.NormalizeActionActor(opts.Actor)
 	if err := unified.ValidateActionActor(opts.Actor); err != nil {
 		return unified.ActionPlan{}, &actionplanner.ValidationError{Field: "actor", Message: err.Error()}
@@ -829,6 +845,11 @@ func (s *Service) Decide(ctx context.Context, orgID, actionID string, decision u
 	if err := validateDecisionBinding(record, orgID, decision); err != nil {
 		return unified.ActionAuditRecord{}, err
 	}
+	if decision.Outcome == unified.OutcomeApproved {
+		if err := s.requireAdmissionAvailability(ctx, orgID); err != nil {
+			return unified.ActionAuditRecord{}, err
+		}
+	}
 	if record.State != unified.ActionStatePending {
 		return unified.ActionAuditRecord{}, unified.ErrActionNotPending
 	}
@@ -1206,6 +1227,9 @@ func (s *Service) Execute(ctx context.Context, orgID, actionID string, actor uni
 // durable dispatch attempt may be driven, including when a concurrent caller
 // won the admission.
 func (s *Service) beginHumanExecution(ctx context.Context, orgID string, store Store, record unified.ActionAuditRecord, actorID, reason string) (unified.ActionAuditRecord, bool, error) {
+	if err := s.requireAdmissionAvailability(ctx, orgID); err != nil {
+		return unified.ActionAuditRecord{}, false, err
+	}
 	now := s.now()
 	record, err := s.materializeExpiry(store, orgID, record)
 	if err != nil {
@@ -1305,6 +1329,9 @@ func (s *Service) beginPolicyExecution(ctx context.Context, orgID, actionID, act
 	}
 	if record.State == unified.ActionStateCompleted || record.State == unified.ActionStateFailed {
 		return record, store, false, nil
+	}
+	if err := s.requireAdmissionAvailability(ctx, orgID); err != nil {
+		return unified.ActionAuditRecord{}, store, false, err
 	}
 	now := s.now()
 	record, err = s.materializeExpiry(store, orgID, record)

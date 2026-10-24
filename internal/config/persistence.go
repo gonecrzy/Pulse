@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/rcourtman/pulse-go-rewrite/internal/alerts"
 	"github.com/rcourtman/pulse-go-rewrite/internal/crypto"
+	"github.com/rcourtman/pulse-go-rewrite/internal/forkfeatures"
 	"github.com/rcourtman/pulse-go-rewrite/internal/mock"
 	"github.com/rcourtman/pulse-go-rewrite/internal/models"
 	"github.com/rcourtman/pulse-go-rewrite/internal/notifications"
@@ -57,6 +59,7 @@ type ConfigPersistence struct {
 	aiChatSessionsFile         string
 	orgFile                    string
 	relayFile                  string
+	forkProfileFile            string
 	crypto                     *crypto.CryptoManager
 	fs                         FileSystem
 
@@ -139,6 +142,7 @@ type resolvedConfigPersistencePaths struct {
 	aiChatSessionsFile         string
 	orgFile                    string
 	relayFile                  string
+	forkProfileFile            string
 }
 
 func resolveConfigPersistencePaths(configDir string) (string, resolvedConfigPersistencePaths, error) {
@@ -259,6 +263,10 @@ func resolveConfigPersistencePaths(configDir string) (string, resolvedConfigPers
 	if err != nil {
 		return "", resolvedConfigPersistencePaths{}, fmt.Errorf("resolve relay.enc: %w", err)
 	}
+	forkProfileFile, err := resolveLeaf("fork_profile.json")
+	if err != nil {
+		return "", resolvedConfigPersistencePaths{}, fmt.Errorf("resolve fork_profile.json: %w", err)
+	}
 
 	return normalizedConfigDir, resolvedConfigPersistencePaths{
 		alertFile:                  alertFile,
@@ -288,6 +296,7 @@ func resolveConfigPersistencePaths(configDir string) (string, resolvedConfigPers
 		aiChatSessionsFile:         aiChatSessionsFile,
 		orgFile:                    orgFile,
 		relayFile:                  relayFile,
+		forkProfileFile:            forkProfileFile,
 	}, nil
 }
 
@@ -346,6 +355,7 @@ func newConfigPersistence(configDir string) (*ConfigPersistence, error) {
 		aiChatSessionsFile:         resolvedPaths.aiChatSessionsFile,
 		orgFile:                    resolvedPaths.orgFile,
 		relayFile:                  resolvedPaths.relayFile,
+		forkProfileFile:            resolvedPaths.forkProfileFile,
 		crypto:                     cryptoMgr,
 		fs:                         defaultFileSystem{},
 	}
@@ -2018,6 +2028,49 @@ func (c *ConfigPersistence) SaveSystemSettings(settings SystemSettings) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.saveSystemSettingsLocked(settings)
+}
+
+// LoadForkProfile loads the installation-wide personal-fork capability
+// profile. A missing file means the default empty profile; malformed content
+// is returned to the resolver, which fails closed.
+func (c *ConfigPersistence) LoadForkProfile() (*forkfeatures.ForkProfile, error) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	data, err := c.fs.ReadFile(c.forkProfileFile)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read fork profile: %w", err)
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	var profile forkfeatures.ForkProfile
+	if err := decoder.Decode(&profile); err != nil {
+		return nil, fmt.Errorf("decode fork profile: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		if err == nil {
+			return nil, errors.New("fork profile contains multiple JSON values")
+		}
+		return nil, fmt.Errorf("decode fork profile trailer: %w", err)
+	}
+	return &profile, nil
+}
+
+// SaveForkProfile atomically persists a validated profile with private file
+// permissions. Validation belongs to the central forkfeatures.Manager.
+func (c *ConfigPersistence) SaveForkProfile(profile forkfeatures.ForkProfile) error {
+	data, err := json.MarshalIndent(profile, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encode fork profile: %w", err)
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if err := c.writeConfigFileLocked(c.forkProfileFile, data, 0600); err != nil {
+		return fmt.Errorf("persist fork profile: %w", err)
+	}
+	return nil
 }
 
 func (c *ConfigPersistence) saveSystemSettingsLocked(settings SystemSettings) error {

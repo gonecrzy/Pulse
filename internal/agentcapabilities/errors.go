@@ -14,6 +14,7 @@ const (
 	AgentErrCodePatrolUnavailable          = "patrol_unavailable"
 	AgentErrCodeInvalidActionRequest       = "invalid_action_request"
 	AgentErrCodeActionRequestConflict      = "action_request_conflict"
+	AgentErrCodeForkCapabilityUnavailable  = "fork_capability_unavailable"
 	AgentErrCodeCapabilityNotFound         = "capability_not_found"
 	AgentErrCodeActionExecutionUnavailable = "action_execution_unavailable"
 	AgentErrCodeActionActorUnavailable     = "action_actor_unavailable"

@@ -3,7 +3,7 @@ Total output lines: 178
 
 # Pulse + Sindri integration roadmap
 
-**Status:** Planning only. Phase 0 preparation is authorized. The separate [Phase 0 contracts](2026-10-23-sindri-phase-0-contracts.md) record the proposed public feature allowlist, gateway and Komodo protocols, action scope and safety defaults, cases, metrics, Discord identity, and release gate. No Phase 1 feature implementation or production change has been made.
+**Status:** Phase 0 contracts are approved; Phase 1 central fork-capability implementation is complete for independent review in the [Phase 1 checkpoint](2026-10-24-sindri-phase-1-checkpoint.md). Phase 2 has not started. No production change or deployment has been made.
 
 ## Workspace and baseline
 

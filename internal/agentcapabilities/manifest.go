@@ -645,6 +645,7 @@ var (
 	agentCapabilityPlanActionErrorCodes = []string{
 		AgentErrCodeInvalidActionRequest,
 		AgentErrCodeActionRequestConflict,
+		AgentErrCodeForkCapabilityUnavailable,
 		AgentErrCodeMockModeEnabled,
 		AgentErrCodeActionActorUnavailable,
 		AgentErrCodeResourceNotFound,
@@ -661,6 +662,7 @@ var (
 		AgentErrCodeActionNotPending,
 		AgentErrCodeActionPlanExpired,
 		AgentErrCodeActionPlanIdentityMismatch,
+		AgentErrCodeForkCapabilityUnavailable,
 		AgentErrCodeActionActorUnavailable,
 		AgentErrCodeActionApprovalForbidden,
 		AgentErrCodeActionStepUpUnavailable,
@@ -690,6 +692,7 @@ var (
 		AgentErrCodeActionPlanDrift,
 		AgentErrCodeActionEmergencyStop,
 		AgentErrCodeActionPlanIdentityMismatch,
+		AgentErrCodeForkCapabilityUnavailable,
 		AgentErrCodeResourceRemediationLocked,
 		AgentErrCodeActionExecutorUnavailable,
 		AgentErrCodeActionActorUnavailable,

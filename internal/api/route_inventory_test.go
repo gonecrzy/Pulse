@@ -338,6 +338,7 @@ var publicRouteAllowlist = []string{
 }
 
 var bareRouteAllowlist = []string{
+	"/api/fork/profile",
 	"/api/agent-deploy/jobs/",
 	"/api/agent-deploy/preflights/",
 	"/api/agent/capabilities",
@@ -407,6 +408,8 @@ var bareRouteAllowlist = []string{
 }
 
 var allRouteAllowlist = []string{
+	"/api/fork/capabilities",
+	"/api/fork/profile",
 	"/debug/pprof",
 	"/debug/pprof/",
 	"/debug/pprof/cmdline",

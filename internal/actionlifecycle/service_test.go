@@ -69,11 +69,12 @@ func serviceForStore(t *testing.T, store unified.ResourceStore, resource unified
 	registry := unified.NewRegistry(store)
 	registry.IngestResources([]unified.Resource{resource})
 	return &Service{
-		Registry:            func(string) (*unified.ResourceRegistry, error) { return registry, nil },
-		Store:               func(string) (Store, error) { return store, nil },
-		Executor:            executor,
-		DecisionAuthorizer:  DecisionAuthorizerFunc(func(context.Context, string, unified.ActionAuditRecord, unified.ActionDecision) error { return nil }),
-		ExecutionAuthorizer: ExecutionAuthorizerFunc(func(context.Context, string, unified.ActionAuditRecord, unified.ActionActor) error { return nil }),
+		Registry:              func(string) (*unified.ResourceRegistry, error) { return registry, nil },
+		Store:                 func(string) (Store, error) { return store, nil },
+		Executor:              executor,
+		DecisionAuthorizer:    DecisionAuthorizerFunc(func(context.Context, string, unified.ActionAuditRecord, unified.ActionDecision) error { return nil }),
+		ExecutionAuthorizer:   ExecutionAuthorizerFunc(func(context.Context, string, unified.ActionAuditRecord, unified.ActionActor) error { return nil }),
+		AdmissionAvailability: func(context.Context, string) error { return nil },
 	}
 }
 
@@ -1038,9 +1039,10 @@ func newServiceEnv(t *testing.T, resource unified.Resource) *serviceEnv {
 			}
 			return env.store, nil
 		},
-		Executor:            env.executor,
-		DecisionAuthorizer:  DecisionAuthorizerFunc(func(context.Context, string, unified.ActionAuditRecord, unified.ActionDecision) error { return nil }),
-		ExecutionAuthorizer: ExecutionAuthorizerFunc(func(context.Context, string, unified.ActionAuditRecord, unified.ActionActor) error { return nil }),
+		Executor:              env.executor,
+		DecisionAuthorizer:    DecisionAuthorizerFunc(func(context.Context, string, unified.ActionAuditRecord, unified.ActionDecision) error { return nil }),
+		ExecutionAuthorizer:   ExecutionAuthorizerFunc(func(context.Context, string, unified.ActionAuditRecord, unified.ActionActor) error { return nil }),
+		AdmissionAvailability: func(context.Context, string) error { return nil },
 		OnActionCompleted: func(record unified.ActionAuditRecord) {
 			env.completed = append(env.completed, record)
 		},
@@ -1096,6 +1098,52 @@ func TestPlanPersistsPendingAuditAndLifecycle(t *testing.T) {
 	}
 	if len(events) != 2 {
 		t.Fatalf("replan duplicated lifecycle events: %d", len(events))
+	}
+}
+
+func TestAdmissionAvailabilityBlocksNewTypedPlans(t *testing.T) {
+	env := newServiceEnv(t, testResource(time.Now().UTC(), unified.ApprovalAdmin))
+	denied := errors.New("fork governed-actions capability is disabled")
+	env.service.AdmissionAvailability = func(context.Context, string) error { return denied }
+	if _, err := env.service.Plan(context.Background(), "default", restartRequest(), testActionActor("requester", "default")); !errors.Is(err, denied) {
+		t.Fatalf("Plan error = %v, want capability denial", err)
+	}
+	if audits, err := env.store.GetPendingActionAudits(10); err != nil || len(audits) != 0 {
+		t.Fatalf("pending audits after denied plan = %d, err = %v; want no action record", len(audits), err)
+	}
+	if calls := env.executor.calls; calls != 0 {
+		t.Fatalf("executor calls after denied plan = %d, want 0", calls)
+	}
+}
+
+func TestMissingAdmissionAvailabilityFailsClosed(t *testing.T) {
+	env := newServiceEnv(t, testResource(time.Now().UTC(), unified.ApprovalAdmin))
+	env.service.AdmissionAvailability = nil
+	if _, err := env.service.Plan(context.Background(), "default", restartRequest(), testActionActor("requester", "default")); !errors.Is(err, ErrAdmissionAvailabilityUnavailable) {
+		t.Fatalf("Plan without admission resolver error = %v, want fail-closed error", err)
+	}
+	if calls := env.executor.calls; calls != 0 {
+		t.Fatalf("executor calls after missing resolver = %d, want 0", calls)
+	}
+}
+
+func TestDisabledAdmissionStillAllowsPendingActionRejection(t *testing.T) {
+	env := newServiceEnv(t, testResource(time.Now().UTC(), unified.ApprovalAdmin))
+	plan, err := env.service.Plan(context.Background(), "default", restartRequest(), testActionActor("requester", "default"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	denied := errors.New("fork governed-actions capability is disabled")
+	env.service.AdmissionAvailability = func(context.Context, string) error { return denied }
+	decision := testActionDecision(t, env.service, "default", plan.ActionID, unified.ActionApprovalRecord{
+		Actor: "operator", Outcome: unified.OutcomeRejected, Reason: "no longer needed",
+	})
+	updated, err := env.service.Decide(context.Background(), "default", plan.ActionID, decision)
+	if err != nil {
+		t.Fatalf("reject pending plan while disabled: %v", err)
+	}
+	if updated.State != unified.ActionStateRejected || env.executor.calls != 0 {
+		t.Fatalf("updated state=%q executor calls=%d", updated.State, env.executor.calls)
 	}
 }
 

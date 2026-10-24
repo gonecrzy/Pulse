@@ -11,6 +11,7 @@ import (
 
 	"github.com/rcourtman/pulse-go-rewrite/internal/ai"
 	"github.com/rcourtman/pulse-go-rewrite/internal/config"
+	"github.com/rcourtman/pulse-go-rewrite/internal/forkfeatures"
 )
 
 // --- HandleGetInvestigation ---
@@ -519,6 +520,47 @@ func TestFindingsRouterDispatch_CommunityReapproveReturns402(t *testing.T) {
 
 	if rec.Code != http.StatusPaymentRequired {
 		t.Fatalf("expected 402 for Community reapprove, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestForkInvestigationRouteReachesPublicHandlerWithoutCommercialEntitlement(t *testing.T) {
+	rawToken := "fork-investigation-public-route.12345678"
+	record := newTokenRecord(t, rawToken, []string{config.ScopeAIExecute}, nil)
+	cfg := newTestConfigWithTokens(t, record)
+	router := NewRouter(cfg, nil, nil, nil, nil, "1.0.0")
+	profile := forkfeatures.DefaultProfile()
+	profile.EnabledFeatures = []forkfeatures.FeatureID{forkfeatures.FeatureAIInvestigation}
+	if _, err := router.forkProfileManager.Replace(profile, profile.Revision); err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/ai/findings/f-1/reinvestigate", strings.NewReader(`{}`))
+	req.Header.Set("X-API-Token", rawToken)
+	rec := httptest.NewRecorder()
+	router.Handler().ServeHTTP(rec, req)
+	if rec.Code == http.StatusPaymentRequired {
+		t.Fatalf("public fork capability was treated as a commercial entitlement: %s", rec.Body.String())
+	}
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected request to reach the public handler and fail only because Patrol is not initialized, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestForkCapabilitiesDoNotUnlockPrivateInvestigationFixes(t *testing.T) {
+	rawToken := "fork-private-fix-denied.12345678"
+	record := newTokenRecord(t, rawToken, []string{config.ScopeAIExecute}, nil)
+	cfg := newTestConfigWithTokens(t, record)
+	router := NewRouter(cfg, nil, nil, nil, nil, "1.0.0")
+	profile := forkfeatures.DefaultProfile()
+	profile.EnabledFeatures = []forkfeatures.FeatureID{forkfeatures.FeatureAIInvestigation, forkfeatures.FeatureGovernedActions}
+	if _, err := router.forkProfileManager.Replace(profile, profile.Revision); err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/ai/findings/f-1/reapprove", strings.NewReader(`{}`))
+	req.Header.Set("X-API-Token", rawToken)
+	rec := httptest.NewRecorder()
+	router.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusPaymentRequired {
+		t.Fatalf("fork capabilities reached private investigation-fix behavior: status=%d body=%s", rec.Code, rec.Body.String())
 	}
 }
 

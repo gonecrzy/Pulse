@@ -10,6 +10,7 @@ import (
 
 	"github.com/rcourtman/pulse-go-rewrite/internal/agentcapabilities"
 	"github.com/rcourtman/pulse-go-rewrite/internal/config"
+	"github.com/rcourtman/pulse-go-rewrite/internal/forkfeatures"
 	"github.com/rcourtman/pulse-go-rewrite/internal/monitoring"
 )
 
@@ -611,6 +612,11 @@ func TestAgentSubstrate_ActionEndpointsEmitAgentStableEnvelope(t *testing.T) {
 	cfg := newTestConfigWithTokens(t, record)
 	router := NewRouter(cfg, nil, nil, nil, nil, "1.0.0")
 	cleanupTestRouter(t, router)
+	profile := forkfeatures.DefaultProfile()
+	profile.EnabledFeatures = []forkfeatures.FeatureID{forkfeatures.FeatureGovernedActions}
+	if _, err := router.forkProfileManager.Replace(profile, profile.Revision); err != nil {
+		t.Fatal(err)
+	}
 
 	// First verify the manifest declares the three action
 	// capabilities, since the substrate's promise is that the

@@ -1228,9 +1228,10 @@ func TestInvestigationServicePreservesUncertainDiagnosisAfterProposal(t *testing
 	}
 	service := &Service{
 		started: true, sessions: store,
-		executor:              tools.NewPulseToolExecutor(tools.ExecutorConfig{StateProvider: &mockStateProvider{}}),
-		cfg:                   &config.AIConfig{PatrolModel: "mock:model", ControlLevel: config.ControlLevelReadOnly},
-		patrolProviderFactory: func(string) (providers.StreamingProvider, error) { return provider, nil },
+		executor:                      tools.NewPulseToolExecutor(tools.ExecutorConfig{StateProvider: &mockStateProvider{}}),
+		cfg:                           &config.AIConfig{PatrolModel: "mock:model", ControlLevel: config.ControlLevelReadOnly},
+		patrolProviderFactory:         func(string) (providers.StreamingProvider, error) { return provider, nil },
+		investigationAdmissionChecker: func(context.Context) error { return nil },
 	}
 	var streamed strings.Builder
 	result, err := service.ExecuteInvestigationStream(context.Background(), InvestigationRunRequest{
@@ -1276,6 +1277,16 @@ func TestInvestigationServicePreservesUncertainDiagnosisAfterProposal(t *testing
 	}
 	if persisted.String() != conclusion {
 		t.Fatalf("stored diagnosis mutated: %q", persisted.String())
+	}
+}
+
+func TestInvestigationServiceFailsClosedWithoutAdmissionResolver(t *testing.T) {
+	service := &Service{started: true}
+	_, err := service.ExecuteInvestigationStream(context.Background(), InvestigationRunRequest{
+		Identity: tools.ProposalIdentity{ProposalID: "p1", FindingID: "f1", InvestigationID: "i1"},
+	}, nil)
+	if err == nil || !strings.Contains(err.Error(), "investigation admission is not configured") {
+		t.Fatalf("ExecuteInvestigationStream error = %v, want missing-admission denial", err)
 	}
 }
 

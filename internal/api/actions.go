@@ -14,6 +14,7 @@ import (
 	"github.com/rcourtman/pulse-go-rewrite/internal/actionplanner"
 	"github.com/rcourtman/pulse-go-rewrite/internal/agentcapabilities"
 	"github.com/rcourtman/pulse-go-rewrite/internal/api/resourceapi"
+	"github.com/rcourtman/pulse-go-rewrite/internal/forkfeatures"
 	"github.com/rcourtman/pulse-go-rewrite/internal/mock"
 	unified "github.com/rcourtman/pulse-go-rewrite/internal/unifiedresources"
 	"github.com/rs/zerolog/log"
@@ -140,14 +141,15 @@ func (h *ResourceHandlers) ActionLifecycle() *actionlifecycle.Service {
 		Store: func(orgID string) (actionlifecycle.Store, error) {
 			return h.getStore(orgID)
 		},
-		Executor:            h.actionExecutor,
-		OnActionCompleted:   h.actionCompleted,
-		OnActionTransition:  h.actionTransition,
-		PolicyAdmission:     h.policyAdmission,
-		EmergencyStop:       h.actionEmergencyStop,
-		DecisionAuthorizer:  h.actionDecisionAuthorizer,
-		ExecutionAuthorizer: h.actionExecutionAuthorizer,
-		RefreshPlanner:      h.actionRefreshPlanner,
+		Executor:              h.actionExecutor,
+		OnActionCompleted:     h.actionCompleted,
+		OnActionTransition:    h.actionTransition,
+		PolicyAdmission:       h.policyAdmission,
+		EmergencyStop:         h.actionEmergencyStop,
+		DecisionAuthorizer:    h.actionDecisionAuthorizer,
+		ExecutionAuthorizer:   h.actionExecutionAuthorizer,
+		RefreshPlanner:        h.actionRefreshPlanner,
+		AdmissionAvailability: h.actionAdmissionAvailability,
 	}
 }
 
@@ -872,6 +874,8 @@ func writeActionLifecycleReadError(w http.ResponseWriter, err error, fallback fu
 	var notFound *actionlifecycle.ActionNotFoundError
 	var query *actionlifecycle.QueryError
 	switch {
+	case errors.Is(err, forkfeatures.ErrUnavailable), errors.Is(err, actionlifecycle.ErrAdmissionAvailabilityUnavailable):
+		writeJSONError(w, http.StatusForbidden, agentcapabilities.AgentErrCodeForkCapabilityUnavailable, "Required fork capability is unavailable")
 	case errors.Is(err, actionlifecycle.ErrStoreUnavailable):
 		writeJSONError(w, http.StatusServiceUnavailable, "action_audit_unavailable", "Action audit history is not available")
 	case errors.As(err, &query):

@@ -168,7 +168,7 @@ func TestHostStorageCleanupReconcileDelayedTerminalReceiptPreservesAgentAttested
 
 func TestPatrolFullModeRunsStorageCleanupThroughCanonicalLifecycle(t *testing.T) {
 	now := time.Now().UTC()
-	h := NewResourceHandlers(&config.Config{DataPath: t.TempDir()})
+	h := allowTestActionAdmission(NewResourceHandlers(&config.Config{DataPath: t.TempDir()}))
 	h.SetStateProvider(resourceUnifiedSeedProvider{snapshot: models.StateSnapshot{LastUpdate: now}, resources: []unified.Resource{hostStorageCleanupActionResource(now)}})
 	agents := verifiedHostStorageCleanupAgent()
 	h.SetActionExecutor(newRoutedActionExecutor(h, newHostStorageCleanupActionExecutor(h, agents)))
