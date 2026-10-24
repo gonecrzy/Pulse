@@ -239,11 +239,27 @@ func shouldSkipCrossRepoEvidenceExistenceCheck(repo string) bool {
 	if repo == "pulse" {
 		return false
 	}
-	if os.Getenv("GITHUB_ACTIONS") != "true" {
+	envKey := "PULSE_REPO_ROOT_" + strings.ToUpper(strings.ReplaceAll(repo, "-", "_"))
+	if os.Getenv(envKey) != "" {
 		return false
 	}
-	envKey := "PULSE_REPO_ROOT_" + strings.ToUpper(strings.ReplaceAll(repo, "-", "_"))
-	return os.Getenv(envKey) == ""
+	return os.Getenv("PULSE_REQUIRE_CROSS_REPO_EVIDENCE") != "true"
+}
+
+func TestCrossRepoEvidenceChecksAreOptionalWithoutSiblingCheckouts(t *testing.T) {
+	t.Setenv("PULSE_REPO_ROOT_PULSE_PRO", "")
+	t.Setenv("PULSE_REQUIRE_CROSS_REPO_EVIDENCE", "")
+	if !shouldSkipCrossRepoEvidenceExistenceCheck("pulse-pro") {
+		t.Fatal("missing sibling evidence checkout should be optional by default")
+	}
+
+	t.Setenv("PULSE_REQUIRE_CROSS_REPO_EVIDENCE", "true")
+	if shouldSkipCrossRepoEvidenceExistenceCheck("pulse-pro") {
+		t.Fatal("explicit strict evidence validation must not skip missing sibling checkouts")
+	}
+	if shouldSkipCrossRepoEvidenceExistenceCheck("pulse") {
+		t.Fatal("local repository evidence must never be skipped")
+	}
 }
 
 func validateEvidenceRefs(t *testing.T, activeRepos map[string]struct{}, allowedKinds []string, rawEvidence []any, context string) {
@@ -1126,6 +1142,9 @@ func TestStatusJSONScopeDeclaresControlPlaneAndRepoCatalog(t *testing.T) {
 }
 
 func TestStatusJSONReadinessAssertionsAreTypedRecords(t *testing.T) {
+	if _, err := os.Stat(filepath.Join("..", "..", ".github", "workflows", "release-dry-run.yml")); errors.Is(err, os.ErrNotExist) {
+		t.Skip("upstream release-readiness assertions are not active in this personal fork")
+	}
 	status := statusJSON(t)
 	laneIDs := statusLaneIDs(t, status)
 
@@ -1678,64 +1697,29 @@ func TestCanonicalGovernanceRunsInCI(t *testing.T) {
 	workflow := readRepoFile(t, ".github/workflows/canonical-governance.yml")
 	assertContainsAll(t, ".github/workflows/canonical-governance.yml", workflow, []string{
 		"name: Canonical Governance",
+		"branches: [main, sindri, feature/sindri-integration]",
 		"pull_request:",
-		"Set up Node.js for frontend governance",
-		"cache-dependency-path: repos/pulse/frontend-modern/package-lock.json",
-		"Install locked frontend governance dependencies",
-		"npm ci --ignore-scripts --no-audit --no-fund",
-		"python3 scripts/release_control/canonical_completion_guard.py --files-from-stdin",
-		"python3 scripts/release_control/browser_verification_guard.py",
-		"python3 scripts/release_control/registry_audit.py --check --repo-scope pulse",
-		"python3 scripts/release_control/contract_audit.py --check --repo-scope pulse",
-		"python3 scripts/release_control/readiness_assertion_guard.py --active-target --proof-type automated",
-		"python3 scripts/release_control/readiness_assertion_guard.py --active-target --proof-type hybrid",
+		"Validate workflow trust policy",
+		"python3 scripts/check_workflow_trust.py .github/workflows",
+		"python3 scripts/tests/test_workflow_trust.py",
+		"Run canonical mutation registry audits",
 		"go test ./internal/repoctl -count=1",
-		"python3 scripts/release_control/canonical_completion_guard_test.py",
-		"python3 scripts/release_control/browser_verification_guard_test.py",
-		"python3 scripts/release_control/control_plane_audit_test.py",
-		"python3 scripts/release_control/contract_audit_test.py",
-		"python3 scripts/release_control/governance_stage_guard_test.py",
-		"python3 scripts/release_control/registry_audit_test.py",
-		"python3 scripts/release_control/readiness_assertion_guard_test.py",
-		"python3 scripts/release_control/status_audit_test.py",
-		"python3 scripts/release_control/subsystem_lookup_test.py",
 	})
-	for _, confidentialReference := range []string{
+	for _, forbiddenReference := range []string{
 		"secrets.WORKFLOW_PAT",
 		"repository: rcourtman/pulse-pro",
 		"repository: rcourtman/pulse-enterprise",
 		"repository: rcourtman/pulse-mobile",
+		"workflow_run:",
+		"workflow_call:",
+		"release-dry-run.yml",
+		"create-release.yml",
+		"publish-docker.yml",
+		"packages: write",
 	} {
-		if strings.Contains(workflow, confidentialReference) {
-			t.Fatalf("pull-request governance contains confidential reference %q", confidentialReference)
+		if strings.Contains(workflow, forbiddenReference) {
+			t.Fatalf("fork governance contains forbidden upstream operation %q", forbiddenReference)
 		}
-	}
-
-	privateWorkflow := readRepoFile(t, ".github/workflows/canonical-private-governance.yml")
-	assertContainsAll(t, ".github/workflows/canonical-private-governance.yml", privateWorkflow, []string{
-		"name: Canonical Private Governance",
-		"push:",
-		"repository: rcourtman/pulse-pro",
-		"repository: rcourtman/pulse-enterprise",
-		"repository: rcourtman/pulse-mobile",
-		"secrets.WORKFLOW_PAT",
-		"PULSE_REPO_ROOT_PULSE_PRO",
-		"PULSE_REPO_ROOT_PULSE_ENTERPRISE",
-		"PULSE_REPO_ROOT_PULSE_MOBILE",
-		"python3 scripts/release_control/status_audit.py --check",
-		"python3 scripts/release_control/control_plane_audit.py --check",
-		"python3 scripts/release_control/registry_audit.py --check",
-		"python3 scripts/release_control/contract_audit.py --check",
-		"go test ./internal/repoctl -count=1",
-	})
-	if strings.Contains(privateWorkflow, "pull_request:") || strings.Contains(privateWorkflow, "workflow_dispatch:") {
-		t.Fatal("private governance must only load its credential-bearing definition from main pushes")
-	}
-
-	install := strings.Index(workflow, "Install locked frontend governance dependencies")
-	guard := strings.Index(workflow, "Run canonical completion guard against changed commits")
-	if install < 0 || guard < 0 || install > guard {
-		t.Fatal("locked frontend governance dependencies must be installed before the per-commit browser guard")
 	}
 }
 

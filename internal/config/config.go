@@ -85,8 +85,12 @@ func EffectiveUpdateChannel(channel string, fallback string) string {
 }
 
 // EffectiveAutoUpdateEnabled enforces the v6 policy that unattended
-// auto-updates only run on the stable channel.
+// auto-updates only run on the stable channel. Pinned deployments can also
+// lock updates off with PULSE_DISABLE_AUTO_UPDATE=true.
 func EffectiveAutoUpdateEnabled(channel string, enabled bool) bool {
+	if utils.ParseBool(os.Getenv("PULSE_DISABLE_AUTO_UPDATE")) {
+		return false
+	}
 	return enabled && EffectiveUpdateChannel(channel, "") == "stable"
 }
 

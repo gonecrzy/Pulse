@@ -59,6 +59,10 @@ package unifiedresources
 
 import (
 	"encoding/json"
+	"go/ast"
+	"go/format"
+	"go/parser"
+	"go/token"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -1080,13 +1084,9 @@ func TestActionExecutionContractStaysAPIOwned(t *testing.T) {
 			"agentcapabilities.AgentErrCodeActionExecutorUnavailable",
 		},
 		filepath.Join("..", "api", "resources_compat.go"): {
-			"actionExecutor            ActionExecutor",
-			"actionCompleted           func(unified.ActionAuditRecord)",
-			"actionTransition          func(orgID string, record unified.ActionAuditRecord)",
 			"func (h *ResourceHandlers) SetActionExecutor(executor ActionExecutor)",
 			"func (h *ResourceHandlers) SetActionCompletedPublisher(",
 			"func (h *ResourceHandlers) SetActionTransitionPublisher(",
-			"policyAdmission           *actionlifecycle.PolicyAdmissionCoordinator",
 		},
 		filepath.Join("..", "api", "resourceapi", "resources.go"): {
 			"actionAvailability  actionlifecycle.AvailabilityChecker",
@@ -1119,6 +1119,57 @@ func TestActionExecutionContractStaysAPIOwned(t *testing.T) {
 			if !strings.Contains(source, snippet) {
 				t.Fatalf("%s must contain %q", name, snippet)
 			}
+		}
+	}
+
+	assertGoStructFields(t, filepath.Join("..", "api", "resources_compat.go"), "ResourceHandlers", map[string]string{
+		"actionExecutor":   "ActionExecutor",
+		"actionCompleted":  "func(unified.ActionAuditRecord)",
+		"actionTransition": "func(orgID string, record unified.ActionAuditRecord)",
+		"policyAdmission":  "*actionlifecycle.PolicyAdmissionCoordinator",
+	})
+}
+
+func assertGoStructFields(t *testing.T, path, typeName string, required map[string]string) {
+	t.Helper()
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, path, nil, 0)
+	if err != nil {
+		t.Fatalf("parse %s: %v", path, err)
+	}
+
+	var structure *ast.StructType
+	for _, declaration := range file.Decls {
+		group, ok := declaration.(*ast.GenDecl)
+		if !ok || group.Tok != token.TYPE {
+			continue
+		}
+		for _, specification := range group.Specs {
+			typeSpec, ok := specification.(*ast.TypeSpec)
+			if !ok || typeSpec.Name.Name != typeName {
+				continue
+			}
+			structure, _ = typeSpec.Type.(*ast.StructType)
+			break
+		}
+	}
+	if structure == nil {
+		t.Fatalf("%s must declare struct %s", path, typeName)
+	}
+
+	fields := make(map[string]string)
+	for _, field := range structure.Fields.List {
+		var typeText strings.Builder
+		if err := format.Node(&typeText, fset, field.Type); err != nil {
+			t.Fatalf("format %s.%s field type: %v", typeName, path, err)
+		}
+		for _, name := range field.Names {
+			fields[name.Name] = typeText.String()
+		}
+	}
+	for name, expectedType := range required {
+		if got := fields[name]; got != expectedType {
+			t.Errorf("%s.%s has type %q, want %q", typeName, name, got, expectedType)
 		}
 	}
 }

@@ -36,6 +36,7 @@ func TestNoPersistenceBoilerplate(t *testing.T) {
 		"SaveExternalAgentActivityHistory":  true, // versioned envelope
 		"SaveWorkflowPromptActivityHistory": true, // versioned envelope
 		"SavePatrolRunHistory":              true, // versioned envelope
+		"SaveForkProfile":                   true, // strict schema validation and private file mode
 	}
 
 	data, err := os.ReadFile("persistence.go")
@@ -101,6 +102,7 @@ func TestNoPersistenceLoadBoilerplate(t *testing.T) {
 		"LoadExternalAgentActivityHistory":  true, // versioned envelope
 		"LoadWorkflowPromptActivityHistory": true, // versioned envelope
 		"LoadPatrolRunHistory":              true, // versioned envelope
+		"LoadForkProfile":                   true, // strict schema and fail-closed caller validation
 		"LoadGuestMetadata":                 true, // metadata store
 		"LoadDockerMetadata":                true, // metadata store
 		"LoadHostMetadata":                  true, // metadata store

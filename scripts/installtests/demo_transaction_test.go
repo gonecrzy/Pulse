@@ -1,3 +1,8 @@
+//go:build upstream_release_workflows
+
+// This suite targets upstream-only demo deployment workflows and is opt-in in
+// the personal fork, where those workflows are intentionally absent.
+
 package installtests
 
 import (

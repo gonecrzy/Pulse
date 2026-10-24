@@ -11,6 +11,7 @@ import (
 
 	"github.com/rcourtman/pulse-go-rewrite/internal/actionlifecycle"
 	"github.com/rcourtman/pulse-go-rewrite/internal/config"
+	"github.com/rcourtman/pulse-go-rewrite/internal/forkfeatures"
 	unified "github.com/rcourtman/pulse-go-rewrite/internal/unifiedresources"
 	"github.com/rcourtman/pulse-go-rewrite/pkg/auth"
 )
@@ -119,6 +120,11 @@ func TestActionRoutesRequireExplicitSSOAdminOnSSOOnlyInstance(t *testing.T) {
 	t.Cleanup(func() { auth.SetAuthorizer(previousAuthorizer) })
 
 	router := newConfigTransferTestRouter(t, false, enabledConfigTransferSSO(config.SSOProviderTypeOIDC))
+	profile := forkfeatures.DefaultProfile()
+	profile.EnabledFeatures = []forkfeatures.FeatureID{forkfeatures.FeatureGovernedActions}
+	if _, err := router.forkProfileManager.Replace(profile, profile.Revision); err != nil {
+		t.Fatal(err)
+	}
 	manager := installTestRBACManager(t)
 	const ssoAdmin = "sso:action-admin@example.invalid"
 	if err := manager.UpdateUserRoles(ssoAdmin, []string{auth.RoleAdmin}); err != nil {

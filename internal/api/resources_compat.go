@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"net/http"
 	"strings"
 
@@ -19,17 +20,19 @@ import (
 type ResourceHandlers struct {
 	resourceapi.QueryService
 
-	cfg                       *config.Config
-	tenantStateProvider       TenantStateProvider
-	actionExecutor            ActionExecutor
-	actionCompleted           func(unified.ActionAuditRecord)
-	actionTransition          func(orgID string, record unified.ActionAuditRecord)
-	policyAdmission           *actionlifecycle.PolicyAdmissionCoordinator
-	actionEmergencyStop       func(orgID string) (bool, error)
-	actionDecisionAuthorizer  actionlifecycle.DecisionAuthorizer
-	actionExecutionAuthorizer actionlifecycle.ExecutionAuthorizer
-	actionRefreshPlanner      actionlifecycle.RefreshPlanner
-	operatorStateChanged      func(orgID, resourceID string)
+	cfg                         *config.Config
+	tenantStateProvider         TenantStateProvider
+	actionExecutor              ActionExecutor
+	actionCompleted             func(unified.ActionAuditRecord)
+	actionTransition            func(orgID string, record unified.ActionAuditRecord)
+	policyAdmission             *actionlifecycle.PolicyAdmissionCoordinator
+	actionEmergencyStop         func(orgID string) (bool, error)
+	actionDecisionAuthorizer    actionlifecycle.DecisionAuthorizer
+	actionExecutionAuthorizer   actionlifecycle.ExecutionAuthorizer
+	actionRefreshPlanner        actionlifecycle.RefreshPlanner
+	actionAdmissionAvailability func(context.Context, string) error
+	policyExecutionAvailability func(context.Context, string) error
+	operatorStateChanged        func(orgID, resourceID string)
 }
 
 type SupplementalRecordsProvider = resourceapi.SupplementalRecordsProvider
@@ -92,6 +95,14 @@ func (h *ResourceHandlers) SetActionAuthorizers(decision actionlifecycle.Decisio
 
 func (h *ResourceHandlers) SetActionRefreshPlanner(planner actionlifecycle.RefreshPlanner) {
 	h.actionRefreshPlanner = planner
+}
+
+func (h *ResourceHandlers) SetActionAdmissionAvailability(checker func(context.Context, string) error) {
+	h.actionAdmissionAvailability = checker
+}
+
+func (h *ResourceHandlers) SetPolicyExecutionAvailability(checker func(context.Context, string) error) {
+	h.policyExecutionAvailability = checker
 }
 
 func (h *ResourceHandlers) SetActionCompletedPublisher(publisher func(unified.ActionAuditRecord)) {

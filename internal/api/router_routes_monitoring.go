@@ -1,11 +1,16 @@
 package api
 
 import (
+	"bytes"
+	"encoding/json"
+	"io"
 	"net/http"
 	"strings"
 
 	"github.com/rcourtman/pulse-go-rewrite/internal/agentcapabilities"
 	"github.com/rcourtman/pulse-go-rewrite/internal/config"
+	"github.com/rcourtman/pulse-go-rewrite/internal/forkfeatures"
+	unified "github.com/rcourtman/pulse-go-rewrite/internal/unifiedresources"
 	"github.com/rcourtman/pulse-go-rewrite/pkg/auth"
 )
 
@@ -150,10 +155,10 @@ func (r *Router) registerMonitoringResourceRoutes(
 			r.agentEventBroadcaster.HandleAgentEvents,
 		))))
 	}
-	r.mux.HandleFunc("POST /api/actions/plan", RequireAuth(r.config, RequireAnyScope([]string{config.ScopeActionsPlan, config.ScopeAIExecute}, requireActionCapability(r.config, r.authorizer, auth.ActionPlan, r.withExternalAgentCapabilityActivity(
+	r.mux.HandleFunc("POST /api/actions/plan", RequireAuth(r.config, RequireAnyScope([]string{config.ScopeActionsPlan, config.ScopeAIExecute}, requireActionCapability(r.config, r.authorizer, auth.ActionPlan, r.withForkCapability(forkfeatures.FeatureGovernedActions, r.withExternalAgentCapabilityActivity(
 		agentcapabilities.PlanActionCapabilityName,
 		r.resourceHandlers.HandlePlanAction,
-	)))))
+	))))))
 	r.mux.HandleFunc("GET /api/actions/pending", RequireAuth(r.config, requireRelayMobileRuntimeRoute(relayMobileRoutePendingActions,
 		requireActionCapability(r.config, r.authorizer, auth.ActionApprove, r.resourceHandlers.HandleListPendingActions),
 	)))
@@ -165,11 +170,11 @@ func (r *Router) registerMonitoringResourceRoutes(
 	)))
 	r.mux.HandleFunc("POST /api/actions/{id}/refresh", RequireAuth(r.config, RequireAnyScope([]string{config.ScopeActionsPlan, config.ScopeAIExecute}, r.withExternalAgentCapabilityActivity(
 		agentcapabilities.PlanActionCapabilityName,
-		requireActionCapability(r.config, r.authorizer, auth.ActionPlan, r.resourceHandlers.HandleRefreshAction),
+		requireActionCapability(r.config, r.authorizer, auth.ActionPlan, r.withForkCapability(forkfeatures.FeatureGovernedActions, r.resourceHandlers.HandleRefreshAction)),
 	))))
 	r.mux.HandleFunc("POST /api/actions/{id}/decision", RequireAuth(r.config, requireRelayMobileRuntimeRoute(relayMobileRouteActionDecision, r.withExternalAgentCapabilityActivity(
 		agentcapabilities.DecideActionCapabilityName,
-		requireActionCapability(r.config, r.authorizer, auth.ActionApprove, r.resourceHandlers.HandleDecideAction),
+		requireActionCapability(r.config, r.authorizer, auth.ActionApprove, r.withForkCapabilityForActionApproval(r.resourceHandlers.HandleDecideAction)),
 	))))
 	r.mux.HandleFunc("POST /api/actions/{id}/execute", RequireAuth(r.config, requireRelayMobileRuntimeRoute(relayMobileRouteActionExecute, r.withExternalAgentCapabilityActivity(
 		agentcapabilities.ExecuteActionCapabilityName,
@@ -361,4 +366,23 @@ func (r *Router) registerMonitoringResourceRoutes(
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}
 	})))
+}
+
+func (r *Router) withForkCapabilityForActionApproval(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, req *http.Request) {
+		body, err := io.ReadAll(io.LimitReader(req.Body, maxActionDecisionRequestBytes+1))
+		if err != nil {
+			next(w, req)
+			return
+		}
+		req.Body = io.NopCloser(bytes.NewReader(body))
+		var decision struct {
+			Outcome string `json:"outcome"`
+		}
+		if json.Unmarshal(body, &decision) == nil && decision.Outcome == string(unified.OutcomeApproved) {
+			r.withForkCapability(forkfeatures.FeatureGovernedActions, next)(w, req)
+			return
+		}
+		next(w, req)
+	}
 }

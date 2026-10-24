@@ -1,3 +1,9 @@
+//go:build upstream_release_workflows
+
+// This contract suite targets upstream commercial release and publication
+// workflows. The personal fork keeps it opt-in because those workflows are
+// absent from its GitHub Actions surface.
+
 package installtests
 
 import (
@@ -4744,29 +4750,6 @@ func TestHelmAgentRuntimePointsAtRealImage(t *testing.T) {
 		`[ -L /usr/local/bin/pulse-agent ]`,
 		`/usr/local/bin/pulse-agent target is not executable`,
 	)
-}
-
-func repoFile(parts ...string) string {
-	root := filepath.Join("..", "..")
-	segments := append([]string{root}, parts...)
-	return filepath.Join(segments...)
-}
-
-// assertFileContainsAll reads the file at path and fails the test if any of
-// the required substrings is missing. The standard pinning-test shape in
-// this package.
-func assertFileContainsAll(t *testing.T, path string, required ...string) {
-	t.Helper()
-	content, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read %s: %v", path, err)
-	}
-	s := string(content)
-	for _, needle := range required {
-		if !strings.Contains(s, needle) {
-			t.Fatalf("%s missing required substring: %s", path, needle)
-		}
-	}
 }
 
 func TestReleaseNotesGeneratorResolvesChannelSpecificComparisonRanges(t *testing.T) {

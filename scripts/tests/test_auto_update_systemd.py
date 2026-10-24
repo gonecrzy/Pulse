@@ -52,7 +52,7 @@ def recipe(source):
                     "diff -qr --no-dereference frontend-modern/dist internal/api/frontend-modern/dist",
                     "-ldflags='-X main.Version=v0.0.1'", "-ldflags='-X main.Version=v0.0.2'",
                     "go build -mod=readonly -p=2", "sudo env -i",
-                    "GITHUB_ACTIONS=true RUNNER_ENVIRONMENT=github-hosted GITHUB_REPOSITORY=rcourtman/Pulse",
+                    'GITHUB_ACTIONS=true RUNNER_ENVIRONMENT=github-hosted GITHUB_REPOSITORY="$GITHUB_REPOSITORY"',
                     "python3 scripts/installtests/auto_update_systemd.py",
                     '--receipt "$RUNNER_TEMP/pulse-native-updater.json"'):
         assert command in shell, command
@@ -82,12 +82,13 @@ class NativeContracts(unittest.TestCase):
             with self.assertRaises(ValueError): native.installer_definitions(changed)
 
     def test_host_admission_requires_fresh_public_vm_not_worker_or_container(self):
-        env = dict(GITHUB_ACTIONS="true", RUNNER_ENVIRONMENT="github-hosted", GITHUB_REPOSITORY="rcourtman/Pulse")
+        env = dict(GITHUB_ACTIONS="true", RUNNER_ENVIRONMENT="github-hosted", GITHUB_REPOSITORY="gonecrzy/Pulse")
         with patch.object(Path, "exists", return_value=False):
             native.hosted_admission(env, 0, "a" * 40)
             for changed, uid, sha in ((env, 1000, "a" * 40), ({}, 0, "a" * 40),
                                       ({**env, "RUNNER_ENVIRONMENT": "self-hosted"}, 0, "a" * 40),
                                       ({**env, "GITHUB_REPOSITORY": "other/repo"}, 0, "a" * 40),
+                                      ({**env, "GITHUB_REPOSITORY": "rcourtman/Pulse"}, 0, "a" * 40),
                                       (env, 0, "main")):
                 with self.assertRaises(ValueError): native.hosted_admission(changed, uid, sha)
         with patch.object(Path, "exists", return_value=True):
@@ -488,6 +489,7 @@ if name == "sudo":
                 path = tools / name; path.write_text(fake); path.chmod(0o755)
             env = {**os.environ, "PATH": str(tools) + ":" + os.environ["PATH"], "TRACE": str(trace),
                    "RUNNER_TEMP": str(root), "EXPECTED_SOURCE_SHA": "a" * 40,
+                   "GITHUB_REPOSITORY": "gonecrzy/Pulse",
                    "FAIL_BUILD": failure, "MISMATCH": "true" if mismatch else "false"}
             result = subprocess.run(["/bin/bash", "-c", recipe(WORKFLOW.read_text())], env=env, cwd=root, capture_output=True)
             return result, [json.loads(line) for line in trace.read_text().splitlines()], (root / "pulse-native-updater.json").exists()

@@ -1324,7 +1324,7 @@ func TestExecuteGetResource_RegistersVMwareVMAsReadOnly(t *testing.T) {
 		ReadState:               provider.ResourceRegistry,
 	})
 	executor.SetResolvedContext(resolved)
-	wireCanonicalQueryTestPlanner(executor, provider.ResourceRegistry)
+	wireCanonicalQueryTestPlanner(executor, provider.ResourceRegistry, allowCanonicalQueryTestAdmission)
 
 	result, err := executor.executeGetResource(context.Background(), map[string]interface{}{
 		"resource_type": "vm",
@@ -1388,7 +1388,7 @@ func TestExecuteGetResource_RegistersVMwareAgentAsReadOnly(t *testing.T) {
 		ReadState:               provider.ResourceRegistry,
 	})
 	executor.SetResolvedContext(resolved)
-	wireCanonicalQueryTestPlanner(executor, provider.ResourceRegistry)
+	wireCanonicalQueryTestPlanner(executor, provider.ResourceRegistry, allowCanonicalQueryTestAdmission)
 
 	result, err := executor.executeGetResource(context.Background(), map[string]interface{}{
 		"resource_type": "agent",
@@ -1433,6 +1433,46 @@ func TestExecuteGetResource_RegistersVMwareAgentAsReadOnly(t *testing.T) {
 	}
 	if !strings.Contains(controlResult.Content[0].Text, "not permitted") {
 		t.Fatalf("expected read-only rejection, got %q", controlResult.Content[0].Text)
+	}
+}
+
+func TestExecuteGetResource_VMwareReadOnlyControlFailsClosedWithoutAdmissionWiring(t *testing.T) {
+	provider := newVMwareUnifiedQueryProvider(t)
+	resolved := &mockResolvedContext{
+		resources: make(map[string]ResolvedResourceInfo),
+		aliases:   make(map[string]ResolvedResourceInfo),
+	}
+	executor := NewPulseToolExecutor(ExecutorConfig{
+		UnifiedResourceProvider: provider,
+		ReadState:               provider.ResourceRegistry,
+	})
+	executor.SetResolvedContext(resolved)
+	wireCanonicalQueryTestPlanner(executor, provider.ResourceRegistry, nil)
+
+	result, err := executor.executeGetResource(context.Background(), map[string]interface{}{
+		"resource_type": "vm",
+		"resource_id":   "app-01",
+	})
+	if err != nil {
+		t.Fatalf("get vm: unexpected error: %v", err)
+	}
+	if result.IsError {
+		t.Fatalf("read-only VMware query should remain available without action admission, got %+v", result)
+	}
+
+	controlResult, err := executor.executeControl(context.Background(), map[string]interface{}{
+		"type":        "resource",
+		"resource_id": "app-01",
+		"action":      "restart",
+	})
+	if err != nil {
+		t.Fatalf("executeControl(type=resource): unexpected error: %v", err)
+	}
+	if !controlResult.IsError || !strings.Contains(
+		controlResult.Content[0].Text,
+		actionlifecycle.ErrAdmissionAvailabilityUnavailable.Error(),
+	) {
+		t.Fatalf("missing action admission wiring must fail closed, got %+v", controlResult)
 	}
 }
 
@@ -2214,9 +2254,19 @@ func TestResourceTypeFromCanonicalID(t *testing.T) {
 
 // These refusal checks use the real planner. Cached allowed-action hints do
 // not own the action boundary and may be stale after a replay or discovery.
-func wireCanonicalQueryTestPlanner(executor *PulseToolExecutor, registry *unifiedresources.ResourceRegistry) {
+func allowCanonicalQueryTestAdmission(context.Context, string) error { return nil }
+
+func wireCanonicalQueryTestPlanner(
+	executor *PulseToolExecutor,
+	registry *unifiedresources.ResourceRegistry,
+	admission func(context.Context, string) error,
+) {
 	store := unifiedresources.NewMemoryStore()
-	service := &actionlifecycle.Service{Registry: func(string) (*unifiedresources.ResourceRegistry, error) { return registry, nil }, Store: func(string) (actionlifecycle.Store, error) { return store, nil }}
+	service := &actionlifecycle.Service{
+		Registry:              func(string) (*unifiedresources.ResourceRegistry, error) { return registry, nil },
+		Store:                 func(string) (actionlifecycle.Store, error) { return store, nil },
+		AdmissionAvailability: admission,
+	}
 	executor.SetTypedActionPlanner(typedActionPlannerFunc(func(ctx context.Context, _ string, request unifiedresources.ActionRequest) (*unifiedresources.ActionPlan, error) {
 		plan, err := service.Plan(ctx, "default", request, unifiedresources.ActionActor{SubjectID: "operator", Kind: unifiedresources.ActionActorUser, CredentialID: "test-credential", OrgID: "default"})
 		return &plan, err

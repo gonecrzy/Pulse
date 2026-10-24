@@ -81,7 +81,14 @@ func (s *Service) ExecuteInvestigationStream(ctx context.Context, req Investigat
 	unifiedResourceProvider := s.unifiedResourceProvider
 	cfg := s.cfg
 	effectiveControlLevel := s.effectiveControlLevelLocked()
+	admissionChecker := s.investigationAdmissionChecker
 	s.mu.RUnlock()
+	if admissionChecker == nil {
+		return nil, errors.New("investigation admission is not configured")
+	}
+	if err := admissionChecker(ctx); err != nil {
+		return nil, fmt.Errorf("investigation admission denied: %w", err)
+	}
 
 	if baseExecutor == nil {
 		return nil, fmt.Errorf("no tool executor available")

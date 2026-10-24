@@ -69,11 +69,13 @@ func serviceForStore(t *testing.T, store unified.ResourceStore, resource unified
 	registry := unified.NewRegistry(store)
 	registry.IngestResources([]unified.Resource{resource})
 	return &Service{
-		Registry:            func(string) (*unified.ResourceRegistry, error) { return registry, nil },
-		Store:               func(string) (Store, error) { return store, nil },
-		Executor:            executor,
-		DecisionAuthorizer:  DecisionAuthorizerFunc(func(context.Context, string, unified.ActionAuditRecord, unified.ActionDecision) error { return nil }),
-		ExecutionAuthorizer: ExecutionAuthorizerFunc(func(context.Context, string, unified.ActionAuditRecord, unified.ActionActor) error { return nil }),
+		Registry:                    func(string) (*unified.ResourceRegistry, error) { return registry, nil },
+		Store:                       func(string) (Store, error) { return store, nil },
+		Executor:                    executor,
+		DecisionAuthorizer:          DecisionAuthorizerFunc(func(context.Context, string, unified.ActionAuditRecord, unified.ActionDecision) error { return nil }),
+		ExecutionAuthorizer:         ExecutionAuthorizerFunc(func(context.Context, string, unified.ActionAuditRecord, unified.ActionActor) error { return nil }),
+		AdmissionAvailability:       func(context.Context, string) error { return nil },
+		PolicyExecutionAvailability: func(context.Context, string) error { return nil },
 	}
 }
 
@@ -636,6 +638,110 @@ func TestExecuteUnderPolicyRefusesLostReadinessBeforeAutomaticAdmission(t *testi
 	}
 }
 
+func TestPolicyExecutionSafetyGateBlocksAutomaticAdmissionButAllowsHumanExecution(t *testing.T) {
+	now := time.Now().UTC()
+	store := unified.NewMemoryStore()
+	executor := &stubExecutor{result: &unified.ExecutionResult{Success: true}}
+	service := serviceForStore(t, store, testResource(now, unified.ApprovalAdmin), executor)
+	denied := errors.New("fork.action_safety is unavailable")
+	service.PolicyExecutionAvailability = func(context.Context, string) error { return denied }
+
+	autoPlan, err := service.Plan(context.Background(), "default", restartRequest(), testActionActor("requester", "default"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, err := service.ExecuteUnderPolicy(context.Background(), "default", autoPlan.ActionID, "pulse_patrol_policy", func(_ context.Context, record unified.ActionAuditRecord, at time.Time) (unified.ActionPolicyAuthorizationLease, string, error) {
+		return policyTestLease(record, at), "valid autonomous policy", nil
+	})
+	if !errors.Is(err, denied) || current.State != unified.ActionStatePending {
+		t.Fatalf("automatic action=%#v err=%v, want pending approval and denied before admission", current, err)
+	}
+	if executor.calls != 0 || len(current.Approvals) != 0 {
+		t.Fatalf("automatic dispatch calls=%d approvals=%#v, want zero", executor.calls, current.Approvals)
+	}
+	if _, found, getErr := store.GetActionDispatchAttempt(autoPlan.ActionID); getErr != nil || found {
+		t.Fatalf("automatic dispatch attempt found=%v err=%v, want none", found, getErr)
+	}
+
+	humanPlan, err := service.Plan(context.Background(), "default", unified.ActionRequest{
+		RequestID: "human-under-policy-gate", ResourceID: "vm:42", CapabilityName: "restart",
+		Params: map[string]any{"mode": "graceful"}, Reason: "operator approved action", RequestedBy: "operator",
+	}, testActionActor("operator", "default"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	approved, err := service.Decide(context.Background(), "default", humanPlan.ActionID, testActionDecision(t, service, "default", humanPlan.ActionID, unified.ActionApprovalRecord{
+		Actor: "operator", Outcome: unified.OutcomeApproved,
+	}))
+	if err != nil || approved.State != unified.ActionStateApproved {
+		t.Fatalf("human approval=%#v err=%v, want approval accepted while automation is gated", approved, err)
+	}
+	completed, err := service.Execute(context.Background(), "default", humanPlan.ActionID, testActionActor("operator", "default"), "operator approved action")
+	if err != nil || completed.State != unified.ActionStateCompleted || executor.calls != 1 {
+		t.Fatalf("human action=%#v err=%v calls=%d, want completed once", completed, err, executor.calls)
+	}
+}
+
+func TestPolicyExecutionSafetyGateBlocksQueuedRecoveryButAllowsReceiptReconciliation(t *testing.T) {
+	now := time.Now().UTC()
+	t.Run("queued policy attempt is not sent after restart", func(t *testing.T) {
+		store := unified.NewMemoryStore()
+		executor := &stubExecutor{result: &unified.ExecutionResult{Success: true}}
+		service := serviceForStore(t, store, testResource(now, unified.ApprovalAdmin), executor)
+		plan, err := service.Plan(context.Background(), "default", restartRequest(), testActionActor("requester", "default"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		record, found, err := store.GetActionAudit(plan.ActionID)
+		if err != nil || !found {
+			t.Fatalf("GetActionAudit: found=%v err=%v", found, err)
+		}
+		started, approvedEvent, startedEvent, err := unified.BeginPolicyActionExecution(record, unified.ActionApprovalRecord{Actor: "pulse_patrol_policy"}, policyTestLease(record, now), now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		attempt, err := unified.NewActionDispatchAttempt(started.ID, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := store.RecordActionPolicyExecutionAdmission(started, approvedEvent, startedEvent, attempt); err != nil {
+			t.Fatal(err)
+		}
+		service.PolicyExecutionAvailability = func(context.Context, string) error { return ErrPolicyExecutionAvailabilityUnavailable }
+		recovered, err := service.RecoverExecutingActions(context.Background(), "default", "system:restart-recovery", 10)
+		if err != nil || len(recovered) != 0 || executor.calls != 0 {
+			t.Fatalf("recovered=%#v calls=%d err=%v, want queued policy action held without send", recovered, executor.calls, err)
+		}
+		current, found, err := store.GetActionAudit(plan.ActionID)
+		if err != nil || !found || current.State != unified.ActionStateExecuting {
+			t.Fatalf("audit=%#v found=%v err=%v, want preserved executing audit", current, found, err)
+		}
+	})
+
+	t.Run("receipt pending policy attempt is reconciled", func(t *testing.T) {
+		store := unified.NewMemoryStore()
+		executor := &reconcilingExecutor{executeErr: context.DeadlineExceeded, found: true, result: &unified.ExecutionResult{Success: true}}
+		service := serviceForStore(t, store, testResource(now, unified.ApprovalAdmin), executor)
+		plan, err := service.Plan(context.Background(), "default", restartRequest(), testActionActor("requester", "default"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := service.ExecuteUnderPolicy(context.Background(), "default", plan.ActionID, "pulse_patrol_policy", func(_ context.Context, record unified.ActionAuditRecord, at time.Time) (unified.ActionPolicyAuthorizationLease, string, error) {
+			return policyTestLease(record, at), "valid autonomous policy", nil
+		}); !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("initial ExecuteUnderPolicy error=%v, want uncertain transport outcome", err)
+		}
+		service.PolicyExecutionAvailability = func(context.Context, string) error { return ErrPolicyExecutionAvailabilityUnavailable }
+		recovered, err := service.RecoverExecutingActions(context.Background(), "default", "system:restart-recovery", 10)
+		if err != nil || len(recovered) != 1 || recovered[0].State != unified.ActionStateCompleted {
+			t.Fatalf("recovered=%#v err=%v, want completed from receipt reconciliation", recovered, err)
+		}
+		if executor.executeCalls != 1 || executor.reconcileCalls != 1 {
+			t.Fatalf("execute=%d reconcile=%d, want one original send and one read-only reconcile", executor.executeCalls, executor.reconcileCalls)
+		}
+	})
+}
+
 func runPolicyBarrierRevocations(t *testing.T, storeFactory func(t *testing.T) unified.ResourceStore) {
 	cases := []struct {
 		name   string
@@ -1038,9 +1144,11 @@ func newServiceEnv(t *testing.T, resource unified.Resource) *serviceEnv {
 			}
 			return env.store, nil
 		},
-		Executor:            env.executor,
-		DecisionAuthorizer:  DecisionAuthorizerFunc(func(context.Context, string, unified.ActionAuditRecord, unified.ActionDecision) error { return nil }),
-		ExecutionAuthorizer: ExecutionAuthorizerFunc(func(context.Context, string, unified.ActionAuditRecord, unified.ActionActor) error { return nil }),
+		Executor:                    env.executor,
+		DecisionAuthorizer:          DecisionAuthorizerFunc(func(context.Context, string, unified.ActionAuditRecord, unified.ActionDecision) error { return nil }),
+		ExecutionAuthorizer:         ExecutionAuthorizerFunc(func(context.Context, string, unified.ActionAuditRecord, unified.ActionActor) error { return nil }),
+		AdmissionAvailability:       func(context.Context, string) error { return nil },
+		PolicyExecutionAvailability: func(context.Context, string) error { return nil },
 		OnActionCompleted: func(record unified.ActionAuditRecord) {
 			env.completed = append(env.completed, record)
 		},
@@ -1096,6 +1204,52 @@ func TestPlanPersistsPendingAuditAndLifecycle(t *testing.T) {
 	}
 	if len(events) != 2 {
 		t.Fatalf("replan duplicated lifecycle events: %d", len(events))
+	}
+}
+
+func TestAdmissionAvailabilityBlocksNewTypedPlans(t *testing.T) {
+	env := newServiceEnv(t, testResource(time.Now().UTC(), unified.ApprovalAdmin))
+	denied := errors.New("fork governed-actions capability is disabled")
+	env.service.AdmissionAvailability = func(context.Context, string) error { return denied }
+	if _, err := env.service.Plan(context.Background(), "default", restartRequest(), testActionActor("requester", "default")); !errors.Is(err, denied) {
+		t.Fatalf("Plan error = %v, want capability denial", err)
+	}
+	if audits, err := env.store.GetPendingActionAudits(10); err != nil || len(audits) != 0 {
+		t.Fatalf("pending audits after denied plan = %d, err = %v; want no action record", len(audits), err)
+	}
+	if calls := env.executor.calls; calls != 0 {
+		t.Fatalf("executor calls after denied plan = %d, want 0", calls)
+	}
+}
+
+func TestMissingAdmissionAvailabilityFailsClosed(t *testing.T) {
+	env := newServiceEnv(t, testResource(time.Now().UTC(), unified.ApprovalAdmin))
+	env.service.AdmissionAvailability = nil
+	if _, err := env.service.Plan(context.Background(), "default", restartRequest(), testActionActor("requester", "default")); !errors.Is(err, ErrAdmissionAvailabilityUnavailable) {
+		t.Fatalf("Plan without admission resolver error = %v, want fail-closed error", err)
+	}
+	if calls := env.executor.calls; calls != 0 {
+		t.Fatalf("executor calls after missing resolver = %d, want 0", calls)
+	}
+}
+
+func TestDisabledAdmissionStillAllowsPendingActionRejection(t *testing.T) {
+	env := newServiceEnv(t, testResource(time.Now().UTC(), unified.ApprovalAdmin))
+	plan, err := env.service.Plan(context.Background(), "default", restartRequest(), testActionActor("requester", "default"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	denied := errors.New("fork governed-actions capability is disabled")
+	env.service.AdmissionAvailability = func(context.Context, string) error { return denied }
+	decision := testActionDecision(t, env.service, "default", plan.ActionID, unified.ActionApprovalRecord{
+		Actor: "operator", Outcome: unified.OutcomeRejected, Reason: "no longer needed",
+	})
+	updated, err := env.service.Decide(context.Background(), "default", plan.ActionID, decision)
+	if err != nil {
+		t.Fatalf("reject pending plan while disabled: %v", err)
+	}
+	if updated.State != unified.ActionStateRejected || env.executor.calls != 0 {
+		t.Fatalf("updated state=%q executor calls=%d", updated.State, env.executor.calls)
 	}
 }
 

@@ -53,6 +53,7 @@ import {
 } from '@/stores/license';
 import { aiAvailabilityStore } from '@/stores/aiAvailability';
 import { loadCommercialPosture } from '@/stores/licenseCommercial';
+import { loadForkCapabilities, resetForkCapabilities } from '@/stores/forkCapabilities';
 import {
   presentationPolicyHidesOrganizationSurfaces,
   presentationPolicyHidesUpgradePrompts,
@@ -361,6 +362,7 @@ export const useAppRuntimeState = () => {
     });
 
     if (summaryResponse.status === 401) {
+      resetForkCapabilities();
       setNeedsAuth(true);
       return false;
     }
@@ -374,6 +376,7 @@ export const useAppRuntimeState = () => {
     }
 
     setNeedsAuth(false);
+    void loadForkCapabilities(true);
     await loadOrganizations();
     setWsStore(acquireWsStore());
     setBackendHealthy(true);
@@ -408,6 +411,7 @@ export const useAppRuntimeState = () => {
     setActiveOrgID(orgID);
     if (changed) {
       void aiAvailabilityStore.refreshEnabledFromServer();
+      void loadForkCapabilities(true);
     }
   };
 
@@ -658,6 +662,7 @@ export const useAppRuntimeState = () => {
 
     const handleWebSocketReconnected = () => {
       logger.info('WebSocket reconnected, refreshing alert configuration');
+      void loadForkCapabilities(true);
       void alertsActivation.refreshConfig();
       void alertsActivation.refreshActiveAlerts();
       // The estate can gain or lose a platform while the socket is down.
@@ -667,6 +672,7 @@ export const useAppRuntimeState = () => {
     const handleOrganizationsChanged = () => {
       logger.info('Organization membership changed, refreshing organization list');
       void loadOrganizations();
+      void loadForkCapabilities(true);
     };
 
     eventBus.on('theme_changed', handleRemoteThemeChange);
@@ -683,6 +689,7 @@ export const useAppRuntimeState = () => {
 
   onMount(async () => {
     logger.debug('[App] Starting auth check...');
+    resetForkCapabilities();
     const justLoggedOut = localStorage.getItem('just_logged_out');
 
     try {
@@ -699,6 +706,7 @@ export const useAppRuntimeState = () => {
           logger.warn('[App] Failed to clear stored auth after 401', clearError);
         }
         aiAvailabilityStore.setEnabled(false);
+        resetForkCapabilities();
         setHasAuth(false);
         setNeedsAuth(true);
         setIsLoading(false);
@@ -800,6 +808,7 @@ export const useAppRuntimeState = () => {
         logger.warn('[App] Failed to clear stored auth after auth check error', clearError);
       }
       aiAvailabilityStore.setEnabled(false);
+      resetForkCapabilities();
       setHasAuth(false);
       setNeedsAuth(true);
     } finally {
@@ -808,10 +817,12 @@ export const useAppRuntimeState = () => {
   });
 
   const handleLogin = () => {
+    resetForkCapabilities();
     window.location.reload();
   };
 
   const handleLogout = async () => {
+    resetForkCapabilities();
     const proxyAuth = proxyAuthInfo();
     if (proxyAuth?.logoutURL) {
       window.location.href = proxyAuth.logoutURL;

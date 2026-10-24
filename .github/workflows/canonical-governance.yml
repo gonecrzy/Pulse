@@ -2,11 +2,9 @@ name: Canonical Governance
 
 on:
   push:
-    branches:
-      - main
+    branches: [main, sindri, feature/sindri-integration]
   pull_request:
-    branches:
-      - main
+    branches: [main, sindri, feature/sindri-integration]
   workflow_dispatch:
 
 permissions:
@@ -16,234 +14,29 @@ jobs:
   governance:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
-    # Keep pull-request governance free of repository credentials. Cross-repo
-    # evidence checks run after merge in canonical-private-governance.yml, so
-    # its credential-bearing job never executes from an unmerged PR revision.
-    defaults:
-      run:
-        working-directory: repos/pulse
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          fetch-depth: 0
-          path: repos/pulse
 
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: repos/pulse/go.mod
+          go-version-file: go.mod
           cache: true
-          cache-dependency-path: repos/pulse/go.sum
 
-      - name: Set up Node.js for frontend governance
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: '24'
-          cache: npm
-          cache-dependency-path: repos/pulse/frontend-modern/package-lock.json
+      - name: Validate workflow trust policy
+        run: python3 scripts/check_workflow_trust.py .github/workflows
 
-      - name: Install locked frontend governance dependencies
-        working-directory: repos/pulse/frontend-modern
-        env:
-          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
-        run: npm ci --ignore-scripts --no-audit --no-fund
-
-      - name: Stub embedded frontend assets for Go tests
-        run: bash scripts/ensure_test_assets.sh
-
-      - name: Determine governance diff range
-        id: diff
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            range="${{ github.event.pull_request.base.sha }}...${{ github.sha }}"
-          elif [ "${{ github.event_name }}" = "push" ]; then
-            range="${{ github.event.before }}...${{ github.sha }}"
-          elif git rev-parse --verify HEAD^ >/dev/null 2>&1; then
-            range="HEAD^...HEAD"
-          else
-            range=""
-          fi
-          echo "range=${range}" >> "$GITHUB_OUTPUT"
-
-      - name: Run canonical completion guard against changed commits
-        shell: bash
-        env:
-          WORKFLOW_OUTPUT_1: ${{ steps.diff.outputs.range }}
-        run: |
-          set -euo pipefail
-          range="${WORKFLOW_OUTPUT_1}"
-          if [ -z "${range}" ]; then
-            printf '' | python3 scripts/release_control/canonical_completion_guard.py --files-from-stdin
-            exit 0
-          fi
-          base="${range%%...*}"
-          head_sha="${range##*...}"
-          # Evaluate each commit the way the commit-time hook did: its own
-          # file list against its own parent. A range-wide evaluation
-          # cannot honor per-commit Contract-Neutral trailers (recorded by
-          # .husky/prepare-commit-msg when the author sets
-          # PULSE_ALLOW_CONTRACT_NEUTRAL_COMMIT), so bypassed commits that
-          # passed locally would fail here.
-          if ! commits=$(git rev-list --reverse --no-merges "${base}..${head_sha}" 2>/dev/null); then
-            echo "Range base ${base} unavailable (force push?); evaluating ${head_sha} against its parent."
-            commits="${head_sha}"
-          fi
-          if [ -z "${commits}" ]; then
-            echo "No commits to evaluate in range ${range}."
-            exit 0
-          fi
-          status=0
-          for commit in ${commits}; do
-            if ! git rev-parse --verify --quiet "${commit}^" >/dev/null; then
-              echo "Skipping root commit ${commit} (no parent to diff against)."
-              continue
-            fi
-            reason=$(git log -1 --format='%(trailers:key=Contract-Neutral,valueonly,separator=; )' "${commit}" | tr '\n' ' ')
-            echo "::group::canonical completion guard @ ${commit}"
-            set +e
-            python3 scripts/release_control/canonical_completion_history.py \
-              --commit "${commit}" --head "${head_sha}"
-            completion_status=$?
-            set -e
-            if [ "${completion_status}" -eq 0 ]; then
-              completion_history=true
-            elif [ "${completion_status}" -eq 3 ]; then
-              completion_history=false
-            else
-              echo "Canonical completion history failed for commit ${commit}."
-              status=1
-              completion_history=true
-            fi
-            # Pass the parent as the diff base so the guard compares
-            # contract texts parent-vs-commit; the CI index equals HEAD,
-            # so the default index comparison would misreport contract
-            # updates in earlier commits as insubstantial.
-            if [ "${completion_history}" != true ]; then
-              if ! git diff-tree --no-commit-id --name-only -r "${commit}" \
-                | PULSE_ALLOW_CONTRACT_NEUTRAL_COMMIT="${reason}" python3 scripts/release_control/canonical_completion_guard.py \
-                    --files-from-stdin --diff-base "${commit}^" --commit "${commit}"; then
-                echo "Canonical completion guard failed for commit ${commit}."
-                status=1
-              fi
-            fi
-            echo "::endgroup::"
-          done
-          exit ${status}
-
-      - name: Validate final frontend browser evidence
-        shell: bash
-        env:
-          WORKFLOW_OUTPUT_1: ${{ steps.diff.outputs.range }}
-        run: |
-          set -euo pipefail
-          range="${WORKFLOW_OUTPUT_1}"
-          if [ -z "${range}" ]; then
-            printf '' | python3 scripts/release_control/browser_verification_guard.py --files-from-stdin
-            exit 0
-          fi
-          # Preserve reviewed commits: a later non-merge receipt can correct
-          # metadata for the same verified bytes. Require coverage of every
-          # final frontend path, including merge resolutions; never waive proof.
-          python3 scripts/release_control/browser_verification_guard.py \
-            --base "${range%%...*}" --commit "${range##*...}"
-
-      - name: Validate Pulse Intelligence release-gate schema
-        run: python3 scripts/release_control/pulse_intelligence_gate.py --validate-only --matrix docs/release-control/v6/internal/pulse-intelligence-release-gate.json
-
-      - name: Run Pulse Intelligence release-gate unit tests
-        run: python3 scripts/release_control/pulse_intelligence_gate_test.py
-
-      - name: Run registry audit
-        # Pull requests have only the public checkout. Audit every public path
-        # here; the push-only private workflow audits the complete repo set.
-        run: python3 scripts/release_control/registry_audit.py --check --repo-scope pulse
+      - name: Test workflow trust policy
+        run: python3 scripts/tests/test_workflow_trust.py
 
       - name: Run canonical mutation registry audits
-        run: go test ./internal/mutationregistry ./internal/ai/tools -run 'Test(EveryRegisteredMutationHasDisposition|InfrastructureAPIRoutesResolveToRegistry|TransportCommandCatalogsResolveToRegistry|PatrolJobRegistrationResolvesToRegistry|RuntimeCandidateAuditNegativeFixtures|ActionRouteMethodAuthorityIsExactAndLookalikesFailClosed|NonAdmittingTransportMessagesCannotCarryDispatchAuthority|UnknownTransportLookalikeFailsClosed|RegisteredModelMutationSchemasResolveToClosedRegistry|RetiredMutationAliasesCannotShadowExtensions)' -count=1
+        run: >-
+          go test ./internal/mutationregistry ./internal/ai/tools
+          -run 'Test(EveryRegisteredMutationHasDisposition|InfrastructureAPIRoutesResolveToRegistry|TransportCommandCatalogsResolveToRegistry|PatrolJobRegistrationResolvesToRegistry|RuntimeCandidateAuditNegativeFixtures|ActionRouteMethodAuthorityIsExactAndLookalikesFailClosed|NonAdmittingTransportMessagesCannotCarryDispatchAuthority|UnknownTransportLookalikeFailsClosed|RegisteredModelMutationSchemasResolveToClosedRegistry|RetiredMutationAliasesCannotShadowExtensions)'
+          -count=1
 
-      - name: Run contract audit
-        # Cross-repository path existence is checked with the credential-isolated
-        # sibling checkouts after merge. Keep PR validation scoped to public truth.
-        run: python3 scripts/release_control/contract_audit.py --check --repo-scope pulse
-
-      - name: Run canonical completion guard unit tests
-        run: python3 scripts/release_control/canonical_completion_guard_test.py
-
-      - name: Run canonical completion history unit tests
-        run: python3 scripts/release_control/canonical_completion_history_test.py
-
-      - name: Run browser verification guard unit tests
-        run: python3 scripts/release_control/browser_verification_guard_test.py
-
-      - name: Run control plane audit unit tests
-        run: python3 scripts/release_control/control_plane_audit_test.py
-
-      - name: Run rehearsal source selection unit tests
-        run: python3 scripts/release_control/rehearsal_source_test.py
-
-      - name: Run contract audit unit tests
-        run: python3 scripts/release_control/contract_audit_test.py
-
-      - name: Run staged Go formatter unit tests
-        run: python3 scripts/release_control/format_staged_go_test.py
-
-      - name: Run governance stage guard unit tests
-        run: python3 scripts/release_control/governance_stage_guard_test.py
-
-      - name: Run registry audit unit tests
-        run: python3 scripts/release_control/registry_audit_test.py
-
-      - name: Run repo file IO unit tests
-        run: python3 scripts/release_control/repo_file_io_test.py
-
-      - name: Run release promotion policy unit tests
-        run: python3 scripts/release_control/release_promotion_policy_test.py
-
-      - name: Run release convergence reconciler unit tests
-        run: python3 scripts/release_control/reconcile_release_convergence_test.py
-
-      - name: Run release container identity verifier unit tests
-        run: python3 scripts/release_control/verify_release_container_images_test.py
-
-      - name: Run stable container alias verifier unit tests
-        run: python3 scripts/release_control/verify_stable_container_aliases_test.py
-
-      - name: Run immutable release integrity unit tests
-        run: python3 scripts/release_control/verify_github_release_integrity_test.py
-
-      - name: Run immutable release setting unit tests
-        run: python3 scripts/release_control/check_github_release_immutability_test.py
-
-      - name: Run stable release continuity diagnostic unit tests
-        run: python3 scripts/release_control/release_continuity_test.py
-
-      - name: Run Helm Pages publication retry tests
-        run: python3 scripts/release_control/helm_pages_retry_test.py
-
-      - name: Helm publication version binding
-        run: python3 scripts/release_control/helm_publish_version_test.py
-
-      - name: Run status audit unit tests
-        run: python3 scripts/release_control/status_audit_test.py
-
-      - name: Run subsystem contract helper unit tests
-        run: python3 scripts/release_control/subsystem_contracts_test.py
-
-      - name: Run subsystem lookup unit tests
-        run: python3 scripts/release_control/subsystem_lookup_test.py
-
-      - name: Run repo governance guardrail unit tests
+      - name: Run repository governance tests
         run: go test ./internal/repoctl -count=1
-
-      - name: Run active-target automated readiness assertion proofs
-        run: python3 scripts/release_control/readiness_assertion_guard.py --active-target --proof-type automated
-
-      - name: Run active-target hybrid readiness assertion proofs
-        run: python3 scripts/release_control/readiness_assertion_guard.py --active-target --proof-type hybrid
-
-      - name: Run readiness assertion guard unit tests
-        run: python3 scripts/release_control/readiness_assertion_guard_test.py

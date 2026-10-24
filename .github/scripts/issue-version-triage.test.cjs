@@ -1482,22 +1482,9 @@ test("the actual label consumer keeps copied declarations from changing report o
 });
 
 
-test("triage workflow prepares and checks the exact parser before minting its write token", () => {
-  const workflow = fs.readFileSync(path.resolve(__dirname, "../workflows/issue-version-label-sync.yml"), "utf8");
-  const install = workflow.indexOf("run: npm ci --ignore-scripts --no-audit --no-fund --prefix .github/scripts");
-  const check = workflow.indexOf("run: npm run test:triage --prefix .github/scripts");
-  const credential = workflow.indexOf("- name: Mint triage bot token");
-  assert.ok(install >= 0 && check > install && credential > check);
-  assert.match(workflow, /node-version: '24'/);
-  assert.match(workflow, /actions\/setup-node@[0-9a-f]{40}/);
-  assert.match(workflow, /persist-credentials: false/);
-  for (const file of ["package.json", "package-lock.json", "issue-version-triage.test.cjs", "triage-comment-policy.test.cjs"]) {
-    assert.ok(workflow.includes(`.github/scripts/${file}`), file);
-  }
-  assert.ok(workflow.includes("docs/ISSUE_TRIAGE.md"));
-  assert.ok(workflow.includes(".github/ISSUE_TEMPLATE"));
-  assert.ok(workflow.includes(".github/workflows"));
-  assert.doesNotMatch(workflow, /npm install|--ignore-scripts=false|\$\{\{ github\.event\.issue\.body/);
+test("the personal fork does not install upstream issue-label automation", () => {
+  const workflow = path.resolve(__dirname, "../workflows/issue-version-label-sync.yml");
+  assert.equal(fs.existsSync(workflow), false);
 });
 
 test("the standalone triage graph reuses the existing exact parser without transitive or lifecycle additions", () => {

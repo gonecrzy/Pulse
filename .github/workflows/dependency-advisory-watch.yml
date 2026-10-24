@@ -1,18 +1,10 @@
 name: Dependency Advisory Watch
 
-# A new npm advisory against an unchanged lockfile used to fail the required
-# "Audit complete frontend dependency graph" step in build-and-test.yml on
-# every pull request to that branch. On 30 Sep-1 Oct 2026 two advisories did
-# exactly that to main, release/v6.4 and release/v6.5 at once, and nothing
-# owned the fix. Since 3 Oct 2026 that step only warns for a pull request that
-# leaves the lockfile alone, so this watch is where such an advisory fails: it
-# runs the same audit daily against main with
-# NPM_AUDIT_REQUIRE_RESULT=true, fails on any finding, and names the branch,
-# the advisories and the fix in the step summary. Releases have come only
-# from main since 4 October 2026; retained release branches are not delivery
-# inputs and must not generate backport instructions. The audit reads only
-# main's frontend-modern/package.json and package-lock.json as data, never
-# installing or executing fetched code.
+# A new npm advisory against an unchanged lockfile can outlive an individual
+# pull request. This scheduled check audits only the current default branch's
+# frontend manifest and lockfile, reports new advisories, and never installs or
+# executes code fetched from the audited branch. It uses no upstream releases,
+# release branches, or private repository credentials.
 on:
   schedule:
     - cron: '17 5 * * *'
@@ -27,7 +19,7 @@ concurrency:
 
 jobs:
   audit:
-    name: Audit frontend dependencies (main)
+    name: Audit frontend dependencies (default branch)
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -36,22 +28,24 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Read main's lockfile inputs
+      - name: Read default branch lockfile inputs
         env:
           AUDITED: ${{ runner.temp }}/audited
+          AUDITED_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           set -euo pipefail
           mkdir -p "${AUDITED}"
-          git fetch --no-tags --depth=1 origin '+refs/heads/main:refs/remotes/audited/head'
-          printf 'AUDITED_MAIN_SHA=%s\n' "$(git rev-parse refs/remotes/audited/head)"
+          git fetch --no-tags --depth=1 origin "+refs/heads/${AUDITED_BRANCH}:refs/remotes/audited/head"
+          printf 'AUDITED_BRANCH=%s\n' "${AUDITED_BRANCH}"
+          printf 'AUDITED_DEFAULT_SHA=%s\n' "$(git rev-parse refs/remotes/audited/head)"
           for file in package.json package-lock.json; do
             git show "refs/remotes/audited/head:frontend-modern/${file}" > "${AUDITED}/${file}"
           done
 
       # Same Node.js and audit runner as the required build-and-test Frontend
       # job. npm audit reads the lockfile, so no install is needed and no
-      # package from main is fetched or run. The runner always comes from
-      # this workflow's own commit, never the fetched main source.
+      # package from the audited branch is fetched or run. The runner always
+      # comes from this workflow's own commit, never the fetched branch source.
       - name: Set up Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
@@ -72,7 +66,7 @@ jobs:
       - name: Report advisories and fix
         if: ${{ !cancelled() }}
         env:
-          BRANCH: main
+          BRANCH: ${{ github.event.repository.default_branch }}
           AUDIT_OUTCOME: ${{ steps.audit.outcome }}
         run: |
           python3 scripts/dependency_advisory_watch.py summary \

@@ -1,6 +1,7 @@
 import { Accessor, Component, Show } from 'solid-js';
 import type { SecurityStatus as SecurityStatusInfo } from '@/types/config';
 import { GeneralSettingsPanel, type GeneralSettingsPanelProps } from './GeneralSettingsPanel';
+import { ForkCapabilitiesPanel } from './ForkCapabilitiesPanel';
 import type { NetworkSettingsPanelProps } from './networkSettingsModel';
 import type { RecoverySettingsPanelProps } from './RecoverySettingsPanel';
 import type { UpdatesSettingsPanelProps } from './UpdatesSettingsPanel';
@@ -78,6 +79,11 @@ export function useSettingsSystemPanels(
       </Show>
       <Show when={params.initialLoadComplete()}>
         <GeneralSettingsPanel {...systemGeneralPanelProps()} />
+        <ForkCapabilitiesPanel
+          canManage={() =>
+            params.securityStatus()?.settingsCapabilities?.systemSettingsWrite === true
+          }
+        />
       </Show>
     </>
   );

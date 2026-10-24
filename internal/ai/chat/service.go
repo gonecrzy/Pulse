@@ -107,25 +107,26 @@ type Config struct {
 type Service struct {
 	mu sync.RWMutex
 
-	cfg                     *config.AIConfig
-	dataDir                 string
-	stateProvider           StateProvider
-	readState               unifiedresources.ReadState
-	agentServer             AgentServer
-	executor                *tools.PulseToolExecutor
-	unifiedResourceProvider tools.UnifiedResourceProvider
-	actionAuditStore        unifiedresources.ResourceStore
-	sessions                *SessionStore
-	agenticLoop             *AgenticLoop
-	provider                providers.StreamingProvider
-	providerFactory         func(modelStr string) (providers.StreamingProvider, error)
-	patrolProviderFactory   func(modelStr string) (providers.StreamingProvider, error)
-	started                 bool
-	autonomousMode          bool
-	contextPrefetcher       *ContextPrefetcher
-	budgetChecker           func() error // Optional mid-run budget enforcement
-	orgID                   string
-	controlLevelResolver    func(*config.AIConfig) string
+	cfg                           *config.AIConfig
+	dataDir                       string
+	stateProvider                 StateProvider
+	readState                     unifiedresources.ReadState
+	agentServer                   AgentServer
+	executor                      *tools.PulseToolExecutor
+	unifiedResourceProvider       tools.UnifiedResourceProvider
+	actionAuditStore              unifiedresources.ResourceStore
+	sessions                      *SessionStore
+	agenticLoop                   *AgenticLoop
+	provider                      providers.StreamingProvider
+	providerFactory               func(modelStr string) (providers.StreamingProvider, error)
+	patrolProviderFactory         func(modelStr string) (providers.StreamingProvider, error)
+	started                       bool
+	autonomousMode                bool
+	contextPrefetcher             *ContextPrefetcher
+	budgetChecker                 func() error // Optional mid-run budget enforcement
+	investigationAdmissionChecker func(context.Context) error
+	orgID                         string
+	controlLevelResolver          func(*config.AIConfig) string
 
 	// costStore receives a cost.UsageEvent after each ExecuteStream
 	// turn so user-chat token usage is visible in the operator
@@ -134,6 +135,14 @@ type Service struct {
 
 	activeMu         sync.RWMutex
 	activeExecutions map[string]map[*AgenticLoop]struct{}
+}
+
+// SetInvestigationAdmissionChecker installs the backend capability gate for
+// non-HTTP investigation runs. Missing admission wiring fails closed.
+func (s *Service) SetInvestigationAdmissionChecker(checker func(context.Context) error) {
+	s.mu.Lock()
+	s.investigationAdmissionChecker = checker
+	s.mu.Unlock()
 }
 
 // SetPatrolProviderFactory installs a Patrol-only provider factory override.

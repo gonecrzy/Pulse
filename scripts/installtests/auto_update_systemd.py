@@ -46,7 +46,7 @@ def installer_definitions(source):
 def hosted_admission(env, uid, source):
     if (uid != 0 or env.get("GITHUB_ACTIONS") != "true"
             or env.get("RUNNER_ENVIRONMENT") != "github-hosted"
-            or env.get("GITHUB_REPOSITORY") != "rcourtman/Pulse"
+            or env.get("GITHUB_REPOSITORY") != "gonecrzy/Pulse"
             or not re.fullmatch(r"[0-9a-f]{40}", source)
             or any(Path(p).exists() for p in ("/.dockerenv", "/opt/pulse", "/etc/pulse"))):
         raise ValueError("native updater proof requires a fresh public hosted VM")

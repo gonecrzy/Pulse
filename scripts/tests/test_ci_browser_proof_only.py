@@ -168,11 +168,11 @@ class GitTreeScopeTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         return dict(line.split("=", 1) for line in output.read_text().splitlines())
 
-    def test_actual_build_classifier_omits_only_receipt_runtime_checks(self):
+    def test_build_classifier_keeps_application_checks_for_receipt_changes(self):
         self.write(RECEIPT, "{}\n")
         proof = self.commit()
         self.assertEqual(self.classify(self.base, proof), {
-            "code": "false", "frontend_deps": "false", "go_compile": "false",
+            "code": "true", "frontend_deps": "false", "go_compile": "false",
             "triage_helper": "false",
         })
         self.write("frontend-modern/package-lock.json", "{}\n")
@@ -199,9 +199,8 @@ class GitTreeScopeTest(unittest.TestCase):
             ".github/scripts/triage-comment-policy.test.cjs",
             ".github/scripts/package.json", ".github/scripts/package-lock.json",
             ".github/ISSUE_TEMPLATE/bug_report.yml", ".github/ISSUE_TEMPLATE/config.yml",
-            ".github/workflows/issue-version-label-sync.yml",
-            ".github/workflows/build-and-test.yml", ".github/workflows/policy-consumer.yaml",
-            "docs/ISSUE_TRIAGE.md", "scripts/tests/test_ci_browser_proof_only.py",
+            ".github/workflows/build-and-test.yml",
+            "docs/ISSUE_TRIAGE.md",
         ):
             with self.subTest(path=path):
                 before = self.git("rev-parse", "HEAD")
@@ -269,10 +268,10 @@ class WorkflowScopeTest(unittest.TestCase):
                           "workflow_call", "self-hosted"):
             self.assertNotIn(forbidden, job)
         self.assertLess(job.index("npm ci "), job.index("npm run test:triage"))
-        # Hosted test admission adds coverage; it never replaces the separate
-        # issue-event tests that must still precede credential acquisition.
-        live = (ROOT / ".github/workflows/issue-version-label-sync.yml").read_text()
-        self.assertLess(live.index("npm run test:triage"), live.index("Mint triage bot token"))
+        # The fork keeps local metadata policy tests and installs no issue-event
+        # workflow or upstream GitHub App credentials.
+        self.assertFalse((ROOT / ".github/workflows/issue-version-label-sync.yml").exists())
+        self.assertNotIn("PULSE_TRIAGE_APP_PRIVATE_KEY", BUILD.read_text())
 
     def test_actual_triage_recipes_preserve_install_and_test_failures(self):
         job = job_block(BUILD.read_text(), "triage-helper")
@@ -322,12 +321,11 @@ class WorkflowScopeTest(unittest.TestCase):
         self.assertIn("PROOF_ONLY: ${{ needs.scope.outputs.proof_only }}", verdict)
         self.assertNotIn("${{ needs.scope.outputs.proof_only }}", step_script(verdict, "Check E2E results"))
         build = BUILD.read_text()
-        self.assertIn("python3 scripts/tests/test_ci_browser_proof_only.py", job_block(build, "changes"))
+        self.assertNotIn("ci_browser_proof_only", build)
         self.assertNotIn("if:", job_block(build, "secret-scan"))
         governance = (ROOT / ".github/workflows/canonical-governance.yml").read_text()
-        self.assertIn("--base", governance)
-        self.assertIn("scripts/release_control/browser_verification_guard.py", governance)
-        self.assertNotIn("ci_browser_proof_only", governance)
+        self.assertIn("Validate workflow trust policy", governance)
+        self.assertNotIn("browser_verification_guard.py", governance)
 
     def verdict(self, proof_only, results, scope="success"):
         script = step_script(job_block(E2E.read_text(), "e2e-verdict"), "Check E2E results")

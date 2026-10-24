@@ -32,6 +32,17 @@ func (r *Router) registerMonitoringRoutes(
 }
 
 func (r *Router) registerConfigSystemRoutes(updateHandlers *UpdateHandlers) {
+	r.mux.HandleFunc("/api/fork/capabilities", RequireAuth(r.config, r.forkFeatureHandlers.HandleCapabilities))
+	r.mux.HandleFunc("/api/fork/profile", func(w http.ResponseWriter, req *http.Request) {
+		switch req.Method {
+		case http.MethodGet:
+			RequireAdmin(r.config, RequireScope(config.ScopeSettingsRead, r.forkFeatureHandlers.HandleProfile))(w, req)
+		case http.MethodPut:
+			RequireAdmin(r.config, RequireScope(config.ScopeSettingsWrite, r.forkFeatureHandlers.HandleProfile))(w, req)
+		default:
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
 	wrapLegacyHostAlias := func(aliasPath string, next http.HandlerFunc) http.HandlerFunc {
 		return func(w http.ResponseWriter, req *http.Request) {
 			noteLegacyHostAliasUsage(aliasPath)

@@ -23022,6 +23022,7 @@ func TestContract_AgentSurfaceErrorCodesMatchManifestDeclarations(t *testing.T) 
 		"AgentErrCodePatrolUnavailable":          agentcapabilities.AgentErrCodePatrolUnavailable,
 		"AgentErrCodeInvalidActionRequest":       agentcapabilities.AgentErrCodeInvalidActionRequest,
 		"AgentErrCodeActionRequestConflict":      agentcapabilities.AgentErrCodeActionRequestConflict,
+		"AgentErrCodeForkCapabilityUnavailable":  agentcapabilities.AgentErrCodeForkCapabilityUnavailable,
 		"AgentErrCodeCapabilityNotFound":         agentcapabilities.AgentErrCodeCapabilityNotFound,
 		"AgentErrCodeActionExecutionUnavailable": agentcapabilities.AgentErrCodeActionExecutionUnavailable,
 		"AgentErrCodeActionActorUnavailable":     agentcapabilities.AgentErrCodeActionActorUnavailable,

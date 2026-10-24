@@ -17,6 +17,8 @@ on:
   push:
     branches:
       - main
+      - sindri
+      - feature/sindri-integration
     paths:
       - "*.md"
       - "docs/**"

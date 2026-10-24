@@ -1150,6 +1150,15 @@ func TestSecureRuntimeReceiptCompletionEnclosesFinalTranscriptEvent(t *testing.T
 }
 
 func TestSecureRuntimeSourceManifestCoversTransitiveProviders(t *testing.T) {
+	for _, workflow := range []string{
+		"build-release-candidate.yml",
+		"compile-release-payload.yml",
+		"create-release.yml",
+	} {
+		if _, err := os.Stat(repoFile(".github", "workflows", workflow)); os.IsNotExist(err) {
+			t.Skip("upstream release workflow contracts are not installed in the personal fork")
+		}
+	}
 	_, hashes := secureRuntimeLoadSourceBoundary(t, runtime.GOARCH, 7)
 	for _, required := range []string{
 		"internal/agenthelper/providers.go",

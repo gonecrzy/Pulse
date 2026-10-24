@@ -110,6 +110,8 @@ export interface SecurityStatusSettingsCapabilities {
    * the other's tabs.
    */
   systemSettingsRead: boolean;
+  /** Admin settings write access for instance-wide profile controls. */
+  systemSettingsWrite?: boolean;
   /**
    * The RequireAdmin + ai:execute gate on POST /api/ai/patrol/run, so alert
    * Investigate is only offered to sessions the run route accepts.

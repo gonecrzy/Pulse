@@ -43,6 +43,9 @@ type securityStatusSettingsCapabilities struct {
 	// General stays ungated - theme, language, and unit preferences there are
 	// user-scoped, not instance administration.
 	SystemSettingsRead bool `json:"systemSettingsRead"`
+	// SystemSettingsWrite mirrors the RequireAdmin + settings:read +
+	// settings:write contract used by the personal fork profile editor.
+	SystemSettingsWrite bool `json:"systemSettingsWrite"`
 	// PatrolRun answers the RequireAdmin + ai:execute gate on
 	// POST /api/ai/patrol/run from this snapshot (securityStatusCanRunPatrol),
 	// so a surface that starts a Patrol run (alert Investigate) is offered to
@@ -313,6 +316,7 @@ func (r *Router) securityStatusSettingsCapabilitiesFromSnapshot(snapshot securit
 		SystemLogsRead:        canReadSettings,
 		ReportingRead:         canReadReporting,
 		SystemSettingsRead:    canReadSettings,
+		SystemSettingsWrite:   canAdminSettings,
 		PatrolRun:             r.securityStatusCanRunPatrol(snapshot),
 		APIAccessRead:         r.canAccessPermissionSurface(snapshot, internalauth.ActionAdmin, internalauth.ResourceUsers, config.ScopeSettingsRead),
 		APIAccessWrite:        r.canAccessPermissionSurface(snapshot, internalauth.ActionAdmin, internalauth.ResourceUsers, config.ScopeSettingsWrite),

@@ -184,6 +184,13 @@ type backupRecord struct {
 	lastTime     time.Time
 }
 
+// A listed subject without a usable success date is not evidence of recovery.
+// Future dates already cannot supply a backup age; they must not displace a
+// valid observation from another provider for the same subject either.
+func observedBackupTime(at, now time.Time) bool {
+	return !at.IsZero() && !at.After(now)
+}
+
 // BackupInventoryScope carries monitoring-owned inventory readiness into backup
 // alert evaluation. It keeps orphan detection from racing ahead of Proxmox
 // guest/template discovery while preserving the direct CheckBackups API for
@@ -362,16 +369,6 @@ func (m *Manager) CheckSnapshotsForInstance(instanceName string, snapshots []mod
 		if instanceName != "" && snapshot.Instance != "" && snapshot.Instance != instanceName {
 			continue
 		}
-		if snapshot.Time.IsZero() {
-			continue
-		}
-
-		ageHours := now.Sub(snapshot.Time).Hours()
-		if ageHours < 0 {
-			continue
-		}
-		ageDays := ageHours / 24
-
 		const gib = 1024.0 * 1024 * 1024
 		sizeGiB := 0.0
 		if snapshot.SizeBytes > 0 {
@@ -421,6 +418,19 @@ func (m *Manager) CheckSnapshotsForInstance(instanceName string, snapshots []mod
 		if !currentSnapshotCfg.Enabled {
 			continue
 		}
+
+		// The listing still contains this snapshot. An unusable creation time
+		// is not evidence of deletion or recovery: keep the last trusted
+		// occurrence unchanged, without refreshing its evidence or age. Do
+		// this after policy resolution so exclusions and disablement still win.
+		// Proxmox's absent snaptime arrives as Unix epoch, not Go's zero time.
+		if snapshot.Time.IsZero() || snapshot.Time.Unix() <= 0 || snapshot.Time.After(now) {
+			validAlerts[buildCanonicalStateID(resourceID, resourceID+"/snapshot:"+snapshot.ID)] = struct{}{}
+			continue
+		}
+
+		ageHours := now.Sub(snapshot.Time).Hours()
+		ageDays := ageHours / 24
 
 		var ageLevel AlertLevel
 		var ageThreshold int
@@ -665,6 +675,7 @@ func (m *Manager) CheckBackupsWithInventory(
 		return
 	}
 
+	now := time.Now()
 	records := make(map[string]*backupRecord)
 
 	updateRecord := func(key string, candidate backupRecord) {
@@ -672,7 +683,8 @@ func (m *Manager) CheckBackupsWithInventory(
 			return
 		}
 		if existing, ok := records[key]; ok {
-			if candidate.lastTime.After(existing.lastTime) {
+			if observedBackupTime(candidate.lastTime, now) &&
+				(!observedBackupTime(existing.lastTime, now) || candidate.lastTime.After(existing.lastTime)) {
 				*existing = candidate
 			}
 			return
@@ -681,14 +693,12 @@ func (m *Manager) CheckBackupsWithInventory(
 		records[key] = &record
 	}
 
-	now := time.Now()
-
 	for _, rollup := range rollups {
-		if rollup.LastSuccessAt == nil || rollup.LastSuccessAt.IsZero() {
-			continue
+		var lastTime time.Time
+		if rollup.LastSuccessAt != nil {
+			lastTime = rollup.LastSuccessAt.UTC()
 		}
 
-		lastTime := rollup.LastSuccessAt.UTC()
 		providers := append([]recovery.Provider(nil), rollup.Providers...)
 
 		source := "Recovery"
@@ -848,17 +858,6 @@ func (m *Manager) CheckBackupsWithInventory(
 	validAlerts := make(map[string]struct{})
 
 	for key, record := range records {
-		age := now.Sub(record.lastTime)
-		if age < 0 {
-			continue
-		}
-
-		ageDays := age.Hours() / 24
-		if ageDays < 0 {
-			continue
-		}
-		ageDaysRounded := math.Round(ageDays*10) / 10
-
 		// A PBS subject without a guest VMID is a host/config backup
 		// (PBS backup-type "host", keyed by the node name), not a guest
 		// workload. The Backups overview already keeps these out of guest
@@ -917,6 +916,23 @@ func (m *Manager) CheckBackupsWithInventory(
 			continue
 		}
 
+		if !observedBackupTime(record.lastTime, now) {
+			// Preserve only this subject's occurrence and last trusted evidence.
+			// Policy exclusions above still clear normally; disappearance from
+			// the supplied inventory remains authoritative removal below.
+			resourceID := canonicalBackupSubjectResourceID(sanitizeAlertKey(key), *record)
+			specID := resourceID + "-backup-age"
+			validAlerts[buildCanonicalStateID(resourceID, specID)] = struct{}{}
+			m.mu.Lock()
+			for _, state := range m.mirrorStatesNoLock() {
+				state.InterruptDiscreteRun(resourceID, specID)
+			}
+			m.mu.Unlock()
+			continue
+		}
+
+		ageDays := now.Sub(record.lastTime).Hours() / 24
+		ageDaysRounded := math.Round(ageDays*10) / 10
 		var threshold int
 		switch {
 		case currentBackupCfg.CriticalDays > 0 && ageDays >= float64(currentBackupCfg.CriticalDays):

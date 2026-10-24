@@ -27,9 +27,15 @@ func configureActionHandlerTestAuthority(h *ResourceHandlers) {
 	)
 }
 
+func allowTestActionAdmission(h *ResourceHandlers) *ResourceHandlers {
+	h.SetActionAdmissionAvailability(func(context.Context, string) error { return nil })
+	h.SetPolicyExecutionAvailability(func(context.Context, string) error { return nil })
+	return h
+}
+
 func newActionTestResourceHandlers(t *testing.T, cfg *config.Config) *ResourceHandlers {
 	t.Helper()
-	h := NewResourceHandlers(cfg)
+	h := allowTestActionAdmission(NewResourceHandlers(cfg))
 	configureActionHandlerTestAuthority(h)
 	return h
 }

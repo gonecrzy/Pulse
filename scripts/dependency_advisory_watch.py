@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Helpers for the daily dependency advisory watch workflow.
 
-`summary` reads the output of `scripts/npm-audit-retry.sh` for main and writes
+`summary` reads the output of `scripts/npm-audit-retry.sh` for the current
+default branch and writes
 the step summary plus one failure annotation naming the advisories and the
-fix. Releases come only from main; retained release branches are not repair
-targets. Registry-sourced text never reaches the annotation: only the fixed
-branch name, validated package names and GHSA identifiers do.
+fix. Registry-sourced text never reaches the annotation: only a validated
+branch name, package names and GHSA identifiers do.
 """
 
 from __future__ import annotations
@@ -19,15 +19,32 @@ from pathlib import Path
 
 GHSA_RE = re.compile(r"GHSA(?:-[23456789cfghjmpqrvwx]{4}){3}")
 PACKAGE_RE = re.compile(r"^(?:@[a-z0-9][a-z0-9._~-]*/)?[a-z0-9][a-z0-9._~-]*$")
+BRANCH_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9._/-]{0,99}$")
 FINDING_PREFIX = "audit finding "
 UNREACHABLE_MARKER = "could not reach the advisory endpoint"
 FIX_STEPS = (
-    "Review the affected graph on main. In frontend-modern run "
+    "Review the affected graph on `{branch}`. In frontend-modern run "
     "`npm audit fix --package-lock-only`, qualify the resulting graph, "
     "then raise the matching floors in "
     "`frontend-modern/src/security/__tests__/dependencySecurity.test.ts` "
-    "and land both on main. A source fix reaches users only in a containing release."
+    "and land both on `{branch}`. Build and qualify an image from the "
+    "resulting commit before deployment."
 )
+
+
+def valid_branch_name(branch: str) -> bool:
+    if (
+        not BRANCH_RE.fullmatch(branch)
+        or branch.endswith(("/", "."))
+        or ".." in branch
+        or "//" in branch
+        or "@{" in branch
+    ):
+        return False
+    return all(
+        part not in {".", ".."} and not part.startswith(".") and not part.endswith(".lock")
+        for part in branch.split("/")
+    )
 
 
 def parse_findings(log: str) -> list[dict]:
@@ -104,16 +121,16 @@ def render(branch: str, outcome: str, log: str) -> tuple[str, str | None]:
             markdown_cell(fix_text))) + " |")
     advisories = ", ".join(sorted(identifiers)) or "see job log"
     body = (header
-            + "The strict daily audit found dependency advisories on main. "
+            + f"The strict daily audit found dependency advisories on `{branch}`. "
             + "Pull requests that change the graph must pass the required "
             + "*Audit complete frontend dependency graph* check; unchanged graphs only warn.\n\n"
             + "\n".join(rows)
-            + "\n\n**Suggested fix.** " + FIX_STEPS + "\n")
+            + "\n\n**Suggested fix.** " + FIX_STEPS.format(branch=branch) + "\n")
     annotation = (f"Frontend dependency advisory on {branch}: {advisories} in "
                   f"{', '.join(sorted(set(packages)))}. The strict daily watch failed. "
-                  "Review and qualify a lockfile advisory floor bump on main: "
+                  f"Review and qualify a lockfile advisory floor bump on {branch}: "
                   "npm audit fix --package-lock-only in frontend-modern, "
-                  "then raise the floors in dependencySecurity.test.ts and land both on main.")
+                  f"then raise the floors in dependencySecurity.test.ts and land both on {branch}.")
     return body, annotation
 
 
@@ -127,7 +144,7 @@ def main(argv: list[str] | None = None) -> int:
     summary.add_argument("--summary-file", required=True, type=Path)
     args = parser.parse_args(argv)
 
-    if args.branch != "main":
+    if not valid_branch_name(args.branch):
         print(f"refusing unexpected branch name {args.branch!r}", file=sys.stderr)
         return 2
     try:

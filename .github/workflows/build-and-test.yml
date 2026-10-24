@@ -4,19 +4,19 @@ on:
   push:
     branches:
       - main
-      - pulse/v6-release
-      - 'release/v*'
+      - sindri
+      - feature/sindri-integration
   pull_request:
     branches:
       - main
-      - pulse/v6-release
-      - 'release/v*'
+      - sindri
+      - feature/sindri-integration
   workflow_dispatch:
 
 permissions:
   contents: read
 
-# Let branch runs finish so busy main and release branches retain verdicts.
+# Let branch runs finish so main, sindri, and the active integration branch retain validation verdicts.
 # A newer PR commit supersedes its previous validation, so do not queue the
 # replacement behind obsolete checks. Keep this aligned with Core E2E.
 concurrency:
@@ -87,9 +87,6 @@ jobs:
       - name: Check shipped docs before dependency work
         run: python3 scripts/check_docs_mirror.py
 
-      - name: Validate browser receipt-only CI admission
-        run: python3 scripts/tests/test_ci_browser_proof_only.py
-
       - name: Classify changed files
         id: filter
         run: |
@@ -107,26 +104,13 @@ jobs:
             echo "triage_helper=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          # Receipts change evidence, not the application. Keep the per-push
-          # secret scan and Canonical Governance (including receipt validation).
-          # The complete tree diff must be receipt-only; mixed source or graph
-          # changes and an unavailable diff never enter this path.
-          if [ "$(python3 scripts/ci_browser_proof_only.py --base "$base" --head "${{ github.sha }}")" = true ]; then
-            echo "Browser receipt-only tree diff; runtime checks are not applicable."
-            echo "code=false" >> "$GITHUB_OUTPUT"
-            echo "frontend_deps=false" >> "$GITHUB_OUTPUT"
-            echo "go_compile=false" >> "$GITHUB_OUTPUT"
-            echo "triage_helper=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
           changed=$(git diff --name-only "$base" "${{ github.sha }}")
           printf 'Changed files:\n%s\n' "$changed"
-          # The issue-event job tests before minting its App token, but that
-          # happens after publication. Test its parser and silent-mutation
-          # policy on the proposed source too, including documentation-only
-          # guidance and every workflow consumed by the policy tests.
+          # Exercise local issue metadata helpers only when their source,
+          # policy inputs, or this test job change. No issue App automation is
+          # installed in the personal fork.
           triage_helper=false
-          if printf '%s\n' "$changed" | grep -E '^\.github/scripts/(issue-version-triage(\.test)?\.cjs|triage-comment-policy\.test\.cjs|package(-lock)?\.json)$|^\.github/ISSUE_TEMPLATE/|^\.github/workflows/|^docs/ISSUE_TRIAGE\.md$|^scripts/tests/test_ci_browser_proof_only\.py$' >/dev/null; then
+          if printf '%s\n' "$changed" | grep -E '^\.github/scripts/(issue-version-triage(\.test)?\.cjs|triage-comment-policy\.test\.cjs|package(-lock)?\.json)$|^\.github/ISSUE_TEMPLATE/|^\.github/workflows/build-and-test\.yml$|^docs/ISSUE_TRIAGE\.md$' >/dev/null; then
             triage_helper=true
           fi
           echo "triage_helper=$triage_helper" >> "$GITHUB_OUTPUT"
@@ -188,50 +172,6 @@ jobs:
 
       - name: Test proposed issue metadata and silent policy
         run: npm run test:triage --prefix .github/scripts
-
-  provider-pair-docker:
-    name: Provider pair Docker acceptance
-    needs: changes
-    # Security backports need a live, exact-branch result before the steward
-    # freezes a release packet. Candidate qualification repeats the same case
-    # against the verified release image after freeze.
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/release/') && needs.changes.outputs.code == 'true'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    permissions:
-      contents: read
-    steps:
-      - name: Checkout exact release-line source
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.sha }}
-          persist-credentials: false
-
-      - name: Verify exact release-line source
-        env:
-          EXPECTED_SOURCE_SHA: ${{ github.sha }}
-        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE_SHA"
-
-      - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      - name: Preload pinned Docker helper image
-        run: docker pull 'alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6'
-
-      - name: Prove provider pair provisioning and cleanup
-        env:
-          PULSE_RUN_PROVIDER_PAIR_DOCKER_INTEGRATION: '1'
-          PULSE_DOCKER_INTEGRATION_IMAGE: alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
-        run: |
-          set -euo pipefail
-          go test -count=1 -timeout 3m ./internal/cloudcp/docker \
-            -run '^TestIntegrationProviderPairNetworkIsolation$' -v \
-            | tee "$RUNNER_TEMP/provider-pair-network-test.log"
-          grep -q '^--- PASS: TestIntegrationProviderPairNetworkIsolation ' \
-            "$RUNNER_TEMP/provider-pair-network-test.log"
 
   frontend:
     name: Frontend
@@ -364,7 +304,7 @@ jobs:
           go build -mod=readonly -p=2 -ldflags='-X main.Version=v0.0.1' -o "$RUNNER_TEMP/pulse-native-before" ./cmd/pulse
           go build -mod=readonly -p=2 -ldflags='-X main.Version=v0.0.2' -o "$RUNNER_TEMP/pulse-native-after" ./cmd/pulse
           sudo env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin LANG=C.UTF-8 \
-            GITHUB_ACTIONS=true RUNNER_ENVIRONMENT=github-hosted GITHUB_REPOSITORY=rcourtman/Pulse \
+            GITHUB_ACTIONS=true RUNNER_ENVIRONMENT=github-hosted GITHUB_REPOSITORY="$GITHUB_REPOSITORY" \
             EXPECTED_SOURCE_SHA="$EXPECTED_SOURCE_SHA" RUNNER_TEMP="$RUNNER_TEMP" \
             python3 scripts/installtests/auto_update_systemd.py \
               --before "$RUNNER_TEMP/pulse-native-before" --after "$RUNNER_TEMP/pulse-native-after" \
@@ -486,7 +426,7 @@ jobs:
       # The internal/api package embeds frontend-modern/dist. Unit tests do
       # not assert on real bundle content, so a stub file satisfies the embed
       # without the ~5 minute frontend build; the real bundle is built and
-      # size-gated by the frontend job, and release artifacts always build it.
+      # size-gated by the frontend job; the Sindri image job builds the full runtime image.
       - name: Provide frontend embed stub
         if: needs.changes.outputs.code == 'true'
         run: |
@@ -700,9 +640,12 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          # test_gitleaks_ignore.py resolves historical fingerprints against
-          # branch- and tag-reachable commits, so it needs full history.
+          # Keep all fork branch and tag history available. The following
+          # setup step fetches only fingerprint commits absent from these refs.
           fetch-depth: 0
+
+      - name: Fetch missing historical gitleaks fingerprint objects
+        run: python3 scripts/fetch_gitleaks_history.py
 
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -806,7 +749,7 @@ jobs:
           sha256sum "$proof_dir/"*.test >> "$proof_dir/metadata.txt"
 
       # This additional evidence job keeps the ordinary hosted envelope and
-      # required source/release gates intact. A fresh VM must first demonstrate
+      # required source checks intact. A fresh VM must first demonstrate
       # idle capacity; the candidate then enforces the existing local 90 ms SLO.
       - name: Verify chart latency on observed idle capacity
         run: |

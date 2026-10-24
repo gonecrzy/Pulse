@@ -25,6 +25,7 @@ def recipe(source):
     assert "if: runner.os == 'Linux'" in step
     assert "timeout-minutes: 5" in step
     assert "EXPECTED_SOURCE_SHA: ${{ github.sha }}" in step
+    assert "EXPECTED_REPOSITORY: ${{ github.repository }}" in step
     assert not re.search(r"^        (continue-on-error|working-directory):", step, re.M)
     assert list(steps).index(STEP) < list(steps).index("Set up Go")
     assert "ubuntu-24.04\n" in job and "ubuntu-24.04-arm\n" in job
@@ -33,10 +34,13 @@ def recipe(source):
     shell = "\n".join(line[10:] for line in shell.splitlines()) + "\n"
     for required in ('set -euo pipefail', 'test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE_SHA"',
                      "git diff --exit-code HEAD", "python3 -m unittest discover -s scripts/tests -p test_agent_removal_systemd.py -v",
-                     "sudo env -i", "GITHUB_ACTIONS=true RUNNER_ENVIRONMENT=github-hosted GITHUB_REPOSITORY=rcourtman/Pulse",
+                     'test "$GITHUB_REPOSITORY" = "$EXPECTED_REPOSITORY"',
+                     "sudo env -i", 'GITHUB_ACTIONS=true RUNNER_ENVIRONMENT=github-hosted GITHUB_REPOSITORY="$GITHUB_REPOSITORY"',
+                     'EXPECTED_REPOSITORY="$EXPECTED_REPOSITORY"',
                      'EXPECTED_SOURCE_SHA="$EXPECTED_SOURCE_SHA" RUNNER_TEMP="$RUNNER_TEMP"',
                      "python3 scripts/installtests/agent_removal_systemd.py", '--receipt "$RUNNER_TEMP/pulse-agent-removal.json"'):
         assert required in shell, required
+    assert "GITHUB_REPOSITORY=rcourtman/Pulse" not in shell
     assert shell.index("git diff") < shell.index("sudo env -i")
     assert "secrets." not in step and "GH_TOKEN" not in shell
     retained = steps["Retain bounded native agent removal receipt"]
@@ -120,14 +124,19 @@ class NativeRemovalControls(unittest.TestCase):
                 with self.assertRaises(ValueError): native.definitions(change)
 
     def test_admission_excludes_worker_self_hosted_nonroot_existing_hosts_and_unbound_source(self):
-        env = dict(GITHUB_ACTIONS="true", RUNNER_ENVIRONMENT="github-hosted", GITHUB_REPOSITORY="rcourtman/Pulse")
+        env = dict(GITHUB_ACTIONS="true", RUNNER_ENVIRONMENT="github-hosted",
+                   GITHUB_REPOSITORY="gonecrzy/Pulse", EXPECTED_REPOSITORY="gonecrzy/Pulse")
         with patch.object(Path, "exists", return_value=False):
             native.admission(env, 0, "a" * 40)
             for changed, uid, sha in ((env, 1000, "a" * 40), ({}, 0, "a" * 40),
                                       ({**env, "RUNNER_ENVIRONMENT": "self-hosted"}, 0, "a" * 40),
-                                      ({**env, "GITHUB_REPOSITORY": "other/repo"}, 0, "a" * 40),
+                                      ({**env, "GITHUB_REPOSITORY": "gonecrzy/Pulse", "EXPECTED_REPOSITORY": "rcourtman/Pulse"}, 0, "a" * 40),
+                                      ({**env, "GITHUB_REPOSITORY": "other/repo", "EXPECTED_REPOSITORY": "other/repo"}, 0, "a" * 40),
+                                      ({**env, "GITHUB_REPOSITORY": "gonecrzy/Pulse;touch", "EXPECTED_REPOSITORY": "gonecrzy/Pulse;touch"}, 0, "a" * 40),
                                       (env, 0, "main")):
                 with self.assertRaises(ValueError): native.admission(changed, uid, sha)
+            upstream = {**env, "GITHUB_REPOSITORY": "rcourtman/Pulse", "EXPECTED_REPOSITORY": "rcourtman/Pulse"}
+            native.admission(upstream, 0, "b" * 40)
         with patch.object(Path, "exists", return_value=True):
             with self.assertRaises(ValueError): native.admission(env, 0, "a" * 40)
 

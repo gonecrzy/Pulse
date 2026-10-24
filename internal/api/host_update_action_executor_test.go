@@ -241,7 +241,7 @@ func TestHostUpdateReconcileLegacyTerminalReceiptDowngradesUnknownHealthWithoutR
 
 func TestPatrolFullModeRunsHostUpdateThroughCanonicalLifecycle(t *testing.T) {
 	now := time.Now().UTC()
-	h := NewResourceHandlers(&config.Config{DataPath: t.TempDir()})
+	h := allowTestActionAdmission(NewResourceHandlers(&config.Config{DataPath: t.TempDir()}))
 	h.SetStateProvider(resourceUnifiedSeedProvider{snapshot: models.StateSnapshot{LastUpdate: now}, resources: []unified.Resource{hostUpdateActionResource(now)}})
 	agents := &fakeHostUpdateAgent{connected: true, result: &agentexec.HostUpdateResultPayload{
 		RequestID: "filled-by-executor", Success: true, MutationStarted: true, ExecutionPhase: agentexec.HostUpdatePhaseComplete,
@@ -322,7 +322,7 @@ func TestHostUpdateCompatibleProposalRefusesLiveAgentDowngradeBeforeExecuting(t 
 	now := time.Now().UTC()
 	resource := hostUpdateActionResource(now)
 	resource.Capabilities[0].MinimumApprovalLevel = unified.ApprovalNone
-	h := NewResourceHandlers(&config.Config{DataPath: t.TempDir()})
+	h := allowTestActionAdmission(NewResourceHandlers(&config.Config{DataPath: t.TempDir()}))
 	h.SetStateProvider(resourceUnifiedSeedProvider{snapshot: models.StateSnapshot{LastUpdate: now}, resources: []unified.Resource{resource}})
 	agents := &fakeHostUpdateAgent{connected: true}
 	h.SetActionExecutor(newRoutedActionExecutor(h, newHostUpdateActionExecutor(h, agents)))
