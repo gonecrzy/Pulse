@@ -70,6 +70,15 @@ digest redeployment, rollback to the previous verified reference, and volume
 retention. It creates a unique project and removes only that disposable
 project and volume on exit.
 
+After a later source revision has also been published and verified, run
+`./verify-version-switch.sh <old-sha-image> <new-sha-image> <old-source-sha> <new-source-sha>`
+to exercise actual image-version switching. It starts the old image, writes a
+marker under `/data`, updates to the new immutable source-SHA image, then rolls
+back to the old image and checks image labels, health, and data continuity. It
+uses and removes only a unique disposable Compose project and volume. This
+qualifies image selection and volume persistence; it does not qualify an
+application database or schema downgrade.
+
 ## Branch layout
 
 Recommended eventual layout: retain `main` as the upstream baseline, use

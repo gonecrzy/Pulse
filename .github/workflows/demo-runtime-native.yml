@@ -7,7 +7,7 @@ on:
       - '.github/scripts/tests/demo_runtime_native.py'
       - '.github/workflows/demo-runtime-native.yml'
   push:
-    branches: [main]
+    branches: [main, sindri]
     paths:
       - '.github/scripts/demo-runtime-transaction.py'
       - '.github/scripts/dispatch-demo-runtime.py'

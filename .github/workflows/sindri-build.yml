@@ -2,12 +2,13 @@ name: Sindri fork image
 run-name: Sindri fork image ${{ github.sha }}
 
 # workflow_dispatch is available after this file exists on the repository's
-# default branch. Until then, only the feature-branch push trigger runs it.
-# Manual runs publish only the selected default-branch revision.
+# default branch. Until then, pushes to the feature and future stable branches
+# trigger it. Manual runs publish only the selected default-branch revision.
 on:
   push:
     branches:
       - feature/sindri-integration
+      - sindri
   workflow_dispatch:
 
 concurrency:
@@ -69,13 +70,27 @@ jobs:
           SOURCE_REVISION: ${{ github.sha }}
         run: |
           {
-            echo "## Fork image build qualification"
-            echo
-            echo "- Source revision: `${SOURCE_REVISION}`"
-            echo "- Target: `runtime` (`linux/amd64`, Go `release` build tag)"
-            echo "- Result: Docker build, executable/entrypoint checks, health check and isolated data-volume restart test passed."
-            echo "- Commercial/license and signing secrets: not supplied or required by this source build."
+            printf '%s\n' '## Fork image build qualification'
+            printf '\n'
+            printf '%s\n' "- Source revision: ${SOURCE_REVISION}"
+            printf '%s\n' '- Target: `runtime` (`linux/amd64`, Go `release` build tag)'
+            printf '%s\n' '- Result: Docker build, executable/entrypoint checks, health check and isolated data-volume restart test passed.'
+            printf '%s\n' '- Commercial/license and signing secrets: not supplied or required by this source build.'
           } >> "${GITHUB_STEP_SUMMARY}"
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+
+          summary = Path(os.environ["GITHUB_STEP_SUMMARY"]).read_text(encoding="utf-8")
+          required = [
+              "## Fork image build qualification",
+              f"- Source revision: {os.environ['SOURCE_REVISION']}",
+              "- Target: `runtime` (`linux/amd64`, Go `release` build tag)",
+          ]
+          missing = [line for line in required if line not in summary]
+          if missing:
+              raise SystemExit(f"Build summary is missing expected lines: {missing!r}")
+          PY
 
   publish:
     name: Publish exact-SHA image to GHCR
@@ -139,13 +154,29 @@ jobs:
           fi
           echo "digest=${digest}" >> "${GITHUB_OUTPUT}"
           {
-            echo "## Published fork image"
-            echo
-            echo "- Source revision: `${SOURCE_REVISION}`"
-            echo "- Image: `${IMAGE_REF}`"
-            echo "- OCI digest: `${digest}`"
-            echo "- Build architecture: `linux/amd64`"
+            printf '%s\n' '## Published fork image'
+            printf '\n'
+            printf '%s\n' "- Source revision: ${SOURCE_REVISION}"
+            printf '%s\n' "- Image: ${IMAGE_REF}"
+            printf '%s\n' "- OCI digest: ${digest}"
+            printf '%s\n' '- Build architecture: `linux/amd64`'
           } >> "${GITHUB_STEP_SUMMARY}"
+          PUBLISHED_DIGEST="${digest}" python3 - <<'PY'
+          import os
+          from pathlib import Path
+
+          summary = Path(os.environ["GITHUB_STEP_SUMMARY"]).read_text(encoding="utf-8")
+          required = [
+              "## Published fork image",
+              f"- Source revision: {os.environ['SOURCE_REVISION']}",
+              f"- Image: {os.environ['IMAGE_REF']}",
+              f"- OCI digest: {os.environ['PUBLISHED_DIGEST']}",
+              "- Build architecture: `linux/amd64`",
+          ]
+          missing = [line for line in required if line not in summary]
+          if missing:
+              raise SystemExit(f"Publish summary is missing expected lines: {missing!r}")
+          PY
 
       - name: Remove registry credentials from the runner
         if: always()
@@ -191,11 +222,28 @@ jobs:
           IMAGE_DIGEST: ${{ needs.publish.outputs.digest }}
         run: |
           {
-            echo "## Published image and Compose acceptance"
-            echo
-            echo "- Source revision: `${SOURCE_REVISION}`"
-            echo "- Image: `${IMAGE_REF}`"
-            echo "- OCI digest: `${IMAGE_DIGEST}`"
-            echo "- Runtime: healthy on `linux/amd64`; `/api/health` passed."
-            echo "- Compose: SHA-tag deployment, restart persistence, digest-reference update, rollback, and data-volume retention passed."
+            printf '%s\n' '## Published image and Compose acceptance'
+            printf '\n'
+            printf '%s\n' "- Source revision: ${SOURCE_REVISION}"
+            printf '%s\n' "- Image: ${IMAGE_REF}"
+            printf '%s\n' "- OCI digest: ${IMAGE_DIGEST}"
+            printf '%s\n' '- Runtime: healthy on `linux/amd64`; `/api/health` passed.'
+            printf '%s\n' '- Compose: SHA-tag deployment, restart persistence, digest-reference update, rollback, and data-volume retention passed.'
           } >> "${GITHUB_STEP_SUMMARY}"
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+
+          summary = Path(os.environ["GITHUB_STEP_SUMMARY"]).read_text(encoding="utf-8")
+          required = [
+              "## Published image and Compose acceptance",
+              f"- Source revision: {os.environ['SOURCE_REVISION']}",
+              f"- Image: {os.environ['IMAGE_REF']}",
+              f"- OCI digest: {os.environ['IMAGE_DIGEST']}",
+              "- Runtime: healthy on `linux/amd64`; `/api/health` passed.",
+              "- Compose: SHA-tag deployment, restart persistence, digest-reference update, rollback, and data-volume retention passed.",
+          ]
+          missing = [line for line in required if line not in summary]
+          if missing:
+              raise SystemExit(f"Compose summary is missing expected lines: {missing!r}")
+          PY

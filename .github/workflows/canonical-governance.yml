@@ -4,9 +4,11 @@ on:
   push:
     branches:
       - main
+      - sindri
   pull_request:
     branches:
       - main
+      - sindri
   workflow_dispatch:
 
 permissions:

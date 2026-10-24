@@ -2,7 +2,7 @@ name: Provider MSP startup
 
 on:
   push:
-    branches: [main]
+    branches: [main, sindri]
     paths:
       - 'internal/cloudcp/**'
       - 'cmd/pulse-control-plane/**'
@@ -14,7 +14,7 @@ on:
       - 'go.sum'
       - '.github/workflows/provider-msp-startup.yml'
   pull_request:
-    branches: [main]
+    branches: [main, sindri]
     paths:
       - 'internal/cloudcp/**'
       - 'cmd/pulse-control-plane/**'

@@ -16,7 +16,7 @@ on:
       - "docs/release-control/v6/internal/subsystems/ai-runtime.md"
       - "frontend-modern/public/docs/AI_PATROL_QUALIFICATION.md"
   push:
-    branches: [main]
+    branches: [main, sindri]
     paths:
       - ".github/workflows/patrol-qualification-regression.yml"
       - "cmd/patrol-qualify/**"

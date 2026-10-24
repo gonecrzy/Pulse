@@ -4,6 +4,7 @@ on:
   pull_request:
     branches:
       - main
+      - sindri
       - pulse/v6-release
       - 'release/v*'
     paths:
@@ -25,6 +26,7 @@ on:
   push:
     branches:
       - main
+      - sindri
       - master
       - pulse/v6-release
       - 'release/v*'

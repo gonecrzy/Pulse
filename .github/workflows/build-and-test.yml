@@ -4,11 +4,13 @@ on:
   push:
     branches:
       - main
+      - sindri
       - pulse/v6-release
       - 'release/v*'
   pull_request:
     branches:
       - main
+      - sindri
       - pulse/v6-release
       - 'release/v*'
   workflow_dispatch:

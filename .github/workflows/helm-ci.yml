@@ -2,7 +2,7 @@ name: Helm CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, sindri]
     paths:
       - "deploy/helm/**"
       - ".github/workflows/helm-ci.yml"

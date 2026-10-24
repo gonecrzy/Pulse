@@ -2,7 +2,7 @@ name: Unified Agent Native Verification
 
 on:
   push:
-    branches: [main]
+    branches: [main, sindri]
     paths:
       - '.github/workflows/unified-agent-native.yml'
       - 'cmd/pulse-agent/**'
@@ -37,7 +37,7 @@ on:
       - 'go.mod'
       - 'go.sum'
   pull_request:
-    branches: [main]
+    branches: [main, sindri]
     paths:
       - '.github/workflows/unified-agent-native.yml'
       - 'cmd/pulse-agent/**'
