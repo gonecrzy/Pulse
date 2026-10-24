@@ -5,8 +5,7 @@ on:
     branches:
       - main
       - sindri
-      - pulse/v6-release
-      - 'release/v*'
+      - feature/sindri-integration
     paths:
       - 'frontend-modern/**'
       - 'internal/**'
@@ -27,9 +26,7 @@ on:
     branches:
       - main
       - sindri
-      - master
-      - pulse/v6-release
-      - 'release/v*'
+      - feature/sindri-integration
     paths:
       - 'frontend-modern/**'
       - 'internal/**'
@@ -48,7 +45,7 @@ on:
       - 'scripts/tests/test_ci_browser_proof_only.py'
   workflow_dispatch:
 
-# Let branch runs finish so busy main and release branches retain verdicts.
+# Let branch runs finish so main, sindri, and the active integration branch retain E2E verdicts.
 # A newer PR commit supersedes its previous validation, so do not queue the
 # replacement behind obsolete checks. Keep this aligned with Build and Test.
 concurrency:

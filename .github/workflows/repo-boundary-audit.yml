@@ -1,7 +1,10 @@
 name: Repo Boundary Audit
 
 on:
+  push:
+    branches: [main, sindri, feature/sindri-integration]
   pull_request:
+    branches: [main, sindri, feature/sindri-integration]
   workflow_dispatch:
 
 permissions:

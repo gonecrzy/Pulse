@@ -12,7 +12,7 @@ const issueMutationPatterns = [
   /syncLabels/,
 ];
 
-test("automated workflow issue mutations use the dedicated triage identity", () => {
+test("the personal fork installs no upstream issue-mutation automation", () => {
   const publishers = [];
 
   for (const name of fs.readdirSync(workflowDir)) {
@@ -38,9 +38,7 @@ test("automated workflow issue mutations use the dedicated triage identity", () 
     );
   }
 
-  assert.deepEqual(publishers.sort(), [
-    "issue-version-label-sync.yml",
-  ]);
+  assert.deepEqual(publishers.sort(), []);
 });
 
 

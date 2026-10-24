@@ -2,6 +2,7 @@ name: Patrol Qualification Regression
 
 on:
   pull_request:
+    branches: [main, sindri, feature/sindri-integration]
     paths:
       - ".github/workflows/patrol-qualification-regression.yml"
       - "cmd/patrol-qualify/**"
@@ -16,7 +17,7 @@ on:
       - "docs/release-control/v6/internal/subsystems/ai-runtime.md"
       - "frontend-modern/public/docs/AI_PATROL_QUALIFICATION.md"
   push:
-    branches: [main, sindri]
+    branches: [main, sindri, feature/sindri-integration]
     paths:
       - ".github/workflows/patrol-qualification-regression.yml"
       - "cmd/patrol-qualify/**"
@@ -30,8 +31,6 @@ on:
       - "docs/AI_PATROL_QUALIFICATION.md"
       - "docs/release-control/v6/internal/subsystems/ai-runtime.md"
       - "frontend-modern/public/docs/AI_PATROL_QUALIFICATION.md"
-  schedule:
-    - cron: "23 3 * * *"
   workflow_dispatch:
 
 permissions:

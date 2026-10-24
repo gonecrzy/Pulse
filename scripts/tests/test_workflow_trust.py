@@ -61,11 +61,56 @@ class WorkflowTrustTest(unittest.TestCase):
         self.assertIn("^Test(InstallPS1|WindowsAgentLifecycle)", native)
         self.assertIn("node-version: '24'", native)
 
-    def test_browser_release_uses_governed_node_line(self) -> None:
-        browser = (REPO_ROOT / ".github/workflows/qualify-browser-update-release.yml").read_text()
-        self.assertEqual(browser.count("actions/setup-node@"), 1)
-        self.assertIn("node-version: '24'", browser)
-        self.assertNotIn("node-version: '24.", browser)
+    def test_fork_workflow_inventory_is_minimal_and_self_contained(self) -> None:
+        expected = {
+            "build-and-test.yml",
+            "canonical-governance.yml",
+            "dependency-advisory-watch.yml",
+            "patrol-qualification-regression.yml",
+            "public-docs.yml",
+            "repo-boundary-audit.yml",
+            "security-scan.yml",
+            "sindri-build.yml",
+            "test-e2e.yml",
+            "unified-agent-native.yml",
+        }
+        workflow_directory = REPO_ROOT / ".github" / "workflows"
+        actual = {path.name for path in workflow_directory.glob("*.yml")}
+        self.assertEqual(expected, actual)
+
+        package_writers = []
+        for path in sorted(workflow_directory.glob("*.yml")):
+            source = path.read_text(encoding="utf-8")
+            with self.subTest(workflow=path.name):
+                for forbidden in (
+                    "rcourtman/Pulse",
+                    "rcourtman/pulse",
+                    "pulse-enterprise",
+                    "workflow_run:",
+                    "workflow_call:",
+                    "PULSE_TRIAGE_APP_PRIVATE_KEY",
+                    "WORKFLOW_PAT",
+                    "PULSE_UPDATE_SIGNING_PUBLIC_KEY",
+                    "release-dry-run.yml",
+                    "create-release.yml",
+                    "build-release-candidate.yml",
+                    "publish-docker.yml",
+                    "promote-floating-tags.yml",
+                    "release-signing-preflight.yml",
+                    "demo-runtime-native.yml",
+                    "deploy-demo-server.yml",
+                    "recover-demo-server.yml",
+                    "stable-install-continuity.yml",
+                    "release-lifecycle-rehearsal.yml",
+                    "memory-regression.yml",
+                    "issue-version-label-sync.yml",
+                    "canonical-private-governance.yml",
+                    "publish-helm-chart.yml",
+                ):
+                    self.assertNotIn(forbidden, source)
+            if "packages: write" in source:
+                package_writers.append(path.name)
+        self.assertEqual(["sindri-build.yml"], package_writers)
 
     def test_accepts_immutable_dependencies_and_explicit_checkout_credentials(self) -> None:
         findings = self.audit(
@@ -496,65 +541,12 @@ steps:
         )
         self.assertTrue(any("must not opt out" in finding for finding in findings))
 
-    def test_only_allows_hardened_closed_pr_target_cancellation(self) -> None:
-        workflow = (
-            REPO_ROOT
-            / ".github"
-            / "workflows"
-            / "reclaim-closed-pr-capacity.yml"
-        ).read_text()
-        findings = self.audit(
-            workflow,
-            workflow_trust.SAFE_PULL_REQUEST_TARGET_WORKFLOW,
-        )
-        self.assertEqual(findings, [])
-
-        unsafe = workflow.replace(
-            "            await cleanup.cancelClosedPullRequestRuns({ github, context, core });",
-            "            require('child_process').exec('git fetch origin pull/1/head');\n"
-            "            await cleanup.cancelClosedPullRequestRuns({ github, context, core });",
-        )
-        findings = self.audit(
-            unsafe,
-            workflow_trust.SAFE_PULL_REQUEST_TARGET_WORKFLOW,
-        )
-        self.assertTrue(
-            any("pull_request_target is prohibited" in finding for finding in findings)
-        )
-
-        unsafe_checkout = workflow.replace(
-            "          persist-credentials: false",
-            "          persist-credentials: false\n"
-            "          repository: ${{ github.event.pull_request.head.repo.full_name }}",
-        )
-        findings = self.audit(
-            unsafe_checkout,
-            workflow_trust.SAFE_PULL_REQUEST_TARGET_WORKFLOW,
-        )
-        self.assertTrue(
-            any("pull_request_target is prohibited" in finding for finding in findings)
-        )
-
-        excess_permissions = workflow.replace(
-            "    timeout-minutes: 5",
-            "    timeout-minutes: 5\n"
-            "    permissions:\n"
-            "      actions: write\n"
-            "      contents: write\n"
-            "      pull-requests: read",
-        )
-        findings = self.audit(
-            excess_permissions,
-            workflow_trust.SAFE_PULL_REQUEST_TARGET_WORKFLOW,
-        )
-        self.assertTrue(
-            any("pull_request_target is prohibited" in finding for finding in findings)
-        )
-
-        findings = self.audit(workflow)
-        self.assertTrue(
-            any("pull_request_target is prohibited" in finding for finding in findings)
-        )
+    def test_retained_workflows_have_no_privileged_pr_target_triggers(self) -> None:
+        workflow_directory = REPO_ROOT / ".github" / "workflows"
+        for path in sorted(workflow_directory.glob("*.yml")):
+            with self.subTest(workflow=path.name):
+                source = path.read_text(encoding="utf-8")
+                self.assertNotIn("pull_request_target", source)
 
     def test_workflow_run_requires_canonical_upstream_code(self) -> None:
         missing_branch = self.audit(
