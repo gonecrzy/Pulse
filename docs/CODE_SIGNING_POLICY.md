@@ -5,9 +5,9 @@
 > describes that upstream repository's SignPath integration and release
 > controls; it is not the active policy for the `gonecrzy/Pulse` Sindri fork.
 > Sindri does not use upstream SignPath credentials, certificates, GitHub App
-> access, or release-signing workflows. See the
-> [upstream policy](https://github.com/rcourtman/Pulse/blob/main/docs/CODE_SIGNING_POLICY.md)
-> for the current upstream document.
+> access, or release-signing workflows. The current upstream project is
+> [rcourtman/Pulse](https://github.com/rcourtman/Pulse); this file is retained
+> as historical policy context for the fork.
 
 Upstream Pulse published release artifacts from the public
 [`rcourtman/Pulse`](https://github.com/rcourtman/Pulse) repository. This policy
@@ -38,8 +38,8 @@ signatures remain mandatory and are not a substitute for Authenticode. The
 `test-signing` policy may be used to validate the integration, but its test
 certificate is untrusted and its output must never be published as a
 production release. The upstream repository's manual
-[SignPath Test Signing Proof](https://github.com/rcourtman/Pulse/blob/main/.github/workflows/signpath-test-signing.yml)
-workflow was the test-signing entrypoint: it was restricted to `main`,
+`.github/workflows/signpath-test-signing.yml` workflow was the test-signing
+entrypoint: it was restricted to `main`,
 hard-codes the test policy, verifies the exact returned file set, and uploads
 only a non-production JSON evidence record after verification. It never uploads
 the test-signed binaries as a GitHub artifact or assembles a release candidate.
