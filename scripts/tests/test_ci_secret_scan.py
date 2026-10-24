@@ -182,6 +182,37 @@ class DeliveredHistoryScanTest(unittest.TestCase):
                 self.assertEqual(result.returncode, code)
                 self.assertTrue(self.record.exists())
 
+    def test_only_the_reviewed_historical_fingerprint_is_ignored(self):
+        expected = (
+            "8bd6901eb986e712ec4c90a2fab87526f78d0c33:"
+            "docs/plans/2026-10-23-sindri-integration-roadmap.md:generic-api-key:141"
+        )
+        entries = {
+            line.strip() for line in (ROOT / ".gitleaksignore").read_text().splitlines()
+            if line.strip() and not line.lstrip().startswith("#")
+        }
+        previous = subprocess.check_output(
+            ["git", "show", "5065b09f74def8080dd177d151e842a1e46a4701:.gitleaksignore"],
+            cwd=ROOT,
+            text=True,
+        )
+        previous_entries = {
+            line.strip() for line in previous.splitlines()
+            if line.strip() and not line.lstrip().startswith("#")
+        }
+        self.assertTrue(previous_entries.issubset(entries), "preserve all reviewed fingerprints")
+        self.assertEqual(entries - previous_entries, {expected})
+
+        exception_doc = (ROOT / "docs/security/SECRET_SCAN_EXCEPTIONS.md").read_text()
+        self.assertIn(expected, exception_doc)
+        self.assertIn("ea842f61d3ea6a91777de6f2447fefb501f50dccdf21cf926510fa3b80c63bc8",
+                      exception_doc)
+        roadmap = (ROOT / "docs/plans/2026-10-23-sindri-integration-roadmap.md").read_text()
+        self.assertIn(
+            "all credentials are scoped, applicable controls are verified, and rollback ownership is explicit",
+            roadmap,
+        )
+
     def test_git_ancestry_error_cannot_be_treated_as_a_divergent_base(self):
         self.write("new.txt", "new\n")
         self.commit("Second commit")
