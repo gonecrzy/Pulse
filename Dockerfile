@@ -30,6 +30,7 @@ FROM --platform=linux/amd64 golang:1.26.10-alpine@sha256:9ce231b28998b32e116927c
 
 ARG BUILD_AGENT
 ARG VERSION
+ARG SOURCE_REVISION=unknown
 ARG PULSE_LICENSE_PUBLIC_KEY_SHA256
 ARG PULSE_UPDATE_SIGNING_PUBLIC_KEY
 # Go build tags for the server binary. Shipped images use "release", which
@@ -70,7 +71,7 @@ RUN --mount=type=cache,id=pulse-go-mod,target=/go/pkg/mod \
     --mount=type=secret,id=pulse_update_signing_key,required=false \
     VERSION="${VERSION:-v$(cat VERSION | tr -d '\n')}" && \
     BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ") && \
-    GIT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown") && \
+    GIT_COMMIT="${SOURCE_REVISION:-$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")}" && \
     LICENSE_PUBLIC_KEY="" && \
     EXPECTED_LICENSE_PUBLIC_KEY_SHA256="${PULSE_LICENSE_PUBLIC_KEY_SHA256#SHA256:}" && \
     UPDATE_SIGNING_KEY="" && \
@@ -343,6 +344,11 @@ FROM pulse-runtime-base AS e2e_runtime
 
 # Final stage (Pulse server runtime)
 FROM pulse-runtime-base AS runtime
+
+# Bind source-built fork images to the exact checked-out source revision. The
+# workflow supplies the full Git SHA; local builds without it remain explicit.
+ARG SOURCE_REVISION=unknown
+LABEL org.opencontainers.image.revision="${SOURCE_REVISION}"
 
 # Provide installer scripts for HTTP download endpoints
 RUN mkdir -p /opt/pulse/scripts

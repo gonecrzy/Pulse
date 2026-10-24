@@ -412,6 +412,61 @@ func TestHandleUpdateSystemSettings_DisablesAutoUpdatesWhenRCSelected(t *testing
 	}
 }
 
+func TestHandleSystemSettingsHonorsPinnedDeploymentAutoUpdateLock(t *testing.T) {
+	t.Setenv("PULSE_DISABLE_AUTO_UPDATE", "true")
+	tempDir := t.TempDir()
+	cfg := &config.Config{
+		DataPath:          tempDir,
+		ConfigPath:        tempDir,
+		UpdateChannel:     "stable",
+		AutoUpdateEnabled: true,
+	}
+	persistence := config.NewConfigPersistence(tempDir)
+	initialSettings := config.DefaultSystemSettings()
+	initialSettings.UpdateChannel = "stable"
+	initialSettings.AutoUpdateEnabled = true
+	if err := persistence.SaveSystemSettings(*initialSettings); err != nil {
+		t.Fatalf("save initial settings: %v", err)
+	}
+	handler := newTestSystemSettingsHandler(cfg, persistence, &mockMonitor{}, func() {}, func() error { return nil })
+
+	getResponse := httptest.NewRecorder()
+	handler.HandleGetSystemSettings(getResponse, httptest.NewRequest(http.MethodGet, "/api/system-settings", nil))
+	if getResponse.Code != http.StatusOK {
+		t.Fatalf("GET status = %d, want 200: %s", getResponse.Code, getResponse.Body.String())
+	}
+	var response struct {
+		AutoUpdateEnabled bool `json:"autoUpdateEnabled"`
+	}
+	if err := json.Unmarshal(getResponse.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode GET response: %v", err)
+	}
+	if response.AutoUpdateEnabled {
+		t.Fatal("GET exposed auto-updates as enabled despite PULSE_DISABLE_AUTO_UPDATE=true")
+	}
+
+	tokenVal := "testtoken-pinned-updates"
+	cfg.APITokens = []config.APITokenRecord{{ID: "token1", Hash: internalauth.HashAPIToken(tokenVal), Name: "test"}}
+	body, err := json.Marshal(map[string]interface{}{"autoUpdateEnabled": true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodPost, "/api/system-settings", bytes.NewReader(body))
+	request.Header.Set("X-API-Token", tokenVal)
+	updateResponse := httptest.NewRecorder()
+	handler.HandleUpdateSystemSettings(updateResponse, request)
+	if updateResponse.Code != http.StatusOK {
+		t.Fatalf("POST status = %d, want 200: %s", updateResponse.Code, updateResponse.Body.String())
+	}
+	loaded, err := persistence.LoadSystemSettings()
+	if err != nil {
+		t.Fatalf("reload settings: %v", err)
+	}
+	if loaded.AutoUpdateEnabled || cfg.AutoUpdateEnabled {
+		t.Fatalf("pinned deployment lock failed: persisted=%v runtime=%v", loaded.AutoUpdateEnabled, cfg.AutoUpdateEnabled)
+	}
+}
+
 func TestHandleUpdateSystemSettings_UsesRuntimeRCWhenChannelOmitted(t *testing.T) {
 	tempDir := t.TempDir()
 	cfg := &config.Config{

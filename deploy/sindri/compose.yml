@@ -1,0 +1,31 @@
+name: ${COMPOSE_PROJECT_NAME:-pulse-sindri-test}
+
+services:
+  pulse:
+    image: ${PULSE_IMAGE:?Set PULSE_IMAGE to a full source-SHA tag or sha256 digest for ghcr.io/gonecrzy/pulse}
+    restart: unless-stopped
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    ports:
+      - "${PULSE_BIND_ADDRESS:-127.0.0.1}:${PULSE_PORT:-17655}:7655"
+    volumes:
+      - pulse-data:/data
+    environment:
+      PULSE_DATA_DIR: /data
+      PULSE_DEPLOYMENT_METHOD: docker_compose
+      PULSE_DISABLE_AUTO_UPDATE: "true"
+      TZ: ${TZ:-UTC}
+    healthcheck:
+      test: ["CMD", "/docker-healthcheck.sh"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  pulse-data:
+    driver: local
