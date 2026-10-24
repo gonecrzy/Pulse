@@ -57,21 +57,21 @@ class SummaryTest(unittest.TestCase):
             return result, summary.read_text(encoding="utf-8") if summary.exists() else ""
 
     def test_advisory_names_branch_advisories_and_fix(self) -> None:
-        result, summary = self.run_summary("main", "failure", audit_log(FINDING, TRANSITIVE))
+        result, summary = self.run_summary("sindri", "failure", audit_log(FINDING, TRANSITIVE))
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("`main`", summary)
+        self.assertIn("`sindri`", summary)
         self.assertIn("GHSA-p98j-92pf-mc4p", summary)
         self.assertIn("GHSA-q2hr-2g5m-vwhr", summary)
         self.assertIn("npm audit fix --package-lock-only", summary)
         self.assertIn("dependencySecurity.test.ts", summary)
         annotations = [line for line in result.stdout.splitlines() if line.startswith("::error")]
         self.assertEqual(len(annotations), 1)
-        self.assertIn("main", annotations[0])
+        self.assertIn("sindri", annotations[0])
         self.assertIn("GHSA-p98j-92pf-mc4p, GHSA-q2hr-2g5m-vwhr", annotations[0])
         self.assertIn("lockfile advisory floor bump", annotations[0])
         self.assertIn("qualify the resulting graph", summary)
-        self.assertIn("land both on main", summary)
-        self.assertIn("containing release", summary)
+        self.assertIn("land both on `sindri`", summary)
+        self.assertIn("image from the resulting commit", summary)
         self.assertIn("unchanged graphs only warn", summary)
         self.assertNotIn("block every pull request", summary)
         self.assertNotIn("blocks every PR and release", annotations[0])
@@ -86,15 +86,15 @@ class SummaryTest(unittest.TestCase):
         self.assertNotIn("script", result.stdout)
 
     def test_clean_run_has_no_annotation(self) -> None:
-        result, summary = self.run_summary("main", "success", "npm audit (all): no vulnerabilities\n")
+        result, summary = self.run_summary("sindri", "success", "npm audit (all): no vulnerabilities\n")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertNotIn("::error", result.stdout)
         self.assertIn("No advisories reported.", summary)
 
     def test_unreachable_endpoint_is_not_called_an_advisory(self) -> None:
         log = "::error::npm audit (all) could not reach the advisory endpoint after 3 attempts\n"
-        result, summary = self.run_summary("main", "failure", log)
-        self.assertIn("could not be reached for main", result.stdout)
+        result, summary = self.run_summary("sindri", "failure", log)
+        self.assertIn("could not be reached for sindri", result.stdout)
         self.assertNotIn("floor bump", result.stdout)
         self.assertIn("No advisory was observed", summary)
 
@@ -107,13 +107,11 @@ class SummaryTest(unittest.TestCase):
         self.assertEqual(result.returncode, 2)
         self.assertEqual(summary, "")
 
-    def test_retired_release_branches_cannot_request_backport_guidance(self) -> None:
-        for branch in ("release/v6.5", "release/v6.6"):
-            with self.subTest(branch=branch):
-                result, summary = self.run_summary(branch, "failure", audit_log(FINDING))
-                self.assertEqual(result.returncode, 2)
-                self.assertEqual(summary, "")
-                self.assertEqual(result.stdout, "")
+    def test_default_branch_with_shell_metacharacters_is_refused(self) -> None:
+        result, summary = self.run_summary("sindri;touch", "failure", audit_log(FINDING))
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(summary, "")
+        self.assertEqual(result.stdout, "")
 
 
 class WorkflowContractTest(unittest.TestCase):
@@ -136,7 +134,7 @@ class WorkflowContractTest(unittest.TestCase):
                 if str(step.get("uses", "")).startswith("actions/checkout@"):
                     self.assertIs(step["with"]["persist-credentials"], False)
 
-    def test_only_main_is_audited_without_release_discovery(self) -> None:
+    def test_current_default_branch_is_audited_without_release_discovery(self) -> None:
         self.assertEqual(set(self.workflow["jobs"]), {"audit"})
         audit = self.workflow["jobs"]["audit"]
         self.assertNotIn("strategy", audit)
@@ -144,17 +142,17 @@ class WorkflowContractTest(unittest.TestCase):
         self.assertNotIn("git ls-remote", self.text)
         self.assertNotIn("gh api", self.text)
         self.assertNotIn("GH_TOKEN", self.text)
-        read = next(step for step in audit["steps"] if step.get("name") == "Read main's lockfile inputs")
-        self.assertNotIn("BRANCH", read["env"])
-        self.assertIn("git fetch --no-tags --depth=1 origin '+refs/heads/main:refs/remotes/audited/head'", read["run"])
-        self.assertIn("AUDITED_MAIN_SHA=", read["run"])
+        read = next(step for step in audit["steps"] if step.get("name") == "Read default branch lockfile inputs")
+        self.assertEqual(read["env"]["AUDITED_BRANCH"], "${{ github.event.repository.default_branch }}")
+        self.assertIn('git fetch --no-tags --depth=1 origin "+refs/heads/${AUDITED_BRANCH}:refs/remotes/audited/head"', read["run"])
+        self.assertIn("AUDITED_DEFAULT_SHA=", read["run"])
         self.assertIn("for file in package.json package-lock.json", read["run"])
         summary = next(step for step in audit["steps"] if step.get("name") == "Report advisories and fix")
-        self.assertEqual(summary["env"]["BRANCH"], "main")
+        self.assertEqual(summary["env"]["BRANCH"], "${{ github.event.repository.default_branch }}")
 
-    def test_real_input_recipe_is_fixed_main_and_never_executes_fetched_code(self) -> None:
+    def test_real_input_recipe_resolves_default_branch_and_never_executes_fetched_code(self) -> None:
         read = next(step for step in self.workflow["jobs"]["audit"]["steps"]
-                    if step.get("name") == "Read main's lockfile inputs")
+                    if step.get("name") == "Read default branch lockfile inputs")
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             fake_git = root / "git"
@@ -164,7 +162,7 @@ class WorkflowContractTest(unittest.TestCase):
                 "import json, os, sys\n"
                 "args = sys.argv[1:]\n"
                 "with open(os.environ['CALLS'], 'a') as stream: stream.write(json.dumps(args)+'\\n')\n"
-                "if args == ['fetch', '--no-tags', '--depth=1', 'origin', '+refs/heads/main:refs/remotes/audited/head']: pass\n"
+                "if args == ['fetch', '--no-tags', '--depth=1', 'origin', '+refs/heads/sindri:refs/remotes/audited/head']: pass\n"
                 "elif args == ['rev-parse', 'refs/remotes/audited/head']: print('a'*40)\n"
                 "elif args == ['show', 'refs/remotes/audited/head:frontend-modern/package.json']: print('{}')\n"
                 "elif args == ['show', 'refs/remotes/audited/head:frontend-modern/package-lock.json']: print('{\"lockfileVersion\":3}')\n"
@@ -173,14 +171,15 @@ class WorkflowContractTest(unittest.TestCase):
             result = subprocess.run(["bash", "-c", read["run"]], capture_output=True, text=True,
                                     env={**os.environ, "PATH": f"{root}:{os.environ['PATH']}",
                                          "AUDITED": str(root / "audited"), "CALLS": str(calls),
-                                         "BRANCH": "release/v6.6"}, check=False)
+                                         "AUDITED_BRANCH": "sindri"}, check=False)
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertEqual(result.stdout, "AUDITED_MAIN_SHA=" + "a" * 40 + "\n")
+            self.assertEqual(result.stdout, "AUDITED_BRANCH=sindri\nAUDITED_DEFAULT_SHA=" + "a" * 40 + "\n")
             self.assertEqual(json.loads((root / "audited/package.json").read_text()), {})
             self.assertEqual(json.loads((root / "audited/package-lock.json").read_text()), {"lockfileVersion": 3})
             commands = [json.loads(row) for row in calls.read_text().splitlines()]
             self.assertEqual(len(commands), 4)
-            self.assertEqual(commands[0][-1], "+refs/heads/main:refs/remotes/audited/head")
+            self.assertEqual(commands[0][-1], "+refs/heads/sindri:refs/remotes/audited/head")
+            self.assertTrue(all(command[0] in {"fetch", "rev-parse", "show"} for command in commands))
 
     def test_never_checks_out_installs_or_runs_another_branchs_code(self) -> None:
         # A scheduled job runs in the default branch's cache and token scope,

@@ -640,9 +640,12 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          # test_gitleaks_ignore.py resolves historical fingerprints against
-          # branch- and tag-reachable commits, so it needs full history.
+          # Keep all fork branch and tag history available. The following
+          # setup step fetches only fingerprint commits absent from these refs.
           fetch-depth: 0
+
+      - name: Fetch missing historical gitleaks fingerprint objects
+        run: python3 scripts/fetch_gitleaks_history.py
 
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0

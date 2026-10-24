@@ -50,9 +50,12 @@ def definitions(source):
 
 
 def admission(env, uid, source):
+    repository = env.get("GITHUB_REPOSITORY", "")
+    expected_repository = env.get("EXPECTED_REPOSITORY", "")
     if (uid != 0 or env.get("GITHUB_ACTIONS") != "true"
             or env.get("RUNNER_ENVIRONMENT") != "github-hosted"
-            or env.get("GITHUB_REPOSITORY") != "rcourtman/Pulse"
+            or not re.fullmatch(r"[A-Za-z0-9-]+/Pulse", repository, re.IGNORECASE)
+            or repository != expected_repository
             or not re.fullmatch(r"[0-9a-f]{40}", source)
             or any(Path(p).exists() for p in
                    ("/.dockerenv", "/opt/pulse", "/etc/pulse", "/etc/pulse-agent",

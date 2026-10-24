@@ -114,15 +114,17 @@ jobs:
         timeout-minutes: 5
         env:
           EXPECTED_SOURCE_SHA: ${{ github.sha }}
+          EXPECTED_REPOSITORY: ${{ github.repository }}
         shell: bash
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE_SHA"
+          test "$GITHUB_REPOSITORY" = "$EXPECTED_REPOSITORY"
           git diff --exit-code HEAD
           python3 -m unittest discover -s scripts/tests -p test_agent_removal_systemd.py -v
           sudo env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin LC_ALL=C \
             GITHUB_ACTIONS=true RUNNER_ENVIRONMENT=github-hosted GITHUB_REPOSITORY="$GITHUB_REPOSITORY" \
-            EXPECTED_SOURCE_SHA="$EXPECTED_SOURCE_SHA" RUNNER_TEMP="$RUNNER_TEMP" \
+            EXPECTED_REPOSITORY="$EXPECTED_REPOSITORY" EXPECTED_SOURCE_SHA="$EXPECTED_SOURCE_SHA" RUNNER_TEMP="$RUNNER_TEMP" \
             python3 scripts/installtests/agent_removal_systemd.py \
               --receipt "$RUNNER_TEMP/pulse-agent-removal.json"
 
