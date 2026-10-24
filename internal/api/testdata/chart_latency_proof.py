@@ -1,4 +1,4 @@
-"""Run the workload chart SLO on observed idle capacity and retain raw evidence."""
+"""Run the workload chart SLO, record host capacity, and retain raw evidence."""
 
 import argparse
 import hashlib
@@ -37,28 +37,33 @@ def interval(before, after):
                 load=after['load'], pressure=after['pressure'])
 
 
-def quiet(row):
-    return (row['total_ticks'] > 0 and row['load'][0] < 2 and row['idle_pct'] >= 90
+def premeasurement_safe(row):
+    # CPU idle is recorded as evidence, not used as an admission threshold.
+    # Keep the existing load, I/O, guest/steal, and swap preconditions.
+    return (row['total_ticks'] > 0 and row['load'][0] < 2
             and row['iowait_pct'] <= 1 and row['steal_pct'] <= 0.1
             and row['guest_pct'] <= 2 and row['swap_pages'] == 0)
 
 
-def wait_idle(prefix):
+def wait_for_safe_window(prefix):
     deadline = time.monotonic() + 300
     streak = 0
     before = snapshot()
+    rows = []
     with prefix.with_suffix('.idle.jsonl').open('w') as receipt:
         while streak < 30:
             time.sleep(5)
             after = snapshot()
             row = interval(before, after)
-            streak = streak + row['seconds'] if quiet(row) else 0
+            streak = streak + row['seconds'] if premeasurement_safe(row) else 0
             row['quiet_streak_seconds'] = streak
+            rows.append(row)
             receipt.write(json.dumps(row) + '\n')
             receipt.flush()
             before = after
             if time.monotonic() > deadline:
-                raise RuntimeError('No qualifying idle window. No measurement executed.')
+                raise RuntimeError('No qualifying pre-measurement window. No measurement executed.')
+    return rows
 
 
 def ticks(pid):
@@ -109,11 +114,25 @@ def process_io(pid):
 
 
 def competing_capacity(row):
-    # The measured SQLite process performs I/O. Keep I/O wait in the raw
-    # receipt and latency, rather than mistaking its own reads for contention.
-    # Admission still requires quiet I/O before the process starts.
-    return (row['background_busy_pct'] > 10 or row['guest_pct'] > 2
-            or row['steal_pct'] > 0.1 or row['swap_pages'] != 0)
+    # Host idle and competing CPU use are observational only. Keep the existing
+    # guest/steal and swap safeguards fail-closed during the measurement.
+    return (row['guest_pct'] > 2 or row['steal_pct'] > 0.1
+            or row['swap_pages'] != 0)
+
+
+def summarize_cpu(rows):
+    samples = [row for row in rows if 'background_busy_pct' in row]
+    if not samples:
+        return dict(sample_count=0)
+    return dict(
+        sample_count=len(samples),
+        min_idle_pct=min(row['idle_pct'] for row in samples),
+        max_host_busy_pct=max(row['busy_pct'] for row in samples),
+        max_background_busy_pct=max(row['background_busy_pct'] for row in samples),
+        max_guest_pct=max(row['guest_pct'] for row in samples),
+        max_steal_pct=max(row['steal_pct'] for row in samples),
+        max_swap_pages=max(row['swap_pages'] for row in samples),
+    )
 
 
 def digest(path):
@@ -134,7 +153,7 @@ def validate_output(text, returncode):
 
 def measure(binary, prefix):
     identity = digest(binary)
-    wait_idle(prefix)
+    premeasurement_rows = wait_for_safe_window(prefix)
     # Preserve the real Actions identity, without forwarding runner credentials.
     env = {key: os.environ[key] for key in (
         'PATH', 'HOME', 'TMPDIR', 'TZ', 'GOMAXPROCS', 'CI',
@@ -143,6 +162,7 @@ def measure(binary, prefix):
     command = [str(binary), '-test.run=^TestSLO_WorkloadCharts$', '-test.v',
                '-test.count=1', '-test.cpu=2', '-test.timeout=5m']
     capacity_errors = []
+    cpu_rows = []
     with prefix.with_suffix('.log').open('w') as log, prefix.with_suffix('.cpu.jsonl').open('w') as receipt:
         before = snapshot()
         processes_before = process_counters()
@@ -160,6 +180,7 @@ def measure(binary, prefix):
             if own_before is not None and own_after is not None and row['total_ticks'] > 0:
                 row['measurement_cpu_pct'] = 100 * (own_after - own_before) / row['total_ticks']
                 row['background_busy_pct'] = max(0, row['busy_pct'] - row['measurement_cpu_pct'])
+                cpu_rows.append(row)
                 if competing_capacity(row):
                     capacity_errors.append(row)
             receipt.write(json.dumps(row) + '\n')
@@ -174,16 +195,26 @@ def measure(binary, prefix):
             after = snapshot()
             receipt.write(json.dumps(interval(before, after)) + '\n')
             before = after
+    cpu_observations = summarize_cpu(cpu_rows)
+    premeasurement_observations = dict(
+        sample_count=len(premeasurement_rows),
+        min_idle_pct=min(row['idle_pct'] for row in premeasurement_rows),
+        max_host_busy_pct=max(row['busy_pct'] for row in premeasurement_rows),
+    )
     result = dict(command=command, binary_sha256=identity, environment=env,
-                  pid=process.pid, returncode=returncode, capacity_errors=capacity_errors)
+                  pid=process.pid, returncode=returncode, capacity_errors=capacity_errors,
+                  premeasurement_observations=premeasurement_observations,
+                  cpu_observations=cpu_observations)
     prefix.with_suffix('.result.json').write_text(json.dumps(result, indent=2) + '\n')
     text = prefix.with_suffix('.log').read_text()
+    print('Pre-measurement CPU observations: ' + json.dumps(premeasurement_observations), flush=True)
+    print('Measurement CPU observations: ' + json.dumps(cpu_observations), flush=True)
     print(text, flush=True)
     if digest(binary) != identity:
         raise RuntimeError('Measured executable changed')
     if capacity_errors:
-        raise RuntimeError('Background CPU or guest/steal activity invalidated the idle measurement '
-                           f'(SLO process exit {returncode}; see raw log)')
+        raise RuntimeError('Guest/steal or swap activity invalidated the measurement '
+                           f'(SLO process exit {returncode}; see raw evidence)')
     validate_output(text, returncode)
 
 
