@@ -31,6 +31,7 @@ type ResourceHandlers struct {
 	actionExecutionAuthorizer   actionlifecycle.ExecutionAuthorizer
 	actionRefreshPlanner        actionlifecycle.RefreshPlanner
 	actionAdmissionAvailability func(context.Context, string) error
+	policyExecutionAvailability func(context.Context, string) error
 	operatorStateChanged        func(orgID, resourceID string)
 }
 
@@ -98,6 +99,10 @@ func (h *ResourceHandlers) SetActionRefreshPlanner(planner actionlifecycle.Refre
 
 func (h *ResourceHandlers) SetActionAdmissionAvailability(checker func(context.Context, string) error) {
 	h.actionAdmissionAvailability = checker
+}
+
+func (h *ResourceHandlers) SetPolicyExecutionAvailability(checker func(context.Context, string) error) {
+	h.policyExecutionAvailability = checker
 }
 
 func (h *ResourceHandlers) SetActionCompletedPublisher(publisher func(unified.ActionAuditRecord)) {

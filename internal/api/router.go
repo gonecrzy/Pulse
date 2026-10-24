@@ -506,6 +506,10 @@ func (r *Router) setupRoutes() {
 		_, err := r.forkAccess.Require(ctx, forkfeatures.FeatureGovernedActions)
 		return err
 	})
+	r.resourceHandlers.SetPolicyExecutionAvailability(func(ctx context.Context, _ string) error {
+		_, err := r.forkAccess.Require(ctx, forkfeatures.FeatureActionSafety)
+		return err
+	})
 	r.resourceHandlers.SetOperatorStateChanged(func(_ string, resourceID string) {
 		seen := make(map[*monitoring.Monitor]struct{})
 		reconcile := func(monitor *monitoring.Monitor) {

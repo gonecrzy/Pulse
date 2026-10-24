@@ -123,7 +123,13 @@ type Service struct {
 	// It controls whether new actions may enter this lifecycle; it never grants
 	// an action permission or bypasses the lifecycle's existing policy checks.
 	AdmissionAvailability func(context.Context, string) error
-	policyAdmissionMu     sync.Mutex
+	// PolicyExecutionAvailability is an additional fail-closed gate for
+	// policy-authorized automatic dispatch. It is separate from governed action
+	// availability so enabling the public action lifecycle cannot opt an
+	// existing assisted/full Patrol policy into mutation before action safety is
+	// implemented and accepted.
+	PolicyExecutionAvailability func(context.Context, string) error
+	policyAdmissionMu           sync.Mutex
 }
 
 func (s *Service) requireAdmissionAvailability(ctx context.Context, orgID string) error {
@@ -131,6 +137,13 @@ func (s *Service) requireAdmissionAvailability(ctx context.Context, orgID string
 		return ErrAdmissionAvailabilityUnavailable
 	}
 	return s.AdmissionAvailability(ctx, strings.TrimSpace(orgID))
+}
+
+func (s *Service) requirePolicyExecutionAvailability(ctx context.Context, orgID string) error {
+	if s == nil || s.PolicyExecutionAvailability == nil {
+		return ErrPolicyExecutionAvailabilityUnavailable
+	}
+	return s.PolicyExecutionAvailability(ctx, strings.TrimSpace(orgID))
 }
 
 type ActionDetail struct {
@@ -165,6 +178,7 @@ type PolicyAdmissionCoordinator struct{ mu sync.RWMutex }
 var dispatchWorkerSequence atomic.Uint64
 
 var ErrAdmissionAvailabilityUnavailable = errors.New("action admission availability check is unavailable")
+var ErrPolicyExecutionAvailabilityUnavailable = errors.New("automatic policy execution is unavailable")
 
 func (s *Service) admissionCoordinator() *PolicyAdmissionCoordinator {
 	s.policyAdmissionMu.Lock()
@@ -1330,6 +1344,9 @@ func (s *Service) beginPolicyExecution(ctx context.Context, orgID, actionID, act
 	if record.State == unified.ActionStateCompleted || record.State == unified.ActionStateFailed {
 		return record, store, false, nil
 	}
+	if err := s.requirePolicyExecutionAvailability(ctx, orgID); err != nil {
+		return record, store, false, err
+	}
 	if err := s.requireAdmissionAvailability(ctx, orgID); err != nil {
 		return unified.ActionAuditRecord{}, store, false, err
 	}
@@ -1458,6 +1475,16 @@ func (s *Service) dispatchCommitted(ctx context.Context, orgID string, store Sto
 	if attempt.State == unified.ActionDispatchReceiptPending || attempt.State == unified.ActionDispatchReceiptRecorded {
 		return s.reconcileCommitted(ctx, orgID, store, record, attempt, actor)
 	}
+	if hasPolicyApproval(record) {
+		// A policy-created executing record can survive a crash before the
+		// transport was entered. Re-check the central action-safety gate before
+		// claiming or sending that queued work. Receipt reconciliation above is
+		// intentionally unaffected because it observes an already dispatched
+		// operation and never sends a mutation.
+		if err := s.requirePolicyExecutionAvailability(ctx, orgID); err != nil {
+			return record, err
+		}
+	}
 	owner := fmt.Sprintf("action-lifecycle:%s:%d", attempt.ID, dispatchWorkerSequence.Add(1))
 	attempt, claimed, err := store.ClaimActionDispatch(record.ID, owner, s.now(), 30*time.Second)
 	if err != nil {
@@ -1484,6 +1511,15 @@ func (s *Service) dispatchCommitted(ctx context.Context, orgID string, store Sto
 		AttemptID: attempt.ID, ActionID: record.ID, TransportRequestID: attempt.ID, ReceivedAt: s.now(),
 	}
 	return s.completeCorrelatedDispatch(orgID, store, record, receipt, result, actor)
+}
+
+func hasPolicyApproval(record unified.ActionAuditRecord) bool {
+	for _, approval := range record.Approvals {
+		if approval.Method == unified.MethodPolicy {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Service) reconcileCommitted(ctx context.Context, orgID string, store Store, record unified.ActionAuditRecord, attempt unified.ActionDispatchAttempt, actor string) (unified.ActionAuditRecord, error) {

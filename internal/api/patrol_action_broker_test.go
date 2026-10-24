@@ -15,6 +15,7 @@ import (
 
 	"github.com/rcourtman/pulse-go-rewrite/internal/actionlifecycle"
 	"github.com/rcourtman/pulse-go-rewrite/internal/config"
+	"github.com/rcourtman/pulse-go-rewrite/internal/forkfeatures"
 	"github.com/rcourtman/pulse-go-rewrite/internal/models"
 	"github.com/rcourtman/pulse-go-rewrite/internal/relay"
 	unified "github.com/rcourtman/pulse-go-rewrite/internal/unifiedresources"
@@ -597,6 +598,68 @@ func TestPatrolActionBrokerAutonomyModeIsAnUpperBound(t *testing.T) {
 				t.Fatalf("authorized state = %q, want completed", disposition.State)
 			}
 		})
+	}
+}
+
+func TestPatrolPolicyExecutionFailsClosedBeforeAutomaticDispatchUntilActionSafetyIsImplemented(t *testing.T) {
+	h, executor := newPatrolBrokerTestHandlers(t, unified.ApprovalAdmin)
+	persistence := config.NewConfigPersistence(h.cfg.DataPath)
+	if err := persistence.SaveAIConfig(config.AIConfig{PatrolAutonomyLevel: config.PatrolAutonomyAssisted}); err != nil {
+		t.Fatalf("persist assisted autonomy: %v", err)
+	}
+	manager := forkfeatures.NewManager(persistence)
+	profile, err := manager.Replace(forkfeatures.ForkProfile{
+		Version:         forkfeatures.ProfileVersion,
+		EnabledFeatures: []forkfeatures.FeatureID{forkfeatures.FeatureGovernedActions},
+	}, 1)
+	if err != nil {
+		t.Fatalf("enable governed actions in persisted fork profile: %v", err)
+	}
+	resolver := forkfeatures.AccessResolver{Fork: manager}
+	h.SetActionAdmissionAvailability(func(ctx context.Context, _ string) error {
+		_, err := resolver.Require(ctx, forkfeatures.FeatureGovernedActions)
+		return err
+	})
+	h.SetPolicyExecutionAvailability(func(ctx context.Context, _ string) error {
+		_, err := resolver.Require(ctx, forkfeatures.FeatureActionSafety)
+		return err
+	})
+	configurePatrolAutoAuthorization(t, h)
+	policy := func(context.Context, string) (PatrolActionPolicySnapshot, error) {
+		persisted, err := persistence.LoadAIConfig()
+		if err != nil {
+			return PatrolActionPolicySnapshot{}, err
+		}
+		return PatrolActionPolicySnapshot{EffectiveAutonomyLevel: persisted.GetPatrolAutonomyLevel()}, nil
+	}
+	broker := NewPatrolActionBroker("default", h, policy).(*patrolActionBroker)
+	if !profile.Has(forkfeatures.FeatureGovernedActions) || profile.Has(forkfeatures.FeatureActionSafety) {
+		t.Fatalf("fork profile = %#v, want governed actions enabled and action safety unavailable", profile)
+	}
+	if got := broker.loadPatrolActionPolicyInputs(context.Background(), patrolTestProposal()); !evaluatePatrolActionPolicy(got, "default", patrolTestProposal(), time.Now().UTC()).autoAuthorized {
+		t.Fatalf("test setup did not produce otherwise-valid automatic policy authority: %#v", got)
+	}
+
+	disposition, err := broker.Submit(context.Background(), patrolTestProposal())
+	if !errors.Is(err, forkfeatures.ErrUnavailable) {
+		t.Fatalf("Submit error=%v, want action-safety capability denial", err)
+	}
+	if disposition.State != string(unified.ActionStatePending) {
+		t.Fatalf("disposition=%#v, want the plan to remain pending for human review", disposition)
+	}
+	if executor.calls != 0 {
+		t.Fatalf("automatic executor calls=%d, want zero", executor.calls)
+	}
+	record, found, err := h.ActionLifecycle().Get("default", disposition.ActionID)
+	if err != nil || !found || record.State != unified.ActionStatePending || len(record.Approvals) != 0 {
+		t.Fatalf("action=%#v found=%v err=%v, want unchanged pending plan", record, found, err)
+	}
+	store, err := h.getStore("default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, found, err := store.GetActionDispatchAttempt(disposition.ActionID); err != nil || found {
+		t.Fatalf("dispatch attempt found=%v err=%v, want none", found, err)
 	}
 }
 

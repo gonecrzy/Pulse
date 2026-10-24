@@ -141,15 +141,16 @@ func (h *ResourceHandlers) ActionLifecycle() *actionlifecycle.Service {
 		Store: func(orgID string) (actionlifecycle.Store, error) {
 			return h.getStore(orgID)
 		},
-		Executor:              h.actionExecutor,
-		OnActionCompleted:     h.actionCompleted,
-		OnActionTransition:    h.actionTransition,
-		PolicyAdmission:       h.policyAdmission,
-		EmergencyStop:         h.actionEmergencyStop,
-		DecisionAuthorizer:    h.actionDecisionAuthorizer,
-		ExecutionAuthorizer:   h.actionExecutionAuthorizer,
-		RefreshPlanner:        h.actionRefreshPlanner,
-		AdmissionAvailability: h.actionAdmissionAvailability,
+		Executor:                    h.actionExecutor,
+		OnActionCompleted:           h.actionCompleted,
+		OnActionTransition:          h.actionTransition,
+		PolicyAdmission:             h.policyAdmission,
+		EmergencyStop:               h.actionEmergencyStop,
+		DecisionAuthorizer:          h.actionDecisionAuthorizer,
+		ExecutionAuthorizer:         h.actionExecutionAuthorizer,
+		RefreshPlanner:              h.actionRefreshPlanner,
+		AdmissionAvailability:       h.actionAdmissionAvailability,
+		PolicyExecutionAvailability: h.policyExecutionAvailability,
 	}
 }
 
