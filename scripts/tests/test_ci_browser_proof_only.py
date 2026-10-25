@@ -311,10 +311,10 @@ class WorkflowScopeTest(unittest.TestCase):
             job = job_block(e2e, name)
             self.assertIn("needs: scope", job)
             self.assertIn("if: needs.scope.outputs.proof_only != 'true'", job)
-        for event in ("pull_request", "push"):
-            block = re.split(r"(?m)^  \S", e2e.split(f"  {event}:\n", 1)[1], maxsplit=1)[0]
-            for path in ("scripts/ci_browser_proof_only.py", "scripts/tests/test_ci_browser_proof_only.py"):
-                self.assertIn(f"'{path}'", block)
+        pull_request = e2e.split("  pull_request:\n", 1)[1].split("\n  workflow_dispatch:", 1)[0]
+        for path in ("scripts/ci_browser_proof_only.py", "scripts/tests/test_ci_browser_proof_only.py"):
+            self.assertIn(f"'{path}'", pull_request)
+        self.assertNotRegex(e2e, r"(?m)^  push:\s*$")
         verdict = job_block(e2e, "e2e-verdict")
         self.assertIn("      - scope\n", verdict)
         self.assertIn("if: always()", verdict)
