@@ -96,6 +96,28 @@ func TestLiveCoreV2Qualification(t *testing.T) {
 	}
 }
 
+// TestLiveQualificationCredentialFingerprintOnly verifies the current
+// protected credential's non-secret binding without making a network request.
+// It is useful while live permission qualification is paused for operator
+// review and requires both explicit opt-in environment flags.
+func TestLiveQualificationCredentialFingerprintOnly(t *testing.T) {
+	if os.Getenv("PULSE_KOMODO_QUALIFICATION_FINGERPRINT_ONLY") != "1" {
+		t.Skip("set PULSE_KOMODO_QUALIFICATION_FINGERPRINT_ONLY=1 to inspect the non-secret credential fingerprint")
+	}
+	if os.Getenv("PULSE_KOMODO_LIVE_QUALIFICATION") != "1" {
+		t.Fatal("fingerprint inspection requires explicit live qualification opt-in")
+	}
+	selected, err := loadLiveQualificationConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	fingerprint := qualificationCredentialFingerprint(selected.Client)
+	if fingerprint == "" {
+		t.Fatal("could not derive a non-secret qualification credential fingerprint")
+	}
+	t.Logf("Non-secret Komodo qualification credential fingerprint: %s", fingerprint)
+}
+
 func TestSummarizeParentEvidenceHonorsSwarmParentPrecedence(t *testing.T) {
 	inventory := Inventory{
 		Swarms: []Resource{{ID: "swarm-present"}},
