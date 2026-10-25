@@ -18,7 +18,11 @@ export type ReportingResourceType =
   | 'pbs'
   | 'pmg'
   | 'pod'
-  | 'disk';
+  | 'disk'
+  | 'komodo-server'
+  | 'komodo-swarm'
+  | 'komodo-stack'
+  | 'komodo-deployment';
 
 export function toReportingResourceType(resourceType: ResourceType): ReportingResourceType {
   switch (resourceType) {

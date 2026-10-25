@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/rcourtman/pulse-go-rewrite/internal/alerts"
@@ -126,6 +127,8 @@ func connectionTypeForAlerts(t ConnectionType) (alerts.ConnectionType, bool) {
 		return alerts.ConnectionTypeVMware, true
 	case ConnectionTypeTrueNAS:
 		return alerts.ConnectionTypeTrueNAS, true
+	case ConnectionTypeKomodo:
+		return alerts.ConnectionTypeKomodo, true
 	default:
 		return "", false
 	}
@@ -174,26 +177,29 @@ func snapshotConnectionsForAlerts(connections []Connection) []alerts.ConnectionS
 // installed once at startup stays on the discarded monitor, so the
 // replacement would never evaluate connection alerts again until restart.
 //
-// Only the default org's monitor gets a lister: the closure reads the
-// default org's connection config, and per-org connection alerts are not
-// wired yet. Until the platform pollers exist the monitor keeps whatever
-// lister it had, so a running monitor never sees nil runtime owners.
+// Each monitor gets a lister bound to its organization. The config handlers
+// read that organization's connection settings, while runtime summaries are
+// requested with the same org ID. Until all supplemental pollers exist, the
+// monitor keeps whatever lister it had so a running monitor never sees nil
+// runtime owners.
 func (r *Router) installConnectionAlertLister(monitor *monitoring.Monitor) {
-	if r == nil || monitor == nil || r.configHandlers == nil || r.trueNASPoller == nil || r.vmwarePoller == nil {
+	if r == nil || monitor == nil || r.configHandlers == nil || r.trueNASPoller == nil || r.vmwarePoller == nil || r.komodoPoller == nil {
 		return
 	}
-	if orgID := monitor.GetOrgID(); orgID != "" && orgID != "default" {
-		return
+	orgID := strings.TrimSpace(monitor.GetOrgID())
+	if orgID == "" {
+		orgID = "default"
 	}
 	getCfg := r.configHandlers.Config
 	getPersist := r.configHandlers.Persistence
 	runtime := aggregatorRuntimeSources{
-		orgID:         "default",
+		orgID:         orgID,
 		truenasPoller: r.trueNASPoller,
 		vmwarePoller:  r.vmwarePoller,
+		komodoPoller:  r.komodoPoller,
 	}
 	monitor.SetConnectionsSnapshotLister(func() []alerts.ConnectionSnapshot {
-		ctx := context.Background()
+		ctx := context.WithValue(context.Background(), OrgIDContextKey, orgID)
 		return buildAlertConnectionSnapshotsWithRuntimeSources(ctx, getCfg(ctx), getPersist(ctx), monitor, runtime)
 	})
 }
@@ -205,8 +211,8 @@ func buildAlertConnectionSnapshotsWithRuntimeSources(
 	monitor *monitoring.Monitor,
 	runtime aggregatorRuntimeSources,
 ) []alerts.ConnectionSnapshot {
-	// snapshotConnectionsForAlerts keeps the platform rows (PVE, PBS, PMG,
-	// VMware, TrueNAS) and drops every agent row, and a PBS row's reported node
+	// snapshotConnectionsForAlerts keeps platform rows (PVE, PBS, PMG, VMware,
+	// TrueNAS, Komodo) and drops every agent row, and a PBS row's reported node
 	// name only becomes a host alias that the snapshot does not carry.
 	runtime.platformRowsOnly = true
 	inputs := buildAggregatorInputsWithRuntimeSources(ctx, cfg, persistence, monitor, runtime)

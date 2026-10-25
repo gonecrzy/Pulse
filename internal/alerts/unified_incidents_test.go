@@ -153,6 +153,59 @@ func TestSyncUnifiedResourceIncidentsAttachesFirstClassIncidentEvidence(t *testi
 	}
 }
 
+func TestKomodoProviderIncidentsIgnoreStaleEvidenceAndRecoverOnFreshInventory(t *testing.T) {
+	m := newTestManager(t)
+	configureUnifiedEvalManager(t, m, unifiedEvalBaseConfig())
+	started := time.Date(2026, 10, 25, 5, 0, 0, 0, time.UTC)
+	resource := unifiedresources.Resource{
+		ID:      "komodo-server:connection-1/server-1",
+		Type:    unifiedresources.ResourceTypeKomodoServer,
+		Name:    "media-host",
+		Status:  unifiedresources.StatusOffline,
+		Sources: []unifiedresources.DataSource{unifiedresources.SourceKomodo},
+		SourceStatus: map[unifiedresources.DataSource]unifiedresources.SourceStatus{
+			unifiedresources.SourceKomodo: {Status: "online", LastSeen: started},
+		},
+		Incidents: []unifiedresources.ResourceIncident{{
+			Provider: "komodo", NativeID: "server-1", Code: "komodo_resource_unhealthy",
+			Severity: storagehealth.RiskCritical, Summary: "Komodo reports an unhealthy resource",
+			StartedAt: started, ConfirmationsRequired: 1, RecoveryConfirmationsRequired: 2,
+		}},
+	}
+
+	m.SyncUnifiedResourceIncidents([]unifiedresources.Resource{resource})
+	active := m.GetActiveAlerts()
+	if len(active) != 1 || active[0].Metadata["incidentProvider"] != "komodo" {
+		t.Fatalf("fresh Komodo failure did not enter the common incident lifecycle: %+v", active)
+	}
+	firstLastSeen := active[0].LastSeen
+
+	stale := resource
+	stale.SourceStatus = map[unifiedresources.DataSource]unifiedresources.SourceStatus{
+		unifiedresources.SourceKomodo: {Status: "stale", LastSeen: started},
+	}
+	m.SyncUnifiedResourceIncidents([]unifiedresources.Resource{stale})
+	active = m.GetActiveAlerts()
+	if len(active) != 1 || !active[0].LastSeen.Equal(firstLastSeen) {
+		t.Fatalf("stale last-known evidence created, cleared, or refreshed the incident: %+v", active)
+	}
+
+	recovered := resource
+	recovered.Status = unifiedresources.StatusOnline
+	recovered.SourceStatus = map[unifiedresources.DataSource]unifiedresources.SourceStatus{
+		unifiedresources.SourceKomodo: {Status: "online", LastSeen: started.Add(time.Minute)},
+	}
+	recovered.Incidents = nil
+	m.SyncUnifiedResourceIncidents([]unifiedresources.Resource{recovered})
+	if got := len(m.GetActiveAlerts()); got != 1 {
+		t.Fatalf("incident cleared before the configured recovery observations: active=%d", got)
+	}
+	m.SyncUnifiedResourceIncidents([]unifiedresources.Resource{recovered})
+	if got := len(m.GetActiveAlerts()); got != 0 {
+		t.Fatalf("fresh healthy observations did not recover the Komodo incident: active=%d", got)
+	}
+}
+
 func TestSyncUnifiedResourceIncidentsRoutesAttachedCheckThroughSourceOwnedLifecycle(t *testing.T) {
 	m := newTestManager(t)
 	configureUnifiedEvalManager(t, m, unifiedEvalBaseConfig())

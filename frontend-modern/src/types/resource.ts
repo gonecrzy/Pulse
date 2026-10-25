@@ -88,7 +88,11 @@ export type ResourceType =
   | 'physical_disk' // Physical disk
   | 'network-share' // SMB/NFS network share
   | 'ceph' // Ceph cluster
-  | 'network-endpoint'; // Agentless availability endpoint
+  | 'network-endpoint' // Agentless availability endpoint
+  | 'komodo-server'
+  | 'komodo-swarm'
+  | 'komodo-stack'
+  | 'komodo-deployment';
 
 // Platform types - which system the resource comes from
 export const PLATFORM_TYPES = GENERATED_PLATFORM_TYPE_KEYS;

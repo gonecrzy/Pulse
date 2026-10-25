@@ -179,6 +179,37 @@ func TestCheckConnection(t *testing.T) {
 	})
 }
 
+func TestCheckKomodoConnectionUsesCanonicalConnectionAlertLifecycle(t *testing.T) {
+	m := newTestManager(t)
+	snap := ConnectionSnapshot{
+		ID:      "komodo:87ef53c3-9a5a-4d7b-a159-997ccca19811",
+		Name:    "Komodo Core",
+		Type:    ConnectionTypeKomodo,
+		State:   ConnectionStateUnreachable,
+		Enabled: true,
+	}
+	alertID := canonicalDiscreteStateStateID(snap.ID, connectionDegradedStateKey)
+
+	m.CheckConnection(snap)
+	m.CheckConnection(snap)
+	m.CheckConnection(snap)
+	alert := testRequireActiveAlert(t, m, alertID)
+	if alert.Level != AlertLevelCritical {
+		t.Fatalf("Komodo connection alert level = %q, want critical", alert.Level)
+	}
+	if got, _ := alert.Metadata["connectionType"].(string); got != "komodo" {
+		t.Fatalf("connectionType metadata = %q, want komodo", got)
+	}
+
+	snap.State = ConnectionStateActive
+	m.CheckConnection(snap)
+	m.CheckConnection(snap)
+	m.CheckConnection(snap)
+	if testHasActiveAlert(t, m, alertID) {
+		t.Fatal("healthy Komodo recovery should use and complete the existing connection alert lifecycle")
+	}
+}
+
 func TestCheckConnectionHonorsOwningResourceAvailabilityPolicy(t *testing.T) {
 	pbs, adapter, canonicalID := newPBSOfflinePolicyFixture(t)
 	connectionID := "pbs:" + pbs.Name

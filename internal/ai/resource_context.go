@@ -61,12 +61,16 @@ func (s *Service) buildUnifiedResourceContextForModel(destinationModel string) s
 
 		infraCount := stats.ByType[unifiedresources.ResourceTypeAgent] +
 			stats.ByType[unifiedresources.ResourceTypeK8sCluster] +
-			stats.ByType[unifiedresources.ResourceTypeK8sNode]
+			stats.ByType[unifiedresources.ResourceTypeK8sNode] +
+			stats.ByType[unifiedresources.ResourceTypeKomodoServer] +
+			stats.ByType[unifiedresources.ResourceTypeKomodoSwarm]
 		workloadCount := stats.ByType[unifiedresources.ResourceTypeVM] +
 			stats.ByType[unifiedresources.ResourceTypeSystemContainer] +
 			stats.ByType[unifiedresources.ResourceTypeAppContainer] +
 			stats.ByType[unifiedresources.ResourceTypePod] +
-			stats.ByType[unifiedresources.ResourceTypeK8sDeployment]
+			stats.ByType[unifiedresources.ResourceTypeK8sDeployment] +
+			stats.ByType[unifiedresources.ResourceTypeKomodoStack] +
+			stats.ByType[unifiedresources.ResourceTypeKomodoDeployment]
 
 		sections = append(sections, "## Unified Infrastructure View")
 		sections = append(sections, fmt.Sprintf("Total resources: %d (Infrastructure: %d, Workloads: %d)",
@@ -123,6 +127,7 @@ func (s *Service) buildUnifiedResourceContextForModel(destinationModel string) s
 			dockerHosts := make([]unifiedresources.Resource, 0)
 			k8sClusters := make([]unifiedresources.Resource, 0)
 			k8sNodes := make([]unifiedresources.Resource, 0)
+			komodoHosts := make([]unifiedresources.Resource, 0)
 
 			for _, resource := range detailedInfrastructure {
 				switch {
@@ -130,6 +135,8 @@ func (s *Service) buildUnifiedResourceContextForModel(destinationModel string) s
 					k8sClusters = append(k8sClusters, resource)
 				case resource.Type == unifiedresources.ResourceTypeK8sNode:
 					k8sNodes = append(k8sNodes, resource)
+				case resource.Type == unifiedresources.ResourceTypeKomodoServer || resource.Type == unifiedresources.ResourceTypeKomodoSwarm:
+					komodoHosts = append(komodoHosts, resource)
 				case resource.Proxmox != nil:
 					proxmoxNodes = append(proxmoxNodes, resource)
 				case resource.Docker != nil:
@@ -220,6 +227,19 @@ func (s *Service) buildUnifiedResourceContextForModel(destinationModel string) s
 
 					sections = append(sections, fmt.Sprintf("- **%s**%s [%s]",
 						unifiedresources.ResourcePolicyLabel(host.Name, host.AISafeSummary, host.Policy), metrics, host.Status))
+				}
+			}
+
+			if len(komodoHosts) > 0 {
+				sortResources(komodoHosts)
+				sections = append(sections, "\n**Komodo Servers & Swarms:**")
+				for _, host := range komodoHosts {
+					label := "Komodo Server"
+					if host.Type == unifiedresources.ResourceTypeKomodoSwarm {
+						label = "Komodo Swarm"
+					}
+					sections = append(sections, fmt.Sprintf("- **%s** (%s) [%s]",
+						unifiedresources.ResourcePolicyLabel(host.Name, host.AISafeSummary, host.Policy), label, host.Status))
 				}
 			}
 
@@ -337,6 +357,10 @@ func (s *Service) buildUnifiedResourceContextForModel(destinationModel string) s
 						typeLabel = "Container"
 					case unifiedresources.ResourceTypeAppContainer:
 						typeLabel = "Docker"
+					case unifiedresources.ResourceTypeKomodoStack:
+						typeLabel = "Komodo Stack"
+					case unifiedresources.ResourceTypeKomodoDeployment:
+						typeLabel = "Komodo Deployment"
 					}
 
 					vmidInfo := ""

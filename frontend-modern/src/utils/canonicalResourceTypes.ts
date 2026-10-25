@@ -51,6 +51,10 @@ export const CANONICAL_RESOURCE_TYPES = [
   'network-share',
   'ceph',
   'network-endpoint',
+  'komodo-server',
+  'komodo-swarm',
+  'komodo-stack',
+  'komodo-deployment',
 ] as const satisfies readonly ResourceType[];
 
 export const INVALID_RESOURCE_TYPE_ERROR = `Invalid resource type. Valid types: ${CANONICAL_RESOURCE_TYPES.join(', ')}`;

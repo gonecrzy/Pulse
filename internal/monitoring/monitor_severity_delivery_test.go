@@ -11,6 +11,8 @@ import (
 	"github.com/rcourtman/pulse-go-rewrite/internal/alerts"
 	"github.com/rcourtman/pulse-go-rewrite/internal/models"
 	"github.com/rcourtman/pulse-go-rewrite/internal/notifications"
+	"github.com/rcourtman/pulse-go-rewrite/internal/storagehealth"
+	"github.com/rcourtman/pulse-go-rewrite/internal/unifiedresources"
 	"github.com/stretchr/testify/require"
 )
 
@@ -185,6 +187,82 @@ func TestMonitorSeverityDelivery(t *testing.T) {
 			require.Empty(t, dlq)
 		})
 	}
+}
+
+func TestKomodoResourceIncidentUsesExistingNotificationLifecycle(t *testing.T) {
+	requests := make(chan struct{}, 4)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests <- struct{}{}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	notifier := notifications.NewNotificationManagerWithDataDir("", t.TempDir())
+	defer notifier.Stop()
+	require.NoError(t, notifier.UpdateAllowedPrivateCIDRs("127.0.0.1/32"))
+	notifier.SetCooldown(0)
+	notifier.SetGroupingWindow(0)
+	notifier.SetNotifyOnResolve(true)
+	notifier.AddWebhook(notifications.WebhookConfig{
+		ID: "komodo-test", Name: "Komodo test", URL: server.URL, Enabled: true, Template: `{"event":"alert"}`,
+	})
+
+	manager := alerts.NewManagerWithDataDir(t.TempDir())
+	defer manager.Stop()
+	config := manager.GetConfig()
+	config.Enabled = true
+	config.ActivationState = alerts.ActivationActive
+	config.FlappingEnabled = false
+	config.SuppressionWindow = 0
+	config.Schedule.MaxAlertsHour = 100
+	config.TimeThresholds = map[string]int{"komodo": 0, "komodo-server": 0}
+	manager.UpdateConfig(config)
+
+	monitor := &Monitor{alertManager: manager, notificationMgr: notifier}
+	monitor.wireExternalAlertCallbacks(nil)
+	now := time.Now().UTC()
+	resource := unifiedresources.Resource{
+		ID:      "komodo-server:connection/server",
+		Type:    unifiedresources.ResourceTypeKomodoServer,
+		Name:    "media-host",
+		Status:  unifiedresources.StatusOffline,
+		Sources: []unifiedresources.DataSource{unifiedresources.SourceKomodo},
+		SourceStatus: map[unifiedresources.DataSource]unifiedresources.SourceStatus{
+			unifiedresources.SourceKomodo: {Status: "online", LastSeen: now},
+		},
+		Incidents: []unifiedresources.ResourceIncident{{
+			Provider: "komodo", NativeID: "server", Code: "komodo_resource_unhealthy",
+			Severity: storagehealth.RiskCritical, Summary: "Komodo reported an unhealthy server",
+			StartedAt: now, ConfirmationsRequired: 1, RecoveryConfirmationsRequired: 1,
+		}},
+	}
+	manager.SyncUnifiedResourceIncidents([]unifiedresources.Resource{resource})
+	waitForKomodoNotificationDeliveries(t, notifier, requests, 1)
+
+	resource.Status = unifiedresources.StatusOnline
+	resource.Incidents = nil
+	manager.SyncUnifiedResourceIncidents([]unifiedresources.Resource{resource})
+	waitForKomodoNotificationDeliveries(t, notifier, requests, 2)
+
+	history := deliveryHistory(t, notifier)
+	require.Len(t, history, 2)
+	for _, entry := range history {
+		require.True(t, entry.Success)
+		require.Equal(t, notifications.DeliveryOutcomeSent, entry.Outcome)
+	}
+}
+
+func waitForKomodoNotificationDeliveries(t *testing.T, notifier *notifications.NotificationManager, requests <-chan struct{}, count int) {
+	t.Helper()
+	select {
+	case <-requests:
+	case <-time.After(4 * time.Second):
+		t.Fatalf("missing Komodo alert/recovery notification; history=%+v", deliveryHistory(t, notifier))
+	}
+	require.Eventually(t, func() bool {
+		stats, err := notifier.GetQueueStats()
+		return err == nil && stats["sent"] == count && len(deliveryHistory(t, notifier)) == count
+	}, 3*time.Second, 10*time.Millisecond)
 }
 
 func deliveryHistory(t *testing.T, nm *notifications.NotificationManager) []notifications.DeliveryLogEntry {

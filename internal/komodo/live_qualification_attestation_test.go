@@ -181,19 +181,19 @@ func TestQualificationAttestationRequiresOwnerOnlyFile(t *testing.T) {
 	}
 }
 
-func TestQualificationPermissionTransportOnlyAdaptsAttestedReadString(t *testing.T) {
+func TestQualificationPermissionObserverPreservesLevelOnlyReadEvidence(t *testing.T) {
 	for _, test := range []struct {
-		name        string
-		path        string
-		status      int
-		body        string
-		attested    bool
-		wantAdapted bool
-		wantBody    string
-		method      string
+		name         string
+		path         string
+		status       int
+		body         string
+		attested     bool
+		wantObserved bool
+		wantBody     string
+		method       string
 	}{
-		{name: "attested level-only read", path: "/read/GetPermission", status: http.StatusOK, body: `"Read"`, attested: true, wantAdapted: true, wantBody: `{"level":"Read","specific":[]}`},
-		{name: "unattested level-only read", path: "/read/GetPermission", status: http.StatusOK, body: `"Read"`, wantBody: `"Read"`},
+		{name: "attested level-only read", path: "/read/GetPermission", status: http.StatusOK, body: `"Read"`, attested: true, wantObserved: true, wantBody: `"Read"`},
+		{name: "unattested level-only read", path: "/read/GetPermission", status: http.StatusOK, body: `"Read"`, wantObserved: true, wantBody: `"Read"`},
 		{name: "structured response", path: "/read/GetPermission", status: http.StatusOK, body: `{"level":"Read","specific":[]}`, attested: true, wantBody: `{"level":"Read","specific":[]}`},
 		{name: "elevated level string", path: "/read/GetPermission", status: http.StatusOK, body: `"Write"`, attested: true, wantBody: `"Write"`},
 		{name: "non-POST request", path: "/read/GetPermission", status: http.StatusOK, body: `"Read"`, attested: true, wantBody: `"Read"`, method: http.MethodGet},
@@ -226,17 +226,17 @@ func TestQualificationPermissionTransportOnlyAdaptsAttestedReadString(t *testing
 				t.Fatalf("body = %q, want %q", body, test.wantBody)
 			}
 			wantSeen := 0
-			if test.wantAdapted {
+			if test.wantObserved {
 				wantSeen = 1
 			}
 			if transport.seen != wantSeen {
-				t.Fatalf("adapted count = %d, want %d", transport.seen, wantSeen)
+				t.Fatalf("observed count = %d, want %d", transport.seen, wantSeen)
 			}
 		})
 	}
 }
 
-func TestQualificationAttestedReadAdapterStillRejectsElevatedPermissions(t *testing.T) {
+func TestQualificationAttestationDoesNotChangeUnsafePermissionRejection(t *testing.T) {
 	for _, response := range []string{`{"level":"Read","specific":["Terminal"]}`, `"Write"`} {
 		t.Run(response, func(t *testing.T) {
 			client, _ := newFixtureClient(t, inventoryFixtureHandler(t, func(w http.ResponseWriter, r *http.Request) bool {
@@ -265,7 +265,7 @@ func TestQualificationAttestedReadAdapterStillRejectsElevatedPermissions(t *test
 	}
 }
 
-func TestQualificationAttestationEnablesLevelOnlyReadInventoryInOptInFixture(t *testing.T) {
+func TestQualificationAttestationQualifiesLevelOnlyReadInventoryInOptInFixture(t *testing.T) {
 	qualificationTestOptIn(t)
 	handler := inventoryFixtureHandler(t, func(w http.ResponseWriter, r *http.Request) bool {
 		switch r.URL.Path {
@@ -293,8 +293,9 @@ func TestQualificationAttestationEnablesLevelOnlyReadInventoryInOptInFixture(t *
 	if err != nil {
 		t.Fatalf("opt-in attested fixture inventory failed: %v", err)
 	}
-	if inventory.Count() != 1 || len(inventory.Servers) != 1 || transport.seen != 1 {
-		t.Fatalf("attested fixture result count=%d servers=%d adapted=%d; want one server and one adapted response", inventory.Count(), len(inventory.Servers), transport.seen)
+	if inventory.Count() != 1 || len(inventory.Servers) != 1 || transport.seen != 1 ||
+		!containsResourceKind(inventory.Scope.SpecificPermissionsUnverified, KindServer) || !transport.attested {
+		t.Fatalf("attested fixture result count=%d servers=%d observed=%d permissionScope=%+v; want one server, one observed response, and explicit unverified-specific evidence", inventory.Count(), len(inventory.Servers), transport.seen, inventory.Scope)
 	}
 }
 

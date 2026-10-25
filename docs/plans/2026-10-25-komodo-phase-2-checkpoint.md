@@ -1,6 +1,6 @@
 # Pulse + Sindri — Komodo Phase 2 foundation checkpoint
 
-**Status:** Phase 2C relationship foundation and Phase 2D fixture harness are complete on `feature/komodo-phase2-foundation`. The Phase 2E endpoint and owner-only credential file have been used to confirm authenticated Komodo Core `2.3.4` access. Inventory qualification stopped safely because the live `GetPermission` response is the level-only string `"Read"` and does not expose effective specific grants. A test-only, owner-only credential-file fallback and a narrowly scoped operator-attestation gate are implemented; the operator attestation is still pending. Live inventory qualification, gated integration work, and a Phase 2E image remain blocked. This checkpoint is not merged or deployed. Codex-LB remains optional and deferred. Phase 0 read-only, least-privilege, and action-safety contracts remain in force.
+**Status (updated 2026-10-25):** Phase 2C relationship foundation and Phase 2D fixture harness are complete on `feature/komodo-phase2-foundation`. The operator's non-admin/read-only permission attestation was accepted by the opt-in harness. Live qualification passed against Komodo Core `2.3.4` through the exact operator-provided test-only LAN HTTP endpoint: 11 Servers, 32 Stacks, no Deployments or Swarms, 43 stable identities across two consecutive reads, 43 resources with non-empty state, and 32 resolved Stack-to-Server parent references. Normalization produced 43 records, 32 `hosted_by` relationships, zero unresolved parents, 43 online statuses, and no incidents. All four inventory list methods succeeded; the small inventory did not exercise a second API page, which remains fixture-tested. `GetPermission` returned level-only `Read` 86 times; specific-permission absence is operator-attested for all four kinds, not API-verified. The one-off HTTP route does not encrypt credentials and was used only in the explicitly opted-in test harness. Production connection validation and client transport remain HTTPS-only. Fixture-backed connection alerts, resource incidents and recovery, NotificationManager delivery, Patrol context, frontend resource presentation/reporting, and the read-method-only collector are implemented. No Komodo action methods, merge, deployment, or production database access are included. Codex-LB remains optional and deferred.
 
 ## Contract and implementation boundary
 
@@ -8,7 +8,7 @@ The Komodo client uses the documented Core v2 HTTP shape: `POST /read/<method>` 
 
 Credentials are stored through the protected encrypted `komodo.enc` configuration. Add and endpoint/credential changes verify the candidate before saving; a failed rotation leaves the stored values unchanged. Responses expose a fixed mask. The adapter retains only normalized ID, name, state, and supported parent fields. Raw API payloads and configuration/environment fields are not placed in records, errors, logs, AI context, or telemetry. The adapter registers no Komodo execute/write method, action capability, action runner, or repair authority.
 
-Scope handling rejects direct permission grants above exact `Read` and rejects any specific grants such as `Logs`, `Inspect`, `Terminal`, `Processes`, or `Attach`. It checks effective `GetPermission` on one visible item per non-empty resource kind. A successful empty inventory requires a direct type-wide `Read` grant on target ID `all`, because an empty list alone cannot prove read access. Core permission inheritance and mixed per-resource permission behavior need qualification against an actual operator-selected Core release; see unresolved decisions below.
+Scope handling rejects direct permission grants above exact `Read` and rejects any structured effective `GetPermission` response with elevated specifics such as `Logs`, `Inspect`, `Terminal`, `Processes`, or `Attach`. A successful `List*` call verifies that the collector's corresponding read method works, including for an empty list. A level-only `"Read"` response verifies the base level but leaves effective specific permissions explicitly unverified; it is not treated as proof that specifics are absent. The collector has no non-read methods or action authority, while the opt-in live qualification harness requires the existing operator attestation before reporting permission qualification as passed. The live Core `2.3.4` result used that attestation for all four resource kinds.
 
 The org-scoped poller uses Pulse's supplemental-record provider boundary. Success with an empty inventory clears prior records. A failed poll retains the last-known records and marks them stale. A saved disabled connection publishes no records; deleting a connection removes its cached records after configuration sync. AI availability is not read by the poller and does not gate canonical alert evaluation.
 
@@ -16,7 +16,7 @@ The org-scoped poller uses Pulse's supplemental-record provider boundary. Succes
 
 - Proxmox uses Pulse's platform polling and registry paths in `internal/monitoring/platform_poller_shared.go`, `poll_providers.go`, and `monitor.go`. Its behavior is left unchanged.
 - TrueNAS provides the closest supplemental-provider model: `internal/api/truenas_handlers.go` owns connection setup while `internal/monitoring/truenas_poller.go` owns org-scoped polling, cached status, failure retention, and normalized records. Komodo follows those boundaries without changing TrueNAS.
-- VMware's existing poller and `internal/api/connections_aggregator.go` show how provider health is projected into shared connection status. Komodo status is added to that aggregator; canonical connection-alert conversion remains a separate follow-up.
+- VMware's existing poller and `internal/api/connections_aggregator.go` show how provider health is projected into shared connection status. Komodo status is projected into the existing per-organization connection-alert lifecycle.
 - `internal/unifiedresources/monitor_adapter.go` already accepts supplemental records and `SnapshotOwnedSources` ownership declarations. The Komodo poller publishes through that API into the existing registry; it adds no scheduler or resource registry.
 - `internal/unifiedresources/metrics_targets.go` is the canonical history-target map. Komodo has no native history mapping; an explicitly linked guest can reuse its existing Proxmox history target when that source identity is unambiguous.
 - `internal/api/router.go` owns poller startup and shutdown, while existing infrastructure settings and `ConnectionEditor` components own connection configuration. The Komodo UI uses those surfaces and the common `ConnectionType` API.
@@ -78,20 +78,20 @@ When operator-authored `depends_on` or `routes_to` is approved for implementatio
 
 For the requested example, the graph would fold each Proxmox/Komodo host pair only through its explicit `same_as` link, represent the Jellyfin and Traefik containers with `runs_on` edges to their canonical hosts, and eventually represent the proxy-to-backend path as `routes_to(Traefik, Jellyfin)`. The route's concrete target identity and refresh/verification policy remain open; this is a relationship model, not automatic Traefik parsing.
 
-### Live Core compatibility status and operator action
+### Live Core compatibility status and operator action (updated)
 
-No live Komodo endpoint or Komodo-named environment variable/approved credential was available in this workspace. No network call or live compatibility claim was made. Before live qualification, an operator must supply or select an authorized Komodo Core endpoint and existing read-only API key/secret, then verify: (1) `GetVersion` reports the installed Core v2 release; (2) the configured principal has only inventory `Read` scope for Server, Stack, Deployment, and Swarm and no specific Logs/Inspect/Terminal/Processes/Attach grants; (3) the listed native IDs are stable; and (4) Stack/Deployment `server_id`/`swarm_id` and Swarm `server_ids` match that release's returned items. Record the actual version and safe fixture shape, never the credentials or raw configuration. Do not create a privileged credential for this check.
+Live compatibility is qualified against Core `2.3.4` using the operator-supplied LAN address in the opted-in test harness. The API verified all four inventory list methods and base `Read`; the principal's lack of effective specific permissions is operator-attested. The exact HTTP test route sends credentials without transport encryption, so it is not valid for production connection setup. Before configuring a deployed Pulse instance, restore the certificate-trusted HTTPS origin. This run did not compare a concrete Proxmox VM/Komodo Server identity pair or live operator-authored service edges; the cross-provider behavior remains fixture-verified until an operator selects those exact resource IDs.
 
 ## Remaining integration points
 
 | Area | Current foundation | Remaining work |
 |---|---|---|
-| Historical metrics | Komodo has no native history family. A single linked Proxmox guest retains its existing VM/LXC target; ambiguous multiple Proxmox targets fail closed. | Pick any future Komodo-native metric family/key, add a bounded writer and history API target, retention and migration behavior, charts, and tests. Decide whether each resource kind has useful metrics before adding a facet. |
-| Connection alerts | Komodo poll health appears in the connection aggregator and redacted status response. | `internal/api/connections_alerts.go` still maps only PVE/PBS/PMG/VMware/TrueNAS into `alerts.ConnectionSnapshot`; add Komodo connection state/category mapping and canonical alert lifecycle tests if these failures should raise connection alerts. |
-| Notification routing | Pulse's existing notification engine handles canonical alert notifications. | Decide whether Komodo connection/resource alert classes need routing preferences. Relationship-based destination selection is not implemented; add it only through the existing alert/notification flow after edge persistence and policy semantics are defined. |
-| Monitoring UI | Existing infrastructure settings workspace can add/test/edit/enable/disable/delete Komodo connections. The generic resource drawer can display relationships. | Add resource-kind presentation and meaningful detail/history views if operators need them; expose no Komodo action controls. Decide how stale/disabled/empty status appears in the resource inventory and connection view. |
-| Patrol / AI context | Generic resource relationship context exists in AI service and handoff paths; Komodo polling has no AI dependency. | Qualify how generic Komodo types appear in Patrol's resource selection/context, add only safe normalized fields, preserve AI-unavailable monitoring/alerts/notifications behavior, and test that no configuration or environment data enters context. |
-| Durable dependencies and routes | Phase 2C adds org-scoped storage/API for operator-authored `depends_on`, `runs_on`, `hosted_by`, and `routes_to` edges, with actor/reason and soft-removal audit. | Add an editing UI, decide tombstone retention and any stronger verification/expiry policy, and add parsers only for explicitly supported sources such as Traefik if later approved. |
+| Historical metrics | Komodo has no native history family. A single linked Proxmox guest retains its existing VM/LXC target; ambiguous multiple Proxmox targets fail closed. | A future metrics contract, history key, retention policy, writer, API target, and charts require a separate review after live API needs are established. No metrics writer or schema was added. |
+| Connection alerts | Komodo poll health is mapped per organization into Pulse's existing connection alert lifecycle. | Exercise this with a real deployed connection and verify the operator's existing threshold configuration; no new alert manager or per-provider notification route was added. |
+| Notification routing | Komodo resource incidents and recovery use Pulse's existing notification dispatch callbacks and `NotificationManager`; fixture test proves firing and recovery deliveries. | Provider-specific destination preferences and relationship-based routing are not part of this checkpoint. |
+| Monitoring UI | Existing Infrastructure settings support Komodo connection CRUD/test/enable; current resource type compatibility/presentation and reporting now include all four Komodo resource types. | Review current stale/empty/disabled status presentation with an operator. Historical charts and broad topology UI are deferred. |
+| Patrol / AI context | Sanitized Komodo Server/Swarm and Stack/Deployment labels/status are included in existing Patrol context; polling and alert evaluation remain independent of Sindri AI. | Continue only if operators need more read-only fields. Do not include configuration, environment data, raw API responses, secrets, or speculative route evidence. |
+| Durable dependencies and routes | Phase 2C provides org-scoped persistence/API for operator-authored `depends_on`, `runs_on`, `hosted_by`, and `routes_to`; polling does not delete operator edges. | Editing UI, route parsing, and stronger expiry/verification policies are separate future decisions. Traefik route discovery is not implemented. |
 
 ## File-by-file implementation report
 
@@ -287,7 +287,7 @@ Additional Phase 2C checks:
 - Komodo [API and clients](https://komo.do/docs/ecosystem/api), [permissioning](https://komo.do/docs/configuration/permissioning), [live API docs](https://demo.komo.do/docs), [ListServers pagination schema](https://docs.rs/komodo_client/latest/komodo_client/api/read/struct.ListServers.html), [Stack parent fields](https://docs.rs/komodo_client/latest/komodo_client/entities/stack/struct.StackListItemInfo.html), [Deployment parent fields](https://docs.rs/komodo_client/latest/komodo_client/entities/deployment/struct.DeploymentListItemInfo.html), [Swarm membership fields](https://docs.rs/komodo_client/latest/komodo_client/entities/swarm/struct.SwarmListItemInfo.html), [v2.3.2 client API reference](https://docs.rs/komodo_client/2.3.2/komodo_client/), and [release list](https://github.com/moghtech/komodo/releases). References inform the protocol shape; support is not pinned to `2.3.3`.
 - Pulse resource API: `/api/resources/{id}/link` and `/unlink`; resource graph and supplemental record APIs are owned by `internal/unifiedresources`.
 
-## Phase 2D — Komodo live qualification preparation
+## Phase 2D — Komodo live qualification preparation (historical snapshot; superseded by the current status above and below)
 
 ### Environment result
 
@@ -450,7 +450,7 @@ At this checkpoint the `GetPermission` handler, serializer, and effective-permis
 
 The harness now logs the verified Core version before inventory collection, and client contract errors identify only the allowlisted method and safe JSON shape. `rtk go test ./internal/komodo -run 'TestClientIdentifiesMalformedReadContractWithoutEchoingResponse' -count=1` passed. No mutation, merge, deployment, integration expansion, or image build occurred.
 
-## Phase 2E GetPermission compatibility review — 2026-10-25
+## Phase 2E GetPermission compatibility review — 2026-10-25 (historical gate; current result is recorded below)
 
 The v2.3.4 tagged source was reviewed at the handler, response serialization, and permission resolver layers:
 
@@ -459,7 +459,7 @@ The v2.3.4 tagged source was reviewed at the handler, response serialization, an
 - The [`permission resolver`](https://github.com/moghtech/komodo/blob/v2.3.4/bin/core/src/permission.rs) combines admin status, resource base permissions, user-wide permissions, all applicable groups, per-resource user/group grants, and inherited target specifics. The group query includes both explicit membership and `everyone: true` groups in [`helpers/query.rs`](https://github.com/moghtech/komodo/blob/v2.3.4/bin/core/src/helpers/query.rs).
 - [`ListPermissions`](https://github.com/moghtech/komodo/blob/v2.3.4/bin/core/src/api/read/permission.rs) returns only records directly assigned to the user. `ListUserGroups` only lists groups whose `users` field contains the user and therefore omits Everyone groups; `ListUserTargetPermissions` is admin-only. These APIs cannot reconstruct the complete effective specific-permission set. `GetPermission` is the only non-admin endpoint in the supported read allowlist that resolves that combined scope.
 
-The live `2.3.4` instance nevertheless returned a top-level JSON string for `GetPermission`. Pulse now recognizes both observed wire shapes while keeping the evidence distinct:
+At this earlier checkpoint, the live `2.3.4` instance had returned a top-level JSON string for `GetPermission`. The then-current client behavior and qualification gate were:
 
 | Wire response | Decoder behavior | Qualification result |
 |---|---|---|
@@ -469,7 +469,7 @@ The live `2.3.4` instance nevertheless returned a top-level JSON string for `Get
 
 Scope validation now checks each returned resource because Komodo can grant different effective permission levels and specifics per target. Errors and qualification output contain no response body, native IDs, names, or credentials.
 
-### Requalification result
+### Requalification result at that checkpoint (superseded)
 
 The opt-in harness was rerun using the provided owner-only test credential file and `https://komodo.home.gonecrzy.com`. TLS verification remained enabled and only the existing allowlisted `/read` methods were used.
 
@@ -482,15 +482,15 @@ The opt-in harness was rerun using the provided owner-only test credential file 
 | Inventory counts, resource states, parent relationships, and identity stability | **Not qualified.** The harness stopped on the first Server effective-scope check; no complete inventory was returned and no raw resource data was logged. |
 | Monitoring integration and Docker image | Not started because effective read-only scope remains unqualified. |
 
-### Operator attestation still required
+### Operator attestation requirements used in the next run (now satisfied)
 
 An authorized Komodo administrator must verify that the API-key principal is non-admin and that, for every Server, Stack, Deployment, and Swarm that this key can expose, the effective permission is `Read` with no specific grants. That verification must include direct user grants, every applicable user group including Everyone groups, resource base permissions, and inherited target permissions. The live endpoint's level-only response cannot provide this attestation, and the existing non-admin read endpoints cannot independently reconstruct it. Do not treat a key described as “read-only” as sufficient evidence. No additional credential or raw API schema is required; rerun live qualification after the effective-permission representation is corrected or the operator verification gate is explicitly resolved in a reviewed change.
 
 The focused fixture suite passes (`go test ./internal/komodo -count=1`: 67 tests), and `go vet ./internal/komodo` passes. The live qualification test exits with the expected safe permission-verification gate. No monitoring, alert, notification, UI, Patrol, metrics, or Docker-image work was started. No Komodo mutation, merge, deployment, or execution authority was introduced.
 
-## Phase 2E operator permission attestation gate — 2026-10-25
+## Phase 2E operator permission attestation gate — 2026-10-25 (historical gate; resolved for this read-only checkpoint)
 
-The live `GetPermission` string response cannot establish the absence of effective specific permissions. The non-admin read APIs previously reviewed cannot reconstruct the resolver's complete permission set, including direct grants, UserGroups (including Everyone), resource defaults, and inherited permissions. Production validation remains unchanged: it accepts only supported structured `Read` with an empty `specific` list and rejects unknown/elevated levels, malformed responses, and non-empty specifics.
+At the time of this checkpoint, the level-only response could not establish that effective specific permissions were absent. The non-admin read APIs could not reconstruct the resolver's complete permission set, including direct grants, UserGroups (including Everyone), resource defaults, and inherited permissions. This evidence limitation still applies. The monitoring collector now proceeds only through its allowlisted read methods and records level-only specifics as unverified; the qualification harness reports success only after the existing operator attestation is accepted. No action capability is inferred from the Komodo key.
 
 The opt-in test harness now accepts the observed top-level JSON string `"Read"` only when an operator attestation is loaded from an explicitly selected, owner-only file. The gate is test-only and cannot be reached by production credential validation or the monitoring poller. Once loaded, the harness adapts only successful `/read/GetPermission` bodies that are exactly the JSON string `"Read"` into the existing structured `{ "level":"Read", "specific":[] }` decoder input. It passes structured responses unchanged, so elevated specific permissions remain rejected, and it passes `None`, `Execute`, `Write`, unknown levels, malformed bodies, error responses, and other methods unchanged. The test output labels adapted evidence `operator_attested`; it does not label it API-verified.
 
@@ -545,3 +545,75 @@ The fingerprint-only mode safely loaded the existing protected file, checked its
 The supplied evidence does not attest to effective permission resolution through UserGroups, Everyone groups, resource-default permissions, or inherited target permissions. The UI's “no specific grants displayed,” the empty direct `ListPermissions` array, and level-only per-resource `"Read"` responses do not establish that no effective specific permissions exist across those sources. Therefore no attestation file was created and no authenticated API request, inventory qualification, identity-stability comparison, parent validation, integration work, or image build was performed in this turn. Resume qualification only after an authorized operator explicitly verifies those remaining claims and provides the owner-only assertion bound to the verified fingerprint.
 
 Validation after adding the network-free fingerprint mode passed: `rtk go test ./internal/komodo -count=1` (102 tests), `rtk go vet ./internal/komodo`, `rtk git diff --check`, and `rtk npm run lint:planning-docs`.
+
+## Phase 2E monitoring continuation and live qualification status — 2026-10-25
+
+The operator explicitly confirmed that the `sindri-api` principal is non-admin, has read-only base permissions, and has no elevated direct, UserGroup, Everyone, resource-default, or inherited permissions, including no Execute, Write, Terminal, Attach, Inspect, Logs, or Processes privileges. The existing protected credential file and the exact-endpoint/non-secret-fingerprint attestation were loaded by the opt-in harness. No permission re-attestation is needed for this checkpoint. This evidence is operator-attested; the level-only `GetPermission` response does not independently prove effective specific permissions through Komodo's API.
+
+The first resumed attempt against `https://komodo.home.goneczy.com` stopped because DNS did not resolve in this environment. Per the operator's direction, the opt-in harness then used the exact alternate endpoint `http://10.1.10.101:9120`. An unauthenticated `POST /read/GetVersion` returned HTTP 401, confirming the Komodo API route was reachable. The test-only harness accepted this exact HTTP origin; production endpoint validation and the production client remain HTTPS-only. The authenticated inventory run passed as recorded above. Because HTTP does not encrypt credentials in transit, this endpoint was used only for the explicitly requested, test-only qualification; it is not a production connection recommendation. No TLS verification was weakened.
+
+### Fixture-backed Phase 2E integration
+
+Komodo connection health now enters the existing connection alert lifecycle for the monitor's organization. Canonical Komodo resource incidents use the existing unified incident lifecycle and its normal `NotificationManager` dispatch/recovery path. Explicit adverse states normalize to safe fixed summaries; stopped, disabled, transitional, and unknown states do not create failure incidents. Cached Komodo incidents do not refresh or recover while their provider evidence is stale. Komodo types are visible to the current frontend resource presentation, and sanitized Server/Swarm plus Stack/Deployment context is available to Patrol without an AI dependency in polling or alert evaluation. Existing operator-confirmed identity links and persistent dependency edges remain in the central registry; this continuation adds no name-based merging, route discovery, or new topology store. It adds no metric/history writer and does not alter Proxmox history ownership.
+
+### Live API compatibility matrix
+
+| Check | Result | Evidence boundary |
+|---|---|---|
+| Endpoint/authentication | Passed against the exact operator-provided `http://10.1.10.101:9120` test endpoint. An unauthenticated `GetVersion` got HTTP 401; authenticated reads succeeded. | HTTP is unencrypted and test-only. Production Komodo connections still require HTTPS and normal certificate validation. |
+| Core version | `2.3.4`; supported Core v2 gate passed. | Queried by the opt-in harness. |
+| Read-method scope | `GetVersion`, `ListPermissions`, `GetPermission`, `ListServers`, `ListStacks`, `ListDeployments`, and `ListSwarms` completed. All four inventory list kinds passed (`4/4`). | The client has no other method path. |
+| Permission evidence | `GetPermission` returned the level-only JSON string `"Read"` 86 times. Base read access was API-observed; no elevated effective specifics were operator-attested for all four resource kinds. | The API did not prove absence of effective specifics. The harness labels that evidence operator-attested, not API-verified. |
+| Inventory and stable identity | 11 Servers, 32 Stacks, 0 Deployments, 0 Swarms; 43 stable identities across two consecutive reads. | Native IDs are scoped by the Pulse connection UUID and resource kind. Names are not identity keys. |
+| State and normalization | All 43 resources had a reported state; normalization produced 43 Online records, 0 Warning, 0 Offline, 0 Unknown, and 0 incidents. | Raw state and resource names/IDs are not written to test output or this report. |
+| Parent relationships | 32 Stack-to-Server references, 0 Stack-to-Swarm, 0 Deployment parents, 0 Swarm memberships, and 0 unresolved parent references. Parent-field evidence matched across both reads. Normalization emitted 32 `hosted_by` edges. | Deployment and Swarm parent cases had no live samples. Fixtures cover their mappings and precedence. |
+| Pagination | Live inventory fit within the first page for each kind; a second live page was not exercised. | Fixture tests cover pagination and duplicate IDs across pages. |
+| Failure, recovery, and cross-provider links | Not induced or asserted against live resources. | Poll failure/stale/recovery, registry refresh, persistent dependencies, availability associations, Proxmox/Komodo explicit identity folding, and resource-removal cases are covered by fixtures. A live Proxmox pair was not available for comparison. |
+
+Future Komodo actions are not a permanent product prohibition, but remain outside this monitoring checkpoint. The collector has no execution methods. Any future action integration must define an explicit Pulse policy capability independent of the Komodo key's upstream permissions and submit requests to Pulse's existing canonical authorization, approval, execution, audit, and verification lifecycle. No action method, runner, or capability is registered here.
+
+### Changed files in this continuation
+
+| File | Change |
+|---|---|
+| `internal/api/connections_alerts.go` | Include Komodo status in the per-organization connection-alert snapshot; correct organization-wiring comments. |
+| `internal/api/connections_alerts_branchcov0722am_test.go` | Cover Komodo connection snapshot/type projection. |
+| `internal/api/connections_handlers.go` | Clarify the Komodo poller connection-alert/status wiring comment. |
+| `internal/alerts/connection.go` | Route Komodo connection degradation through the existing connection alert lifecycle and threshold policy. |
+| `internal/alerts/connection_test.go` | Cover opening and confirmation-based recovery for Komodo connection failures. |
+| `internal/komodo/normalize.go` | Convert explicit adverse resource states to redacted canonical incidents. |
+| `internal/komodo/normalize_test.go` | Cover adverse, warning, stopped, transitional, and unknown state normalization. |
+| `internal/alerts/unified_incidents.go` | Admit Komodo resource incidents to the common lifecycle and hold them when provider evidence is stale. |
+| `internal/alerts/unified_incidents_test.go` | Cover Komodo incident alerting, stale evidence, and recovery behavior. |
+| `internal/unifiedresources/incidents.go` | Add provider-owned incident snapshot replacement while preserving other providers' evidence. |
+| `internal/unifiedresources/registry.go` | Replace only Komodo incident evidence on refresh, including manual identity-link folds. |
+| `internal/unifiedresources/incidents_test.go` | Cover Komodo evidence refresh on a linked multi-provider canonical resource. |
+| `internal/ai/resource_context.go` | Include sanitized Komodo inventory and workload labels in Patrol resource context. |
+| `internal/ai/resource_context_test.go` | Cover Komodo resource context and parent information. |
+| `internal/monitoring/monitor_alerts.go` | Update the supported connection-health source comment. |
+| `internal/unifiedresources/unified_ai_adapter.go` | Classify Komodo Servers/Swarms as infrastructure and Stacks/Deployments as workloads. |
+| `internal/monitoring/monitor_severity_delivery_test.go` | Verify Komodo resource incident firing and recovery reach the existing NotificationManager. |
+| `internal/komodo/client.go` | Track API-verified list access separately from unverified effective specifics; accept level-only Read for the read-only collector without claiming specifics are absent, and include safe method/status context in errors. |
+| `internal/komodo/client_test.go` | Cover successful empty list methods and level-only Read with explicit unverified-specific scope. |
+| `internal/komodo/live_qualification_http_test.go` | Add an exact endpoint allowlist for the operator-supplied HTTP address only in the opt-in test harness; keep the production client HTTPS-only and qualification transport direct/bounded. |
+| `internal/komodo/live_qualification_test.go` | Validate the two-read live identity set, resource states, normalized record identities/types, and actual parent/membership mapping. |
+| `internal/komodo/live_qualification_attestation_impl_test.go` | Observe, but do not rewrite, level-only Read responses; retain operator-attested evidence as distinct from API evidence. |
+| `internal/komodo/live_qualification_attestation_test.go` | Assert the observer preserves response evidence and unsafe permissions remain rejected. |
+| `internal/komodo/live_qualification_credentials_test.go` | Allow the exact test-only qualification endpoint through the secure owner-only file path. |
+| `frontend-modern/src/utils/reportingResourceTypes.ts` | Add all four Komodo resource types to reporting. |
+| `frontend-modern/src/utils/__tests__/reportingResourceTypes.test.ts` | Cover Komodo reporting resource types. |
+| `frontend-modern/src/components/Settings/__tests__/reportingResourceTypes.test.ts` | Cover Komodo reporting types through the Settings component boundary. |
+| `frontend-modern/src/types/resource.ts` | Add Komodo canonical resource types to the frontend contract. |
+| `frontend-modern/src/utils/resourceTypeCompat.ts` | Preserve canonical Komodo resource types at the frontend API boundary. |
+| `frontend-modern/src/utils/canonicalResourceTypes.ts` | Include Komodo types in canonical presentation handling. |
+| `frontend-modern/src/utils/resourceTypePresentation.ts` | Add human-readable Komodo resource labels. |
+| `frontend-modern/src/utils/__tests__/resourceTypeCompat.test.ts` | Cover Komodo type compatibility. |
+| `frontend-modern/src/utils/__tests__/resourceTypePresentation.test.ts` | Cover Komodo labels. |
+| `docs/plans/2026-10-23-sindri-integration-roadmap.md` | Record Phase 2E live qualification, the HTTP test-only limitation, the trusted HTTPS production requirement, and the separately governed future-action direction. |
+| `docs/plans/2026-10-25-komodo-phase-2-checkpoint.md` | Record current API evidence, integration status, remaining decisions, test-image instructions, and this file report. |
+
+### Remaining production transport and image requirements
+
+Before configuring Komodo in a deployed Pulse instance, restore DNS for `komodo.home.goneczy.com` and ensure its certificate chain is trusted through the system trust store, or provide another trusted HTTPS origin. A private or self-signed certificate requires the authorized CA certificate to be installed; do not disable TLS validation. No further qualification credential or permission confirmation is required. A live Proxmox-to-Komodo canonical pair and operator-authored service dependency were not independently checked against a live Proxmox inventory in this run; fixture regression tests cover the existing explicit identity and dependency mechanisms, and names are never used to merge resources automatically.
+
+The test image has not been built yet. After the source is committed, build the existing production `Dockerfile` under a unique local tag containing the source SHA; do not push a stable/latest tag. Use a separate test container and a copied data directory, preserve the matching encryption key/config pair in that copy, and never point the test container at the live writable database. This continuation adds no database schema migration. Retain a verified backup of the copy before testing; rollback by stopping the test container and returning to the pristine pre-test data copy or restoring its verified backup. A local image build alone does not complete operator acceptance or authorize deployment.

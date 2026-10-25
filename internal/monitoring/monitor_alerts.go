@@ -170,7 +170,7 @@ func (m *Monitor) SetConnectionsSnapshotLister(lister func() []alerts.Connection
 
 // checkConnectionAlerts runs CheckConnection against every platform
 // connection snapshot the registered lister returns. Invoked from the main
-// poll tick so a wedged PVE / PBS / PMG / VMware / TrueNAS connection escalates
+// poll tick so a wedged PVE / PBS / PMG / VMware / TrueNAS / Komodo connection escalates
 // into the top-nav alert stream instead of staying behind on the Settings page.
 func (m *Monitor) checkConnectionAlerts() {
 	defer recoverFromPanic("checkConnectionAlerts")

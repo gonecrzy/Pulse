@@ -78,9 +78,9 @@ func loadLiveQualificationConfig() (liveQualificationConfig, error) {
 	credentialPath := strings.TrimSpace(os.Getenv("PULSE_KOMODO_QUALIFICATION_CREDENTIAL_FILE"))
 	endpoint := strings.TrimSpace(os.Getenv("PULSE_KOMODO_QUALIFICATION_ENDPOINT"))
 	if credentialPath == "" || endpoint == "" {
-		return liveQualificationConfig{}, errors.New("file qualification requires an explicit credential file and HTTPS endpoint")
+		return liveQualificationConfig{}, errors.New("file qualification requires an explicit credential file and approved Core endpoint")
 	}
-	validatedEndpoint, err := validateEndpoint(endpoint)
+	validatedEndpoint, err := validateQualificationEndpoint(endpoint)
 	if err != nil {
 		return liveQualificationConfig{}, errors.New("qualification endpoint is invalid")
 	}

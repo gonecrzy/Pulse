@@ -38,6 +38,7 @@ const (
 	ConnectionTypePMG     ConnectionType = "pmg"
 	ConnectionTypeVMware  ConnectionType = "vmware"
 	ConnectionTypeTrueNAS ConnectionType = "truenas"
+	ConnectionTypeKomodo  ConnectionType = "komodo"
 )
 
 // platformType returns the canonical platform id of the connection's source,
@@ -54,6 +55,8 @@ func (t ConnectionType) platformType() string {
 		return "vmware-vsphere"
 	case ConnectionTypeTrueNAS:
 		return "truenas"
+	case ConnectionTypeKomodo:
+		return "komodo-core"
 	default:
 		return ""
 	}
@@ -96,7 +99,7 @@ const connectionDegradedStateKey = "connection-degraded"
 
 func isPlatformConnectionType(t ConnectionType) bool {
 	switch t {
-	case ConnectionTypePVE, ConnectionTypePBS, ConnectionTypePMG, ConnectionTypeVMware, ConnectionTypeTrueNAS:
+	case ConnectionTypePVE, ConnectionTypePBS, ConnectionTypePMG, ConnectionTypeVMware, ConnectionTypeTrueNAS, ConnectionTypeKomodo:
 		return true
 	default:
 		return false
@@ -125,6 +128,8 @@ func (m *Manager) connectionDegradedPolicyDisabledNoLock(resourceID, policyResou
 		thresholdType = "vmware-host"
 	case ConnectionTypeTrueNAS:
 		thresholdType = "truenas-system"
+	case ConnectionTypeKomodo:
+		thresholdType = "komodo-core"
 	default:
 		return true
 	}

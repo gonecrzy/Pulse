@@ -63,7 +63,7 @@ func (h *ConnectionsHandlers) SetPlatformPollers(
 }
 
 // SetKomodoPoller wires cached Komodo health into the unified connections
-// ledger. It does not register Komodo with connection-alert evaluation.
+// ledger and the existing connection-alert evaluation path.
 func (h *ConnectionsHandlers) SetKomodoPoller(getKomodoPoller func(ctx context.Context) *monitoring.KomodoPoller) {
 	if h == nil {
 		return

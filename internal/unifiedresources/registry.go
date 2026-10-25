@@ -4140,7 +4140,11 @@ func (rr *ResourceRegistry) mergeInto(existing *Resource, incoming Resource, sou
 
 	// Merge tags
 	existing.Tags = uniqueStrings(append(existing.Tags, incoming.Tags...))
-	existing.Incidents = mergeResourceIncidents(existing.Incidents, incoming.Incidents)
+	if source == SourceKomodo {
+		existing.Incidents = replaceProviderResourceIncidents(existing.Incidents, incoming.Incidents, "komodo")
+	} else {
+		existing.Incidents = mergeResourceIncidents(existing.Incidents, incoming.Incidents)
+	}
 
 	mergedPhysicalDisk := incoming.PhysicalDisk != nil
 	if mergedPhysicalDisk {
@@ -5222,7 +5226,11 @@ func (rr *ResourceRegistry) mergeResourceData(primary *Resource, other *Resource
 	}
 	primary.Identity = mergeIdentity(primary.Identity, other.Identity)
 	primary.Tags = uniqueStrings(append(primary.Tags, other.Tags...))
-	primary.Incidents = mergeResourceIncidents(primary.Incidents, other.Incidents)
+	if hasDataSource(other.Sources, SourceKomodo) {
+		primary.Incidents = replaceProviderResourceIncidents(primary.Incidents, other.Incidents, "komodo")
+	} else {
+		primary.Incidents = mergeResourceIncidents(primary.Incidents, other.Incidents)
+	}
 	primary.Sources = addSources(primary.Sources, other.Sources)
 	if primary.SourceStatus == nil {
 		primary.SourceStatus = make(map[DataSource]SourceStatus)

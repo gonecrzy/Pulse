@@ -29,6 +29,47 @@ func TestNormalizeInventoryScopesStableIdentityByConnectionKindAndNativeID(t *te
 	}
 }
 
+func TestNormalizeInventoryEmitsCanonicalHealthIncidentsOnlyForExplicitFailureStates(t *testing.T) {
+	now := time.Unix(250, 0).UTC()
+	for _, tc := range []struct {
+		name          string
+		state         string
+		wantStatus    unifiedresources.ResourceStatus
+		wantIncidents int
+	}{
+		{name: "server not ok", state: "NotOk", wantStatus: unifiedresources.StatusOffline, wantIncidents: 1},
+		{name: "deployment failed", state: "Failed", wantStatus: unifiedresources.StatusOffline, wantIncidents: 1},
+		{name: "intentional stopped deployment", state: "Stopped", wantStatus: unifiedresources.StatusOffline},
+		{name: "transitional deployment", state: "Deploying", wantStatus: unifiedresources.StatusWarning},
+		{name: "unknown state", state: "future-state", wantStatus: unifiedresources.StatusUnknown},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			records := NormalizeInventory("connection-1", Inventory{
+				Deployments: []Resource{{ID: "workload-1", Name: "workload", Kind: KindDeployment, State: tc.state}},
+			}, now)
+			if len(records) != 1 {
+				t.Fatalf("normalized record count = %d, want 1", len(records))
+			}
+			resource := records[0].Resource
+			if resource.Status != tc.wantStatus {
+				t.Fatalf("status = %q, want %q", resource.Status, tc.wantStatus)
+			}
+			if len(resource.Incidents) != tc.wantIncidents {
+				t.Fatalf("incidents = %+v, want %d", resource.Incidents, tc.wantIncidents)
+			}
+			if tc.wantIncidents == 1 {
+				incident := resource.Incidents[0]
+				if incident.Provider != "komodo" || incident.NativeID != "workload-1" || incident.Code != "komodo_resource_unhealthy" || incident.StartedAt != now {
+					t.Fatalf("incident identity = %+v", incident)
+				}
+				if incident.Summary != "Komodo reported an unhealthy deployment" {
+					t.Fatalf("incident summary included untrusted provider response material: %+v", incident)
+				}
+			}
+		})
+	}
+}
+
 func TestNormalizeInventorySetsParentsAndSwarmMembershipWithoutRawPayload(t *testing.T) {
 	now := time.Unix(200, 0).UTC()
 	inventory := Inventory{

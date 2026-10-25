@@ -19,6 +19,10 @@ describe('toReportingResourceType', () => {
     expect(toReportingResourceType('network-endpoint')).toBe('network-endpoint');
     expect(toReportingResourceType('network-share')).toBe('network-share');
     expect(toReportingResourceType('storage')).toBe('storage');
+    expect(toReportingResourceType('komodo-server')).toBe('komodo-server');
+    expect(toReportingResourceType('komodo-swarm')).toBe('komodo-swarm');
+    expect(toReportingResourceType('komodo-stack')).toBe('komodo-stack');
+    expect(toReportingResourceType('komodo-deployment')).toBe('komodo-deployment');
   });
 
   it('adapts kubernetes resource kinds to the current reporting API token at the edge', () => {

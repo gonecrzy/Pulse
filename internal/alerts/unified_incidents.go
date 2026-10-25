@@ -70,6 +70,9 @@ func (m *Manager) SyncUnifiedResourceIncidents(resources []unifiedresources.Reso
 			if !ok {
 				continue
 			}
+			if komodoIncidentEvidenceStale(resource) {
+				continue
+			}
 			if !resourceSupportsUnifiedIncidentAlerts(resource) {
 				continue
 			}
@@ -244,6 +247,12 @@ func (m *Manager) SyncUnifiedResourceIncidents(resources []unifiedresources.Reso
 			continue
 		}
 		resourceID := unifiedresources.CanonicalResourceID(alert.ResourceID)
+		if resource, resourceObserved := resourcesByID[resourceID]; resourceObserved && komodoIncidentEvidenceStale(resource) {
+			// Komodo retains last-known records on collection failure. Keep an
+			// open incident open, but do not refresh its evidence or treat cached
+			// data as a current recovery observation.
+			continue
+		}
 		required := alertMetadataInt(alert, "recoveryConfirmationsRequired")
 		if required > 1 {
 			if _, resourceObserved := resourcesByID[resourceID]; !resourceObserved {
@@ -479,9 +488,27 @@ func resourceSupportsUnifiedIncidentAlerts(resource unifiedresources.Resource) b
 		return len(resource.Incidents) > 0
 	case unifiedresources.ResourceTypeNetworkEndpoint:
 		return len(resource.Incidents) > 0
+	case unifiedresources.ResourceTypeKomodoServer,
+		unifiedresources.ResourceTypeKomodoSwarm,
+		unifiedresources.ResourceTypeKomodoStack,
+		unifiedresources.ResourceTypeKomodoDeployment:
+		return len(resource.Incidents) > 0
 	default:
 		return false
 	}
+}
+
+func komodoIncidentEvidenceStale(resource unifiedresources.Resource) bool {
+	switch resource.Type {
+	case unifiedresources.ResourceTypeKomodoServer,
+		unifiedresources.ResourceTypeKomodoSwarm,
+		unifiedresources.ResourceTypeKomodoStack,
+		unifiedresources.ResourceTypeKomodoDeployment:
+	default:
+		return false
+	}
+	status, exists := resource.SourceStatus[unifiedresources.SourceKomodo]
+	return exists && (status.Status == "stale" || status.Status == "offline")
 }
 
 func alertLevelFromCanonicalSeverity(level alertspecs.AlertSeverity) (AlertLevel, bool) {
@@ -675,6 +702,11 @@ func unifiedIncidentAlertType(resource unifiedresources.Resource, incident unifi
 			return "zfs-pool-state"
 		}
 		return "storage-incident"
+	case unifiedresources.ResourceTypeKomodoServer,
+		unifiedresources.ResourceTypeKomodoSwarm,
+		unifiedresources.ResourceTypeKomodoStack,
+		unifiedresources.ResourceTypeKomodoDeployment:
+		return "komodo-resource-health"
 	default:
 		return "resource-incident"
 	}

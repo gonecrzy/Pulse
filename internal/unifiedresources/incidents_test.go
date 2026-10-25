@@ -293,3 +293,47 @@ func TestRefreshResourceIncidentRollup_PicksHighestSeverity(t *testing.T) {
 		t.Errorf("expected code 'critical', got %q", resource.IncidentCode)
 	}
 }
+
+func TestKomodoIncidentSnapshotReplacesOnlyKomodoEvidenceOnLinkedResource(t *testing.T) {
+	const pveSourceID = "pve:cluster-a:vmid:104"
+	const komodoSourceID = "komodo:connection-a:server:server-1"
+	pveID := SourceSpecificID(ResourceTypeVM, SourceProxmox, pveSourceID)
+	komodoID := SourceSpecificID(ResourceTypeKomodoServer, SourceKomodo, komodoSourceID)
+	registry := NewRegistryWithManualLinks([]ResourceLink{{
+		ResourceA: pveID,
+		ResourceB: komodoID,
+		PrimaryID: pveID,
+		Reason:    "operator-confirmed identity",
+		CreatedAt: time.Unix(1, 0).UTC(),
+	}})
+	now := time.Now().UTC()
+	registry.IngestRecords(SourceProxmox, []IngestRecord{{
+		SourceID: pveSourceID,
+		Resource: Resource{
+			Type: ResourceTypeVM, Name: "media-vm", Status: StatusOnline, LastSeen: now,
+			Incidents: []ResourceIncident{{Provider: "proxmox", NativeID: "104", Code: "guest_alert", Severity: storagehealth.RiskWarning, Summary: "Proxmox observation"}},
+		},
+	}})
+	komodoRecord := func(incidents []ResourceIncident) IngestRecord {
+		return IngestRecord{SourceID: komodoSourceID, Resource: Resource{
+			Type: ResourceTypeKomodoServer, Name: "media-server", Status: StatusOnline, LastSeen: now,
+			Incidents: incidents,
+		}}
+	}
+	registry.IngestRecords(SourceKomodo, []IngestRecord{komodoRecord([]ResourceIncident{{
+		Provider: "komodo", NativeID: "server-1", Code: "komodo_resource_unhealthy",
+		Severity: storagehealth.RiskCritical, Summary: "Komodo observation",
+	}})})
+	registry.IngestRecords(SourceKomodo, []IngestRecord{komodoRecord(nil)})
+
+	resource, ok := registry.Get(pveID)
+	if !ok {
+		t.Fatal("linked Proxmox resource disappeared")
+	}
+	if len(resource.Incidents) != 1 || resource.Incidents[0].Provider != "proxmox" {
+		t.Fatalf("Komodo healthy snapshot failed to clear only Komodo evidence: resource=%+v incidents=%+v", resource, resource.Incidents)
+	}
+	if len(resource.Sources) != 2 {
+		t.Fatalf("healthy Komodo snapshot lost linked provider sources: %v", resource.Sources)
+	}
+}

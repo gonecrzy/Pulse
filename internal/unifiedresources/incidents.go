@@ -33,6 +33,20 @@ func mergeResourceIncidents(existing, incoming []ResourceIncident) []ResourceInc
 	return merged
 }
 
+// replaceProviderResourceIncidents applies one provider's complete current
+// incident snapshot while preserving evidence owned by other providers folded
+// into the same canonical resource.
+func replaceProviderResourceIncidents(existing, incoming []ResourceIncident, provider string) []ResourceIncident {
+	provider = strings.TrimSpace(provider)
+	kept := make([]ResourceIncident, 0, len(existing)+len(incoming))
+	for _, incident := range existing {
+		if !strings.EqualFold(strings.TrimSpace(incident.Provider), provider) {
+			kept = append(kept, incident)
+		}
+	}
+	return mergeResourceIncidents(kept, incoming)
+}
+
 func IncidentsStatus(base ResourceStatus, incidents []ResourceIncident) ResourceStatus {
 	if len(incidents) == 0 {
 		return base

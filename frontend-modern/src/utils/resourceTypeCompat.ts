@@ -44,7 +44,11 @@ export type CanonicalFrontendResourceType =
   | 'k8s-pod-disruption-budget'
   | 'k8s-horizontal-pod-autoscaler'
   | 'k8s-event'
-  | 'network-endpoint';
+  | 'network-endpoint'
+  | 'komodo-server'
+  | 'komodo-swarm'
+  | 'komodo-stack'
+  | 'komodo-deployment';
 
 const asNormalizedString = (value: unknown): string | undefined => {
   if (typeof value !== 'string') return undefined;
@@ -150,6 +154,10 @@ export const canonicalizeFrontendResourceType = (
     case 'k8s-horizontal-pod-autoscaler':
     case 'k8s-event':
     case 'network-endpoint':
+    case 'komodo-server':
+    case 'komodo-swarm':
+    case 'komodo-stack':
+    case 'komodo-deployment':
       return normalized;
     default:
       return undefined;

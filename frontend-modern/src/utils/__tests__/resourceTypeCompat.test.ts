@@ -54,6 +54,10 @@ describe('resourceTypeCompat', () => {
       'k8s-horizontal-pod-autoscaler',
     );
     expect(canonicalizeFrontendResourceType('k8s-event')).toBe('k8s-event');
+    expect(canonicalizeFrontendResourceType('komodo-server')).toBe('komodo-server');
+    expect(canonicalizeFrontendResourceType('komodo-swarm')).toBe('komodo-swarm');
+    expect(canonicalizeFrontendResourceType('komodo-stack')).toBe('komodo-stack');
+    expect(canonicalizeFrontendResourceType('komodo-deployment')).toBe('komodo-deployment');
   });
 
   it('does not silently canonicalize removed non-canonical workload aliases', () => {

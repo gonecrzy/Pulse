@@ -146,9 +146,13 @@ func validateEndpoint(raw string) (*url.URL, error) {
 	return parsed, nil
 }
 
-// PermissionScope reports resource kinds for which access was verified.
+// PermissionScope distinguishes successful read-method access from evidence
+// about the credential's additional Komodo-specific permissions. The Pulse
+// client remains read-only regardless of those upstream permissions.
 type PermissionScope struct {
-	Verified []ResourceKind `json:"verified"`
+	Verified                      []ResourceKind `json:"verified"` // Allowlisted inventory methods returned successfully.
+	SpecificPermissionsVerified   []ResourceKind `json:"specificPermissionsVerified,omitempty"`
+	SpecificPermissionsUnverified []ResourceKind `json:"specificPermissionsUnverified,omitempty"`
 }
 
 // Resource is the allowlisted, normalized subset of a Komodo list item.
@@ -198,8 +202,10 @@ type permissionResponse struct {
 
 // UnmarshalJSON accepts the structured response declared by the Core v2
 // client model and the level-only enum observed from the live v2.3.4 Core.
-// A level-only response cannot attest that effective specific permissions
-// are empty, so CollectInventory must keep that case behind an operator gate.
+// A level-only response verifies the base level but cannot attest that
+// effective specific permissions are empty. Inventory collection records
+// that uncertainty separately; the live qualification harness requires its
+// existing operator attestation before reporting a pass.
 func (p *permissionResponse) UnmarshalJSON(data []byte) error {
 	*p = permissionResponse{}
 	trimmed := bytes.TrimSpace(data)
@@ -314,31 +320,28 @@ func (c *Client) CollectInventory(ctx context.Context) (Inventory, error) {
 		if err != nil {
 			return Inventory{}, err
 		}
+		specificPermissionsKnown := len(items) > 0
 		if len(items) == 0 {
-			if !hasDirectKindRead(grants, kind) {
-				return Inventory{}, fmt.Errorf("Komodo read scope for %s could not be verified", kind)
-			}
-			inventory.Scope.Verified = append(inventory.Scope.Verified, kind)
+			// A successful List* response verifies that this principal can call
+			// the inventory method. With no resource IDs, Core provides no
+			// per-resource effective permission target to inspect. Direct grants
+			// cannot prove that groups or inherited permissions add no specifics.
 		} else {
 			for _, item := range items {
-				var permission permissionResponse
-				err := c.call(ctx, "GetPermission", struct {
-					Target struct {
-						Type string `json:"type"`
-						ID   string `json:"id"`
-					} `json:"target"`
-				}{Target: struct {
-					Type string `json:"type"`
-					ID   string `json:"id"`
-				}{Type: string(kind), ID: item.ID}}, &permission)
+				specificKnown, err := c.verifyEffectiveReadPermission(ctx, kind, item.ID)
 				if err != nil {
 					return Inventory{}, err
 				}
-				if err := validateEffectiveReadPermission(kind, permission); err != nil {
-					return Inventory{}, err
+				if !specificKnown {
+					specificPermissionsKnown = false
 				}
 			}
-			inventory.Scope.Verified = append(inventory.Scope.Verified, kind)
+		}
+		inventory.Scope.Verified = append(inventory.Scope.Verified, kind)
+		if specificPermissionsKnown {
+			inventory.Scope.SpecificPermissionsVerified = append(inventory.Scope.SpecificPermissionsVerified, kind)
+		} else {
+			inventory.Scope.SpecificPermissionsUnverified = append(inventory.Scope.SpecificPermissionsUnverified, kind)
 		}
 		switch kind {
 		case KindServer:
@@ -354,17 +357,34 @@ func (c *Client) CollectInventory(ctx context.Context) (Inventory, error) {
 	return inventory, nil
 }
 
-func validateEffectiveReadPermission(kind ResourceKind, permission permissionResponse) error {
+func (c *Client) verifyEffectiveReadPermission(ctx context.Context, kind ResourceKind, targetID string) (bool, error) {
+	var permission permissionResponse
+	err := c.call(ctx, "GetPermission", struct {
+		Target struct {
+			Type string `json:"type"`
+			ID   string `json:"id"`
+		} `json:"target"`
+	}{Target: struct {
+		Type string `json:"type"`
+		ID   string `json:"id"`
+	}{Type: string(kind), ID: targetID}}, &permission)
+	if err != nil {
+		return false, err
+	}
+	return validateEffectiveReadPermission(kind, permission)
+}
+
+func validateEffectiveReadPermission(kind ResourceKind, permission permissionResponse) (bool, error) {
 	if !permissionSatisfiesRead(permission.Level) {
-		return fmt.Errorf("Komodo read scope for %s could not be verified", kind)
+		return false, fmt.Errorf("Komodo read scope for %s could not be verified", kind)
 	}
 	if !permission.specificKnown {
-		return fmt.Errorf("Komodo effective specific permissions for %s could not be verified; operator verification is required: confirm the key is non-admin and every inventoried resource resolves to Read with no effective specific grants through direct or group permissions (including Everyone), resource defaults, or inherited target permissions", kind)
+		return false, nil
 	}
 	if len(permission.Specific) > 0 {
-		return fmt.Errorf("Komodo effective specific permissions for %s exceed the supported read-only scope", kind)
+		return false, fmt.Errorf("Komodo effective specific permissions for %s exceed the supported read-only scope", kind)
 	}
-	return nil
+	return true, nil
 }
 
 func (c *Client) listKind(ctx context.Context, kind ResourceKind) ([]Resource, error) {
@@ -431,13 +451,13 @@ func (c *Client) call(ctx context.Context, method string, requestBody any, respo
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-			return errors.New("Komodo API request timeout or cancellation")
+			return fmt.Errorf("Komodo %s request timeout or cancellation", method)
 		}
 		var netErr net.Error
 		if errors.As(err, &netErr) && netErr.Timeout() {
-			return errors.New("Komodo API request timeout")
+			return fmt.Errorf("Komodo %s request timeout", method)
 		}
-		return errors.New("Komodo API request failed")
+		return fmt.Errorf("Komodo %s API request failed", method)
 	}
 	defer resp.Body.Close()
 	data, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))
@@ -450,13 +470,13 @@ func (c *Client) call(ctx context.Context, method string, requestBody any, respo
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		switch resp.StatusCode {
 		case http.StatusUnauthorized:
-			return errors.New("Komodo authentication failed")
+			return fmt.Errorf("Komodo %s authentication failed", method)
 		case http.StatusForbidden:
-			return errors.New("Komodo permission scope is insufficient")
+			return fmt.Errorf("Komodo %s permission scope is insufficient", method)
 		case http.StatusRequestTimeout, http.StatusGatewayTimeout:
-			return errors.New("Komodo API request timeout")
+			return fmt.Errorf("Komodo %s request timeout", method)
 		default:
-			return errors.New("Komodo upstream API request failed")
+			return fmt.Errorf("Komodo %s upstream API request failed (HTTP %d)", method, resp.StatusCode)
 		}
 	}
 	if responseBody == nil {
@@ -482,18 +502,6 @@ func (c *Client) call(ctx context.Context, method string, requestBody any, respo
 func supportedCoreVersion(version string) bool {
 	parts := coreVersionPattern.FindStringSubmatch(strings.TrimSpace(version))
 	return len(parts) == 4 && parts[1] == "2"
-}
-
-func hasDirectKindRead(grants []permissionGrant, kind ResourceKind) bool {
-	for _, grant := range grants {
-		// An empty list cannot prove authorization when the grant only covers
-		// one concrete resource. Require Komodo's explicit type-wide `all`
-		// target before treating an empty inventory as a successful collection.
-		if grant.ResourceTarget.Type == string(kind) && strings.EqualFold(strings.TrimSpace(grant.ResourceTarget.ID), "all") && permissionSatisfiesRead(grant.Level) {
-			return true
-		}
-	}
-	return false
 }
 
 func permissionSatisfiesRead(level string) bool {

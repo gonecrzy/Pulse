@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rcourtman/pulse-go-rewrite/internal/storagehealth"
 	"github.com/rcourtman/pulse-go-rewrite/internal/unifiedresources"
 )
 
@@ -80,6 +81,14 @@ func NormalizeInventory(connectionID string, inventory Inventory, observedAt tim
 			LastSeen:   observedAt,
 			UpdatedAt:  observedAt,
 		}
+		if incident, ok := healthIncident(item, observedAt); ok {
+			resource.Incidents = []unifiedresources.ResourceIncident{incident}
+			resource.IncidentCount = 1
+			resource.IncidentCode = incident.Code
+			resource.IncidentSeverity = incident.Severity
+			resource.IncidentSummary = incident.Summary
+			resource.IncidentCategory = "komodo-resource-health"
+		}
 		parentSourceID := ""
 		if parentID != "" && parentKind != "" {
 			parentSourceID = SourceID(connectionID, parentKind, parentID)
@@ -150,6 +159,35 @@ func NormalizeInventory(connectionID string, inventory Inventory, observedAt tim
 		}
 	}
 	return records
+}
+
+// healthIncident turns only explicit adverse Komodo states into a canonical
+// incident. Stopped/disabled and transitional states retain their normalized
+// resource status without becoming notification-worthy failures.
+func healthIncident(resource Resource, observedAt time.Time) (unifiedresources.ResourceIncident, bool) {
+	state := strings.ToLower(strings.TrimSpace(resource.State))
+	severity := storagehealth.RiskLevel("")
+	switch state {
+	case "notok", "unhealthy", "offline", "down", "failed", "failure", "error", "errored", "notdeployed":
+		severity = storagehealth.RiskCritical
+	case "warning":
+		severity = storagehealth.RiskWarning
+	default:
+		return unifiedresources.ResourceIncident{}, false
+	}
+	kind := strings.ToLower(strings.TrimSpace(string(resource.Kind)))
+	if kind == "" {
+		kind = "resource"
+	}
+	return unifiedresources.ResourceIncident{
+		Provider:  "komodo",
+		NativeID:  strings.TrimSpace(resource.ID),
+		Code:      "komodo_resource_unhealthy",
+		Severity:  severity,
+		Source:    "komodo-poller",
+		Summary:   "Komodo reported an unhealthy " + kind,
+		StartedAt: observedAt,
+	}, true
 }
 
 func stackParent(resource Resource) (ResourceKind, string) {

@@ -35,6 +35,7 @@ func TestBranchcov0722ConnectionTypeForAlerts(t *testing.T) {
 		{name: "pmg", input: ConnectionTypePMG, want: alerts.ConnectionTypePMG, wantOK: true},
 		{name: "vmware", input: ConnectionTypeVMware, want: alerts.ConnectionTypeVMware, wantOK: true},
 		{name: "truenas", input: ConnectionTypeTrueNAS, want: alerts.ConnectionTypeTrueNAS, wantOK: true},
+		{name: "komodo", input: ConnectionTypeKomodo, want: alerts.ConnectionTypeKomodo, wantOK: true},
 		// Non-platform types share the default arm with truly unknown values;
 		// both must report ok==false so the caller skips them.
 		{name: "agent", input: ConnectionTypeAgent, want: "", wantOK: false},
@@ -106,11 +107,19 @@ func TestBranchcov0722SnapshotConnectionsForAlerts(t *testing.T) {
 				State:                 ConnectionStateActive,
 				alertPolicyResourceID: "pbs-store-1",
 			},
+			{
+				ID:          "komodo:connection-1",
+				Type:        ConnectionTypeKomodo,
+				Name:        "Komodo Core",
+				State:       ConnectionStateStale,
+				StateReason: "showing last-known inventory",
+				Enabled:     true,
+			},
 		}
 
 		got := snapshotConnectionsForAlerts(conns)
-		if len(got) != 2 {
-			t.Fatalf("expected 2 snapshots, got %d (%+v)", len(got), got)
+		if len(got) != 3 {
+			t.Fatalf("expected 3 snapshots, got %d (%+v)", len(got), got)
 		}
 
 		// Full field mapping for the rich row (with LastError + LastSeen).
@@ -147,6 +156,17 @@ func TestBranchcov0722SnapshotConnectionsForAlerts(t *testing.T) {
 		}
 		if !reflect.DeepEqual(got[1], wantPBS) {
 			t.Fatalf("pbs snapshot mismatch:\n got  %+v\n want %+v", got[1], wantPBS)
+		}
+		wantKomodo := alerts.ConnectionSnapshot{
+			ID:          "komodo:connection-1",
+			Name:        "Komodo Core",
+			Type:        alerts.ConnectionTypeKomodo,
+			State:       alerts.ConnectionStateStale,
+			StateReason: "showing last-known inventory",
+			Enabled:     true,
+		}
+		if !reflect.DeepEqual(got[2], wantKomodo) {
+			t.Fatalf("Komodo snapshot mismatch:\n got  %+v\n want %+v", got[2], wantKomodo)
 		}
 		if got[1].LastSeen != nil {
 			t.Fatalf("pbs snapshot LastSeen must be nil, got %+v", got[1].LastSeen)

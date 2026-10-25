@@ -42,7 +42,7 @@ type qualificationPermissionAttestation struct {
 // identity token. The API secret is used only as the HMAC key and never leaves
 // memory or appears in the result.
 func qualificationCredentialFingerprint(config ClientConfig) string {
-	endpoint, err := validateEndpoint(config.Endpoint)
+	endpoint, err := validateQualificationEndpoint(config.Endpoint)
 	if err != nil || strings.TrimSpace(config.APIKey) == "" || strings.TrimSpace(config.APISecret) == "" {
 		return ""
 	}
@@ -61,7 +61,7 @@ func loadQualificationPermissionAttestation(path string, config ClientConfig, no
 	if strings.TrimSpace(path) == "" {
 		return qualificationPermissionAttestation{}, errors.New("permission attestation is missing")
 	}
-	if _, err := validateEndpoint(config.Endpoint); err != nil || qualificationCredentialFingerprint(config) == "" {
+	if _, err := validateQualificationEndpoint(config.Endpoint); err != nil || qualificationCredentialFingerprint(config) == "" {
 		return qualificationPermissionAttestation{}, errors.New("qualification connection identity is invalid")
 	}
 	contents, err := readOwnerOnlyQualificationFile(path)
@@ -74,7 +74,7 @@ func loadQualificationPermissionAttestation(path string, config ClientConfig, no
 		return qualificationPermissionAttestation{}, errors.New("permission attestation has an invalid format or incomplete claims")
 	}
 
-	endpoint, _ := validateEndpoint(config.Endpoint)
+	endpoint, _ := validateQualificationEndpoint(config.Endpoint)
 	if attestation.Endpoint != endpoint.String() {
 		return qualificationPermissionAttestation{}, errors.New("permission attestation endpoint does not match the selected Core endpoint")
 	}
@@ -164,9 +164,11 @@ func decodeQualificationPermissionAttestation(contents []byte) (qualificationPer
 	return result, nil
 }
 
-// qualificationPermissionTransport adapts only the Komodo Core v2.3.4
-// runtime's JSON string "Read" response, and only after an accepted operator
-// attestation. Production clients never install this test-only transport.
+// qualificationPermissionTransport observes level-only "Read" responses for
+// qualification reporting. It never adapts them into structured responses,
+// because doing so would claim that effective specific permissions were
+// API-verified when they were not. Production clients never install this
+// test-only observer.
 type qualificationPermissionTransport struct {
 	base     http.RoundTripper
 	attested bool
@@ -182,7 +184,7 @@ func newQualificationPermissionTransport(base http.RoundTripper, attestation qua
 
 func (transport *qualificationPermissionTransport) RoundTrip(request *http.Request) (*http.Response, error) {
 	response, err := transport.base.RoundTrip(request)
-	if err != nil || response == nil || !transport.attested || request.URL.Path != "/read/GetPermission" || response.StatusCode < 200 || response.StatusCode >= 300 {
+	if err != nil || response == nil || request.URL.Path != "/read/GetPermission" || response.StatusCode < 200 || response.StatusCode >= 300 {
 		return response, err
 	}
 	if response.ContentLength > 64 {
@@ -194,12 +196,7 @@ func (transport *qualificationPermissionTransport) RoundTrip(request *http.Reque
 		return response, nil
 	}
 	if request.Method == http.MethodPost && len(contents) <= 64 && strings.TrimSpace(string(contents)) == `"Read"` {
-		_ = response.Body.Close()
-		response.Body = io.NopCloser(strings.NewReader(`{"level":"Read","specific":[]}`))
-		response.ContentLength = int64(len(`{"level":"Read","specific":[]}`))
-		response.Header.Del("Content-Length")
 		transport.seen++
-		return response, nil
 	}
 	response.Body = &qualificationReplayBody{Reader: io.MultiReader(bytes.NewReader(contents), response.Body), closer: response.Body}
 	return response, nil

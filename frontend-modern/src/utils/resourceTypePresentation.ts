@@ -203,6 +203,22 @@ const RESOURCE_TYPE_PRESENTATION: Partial<Record<ResourceType | string, Resource
       label: 'Network Endpoint',
       badgeClasses: DEFAULT_BADGE_CLASSES,
     },
+    'komodo-server': {
+      label: 'Komodo Server',
+      badgeClasses: DEFAULT_BADGE_CLASSES,
+    },
+    'komodo-swarm': {
+      label: 'Komodo Swarm',
+      badgeClasses: DEFAULT_BADGE_CLASSES,
+    },
+    'komodo-stack': {
+      label: 'Komodo Stack',
+      badgeClasses: DEFAULT_BADGE_CLASSES,
+    },
+    'komodo-deployment': {
+      label: 'Komodo Deployment',
+      badgeClasses: DEFAULT_BADGE_CLASSES,
+    },
   };
 
 const EXTERNAL_TYPE_PRESENTATION: Record<string, ResourceTypePresentation> = {

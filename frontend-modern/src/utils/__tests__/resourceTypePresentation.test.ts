@@ -35,6 +35,10 @@ describe('resourceTypePresentation', () => {
     expect(getResourceTypeLabel('k8s-pod-disruption-budget')).toBe('PodDisruptionBudget');
     expect(getResourceTypeLabel('k8s-horizontal-pod-autoscaler')).toBe('HPA');
     expect(getResourceTypeLabel('k8s-event')).toBe('Event');
+    expect(getResourceTypeLabel('komodo-server')).toBe('Komodo Server');
+    expect(getResourceTypeLabel('komodo-swarm')).toBe('Komodo Swarm');
+    expect(getResourceTypeLabel('komodo-stack')).toBe('Komodo Stack');
+    expect(getResourceTypeLabel('komodo-deployment')).toBe('Komodo Deployment');
   });
 
   it('returns shared presentations for external recovery subject aliases', () => {

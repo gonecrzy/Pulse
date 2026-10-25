@@ -88,6 +88,9 @@ func TestClientAuthenticatesAgainstCoreV2AndAcceptsEmptyScopedInventory(t *testi
 	if len(inventory.Scope.Verified) != 4 {
 		t.Fatalf("verified scope = %v, want all four configured resource kinds", inventory.Scope.Verified)
 	}
+	if len(inventory.Scope.SpecificPermissionsVerified) != 0 || len(inventory.Scope.SpecificPermissionsUnverified) != 4 {
+		t.Fatalf("specific permission scope = verified %v, unverified %v; want all empty inventories left unverified despite direct grants", inventory.Scope.SpecificPermissionsVerified, inventory.Scope.SpecificPermissionsUnverified)
+	}
 }
 
 func TestClientRejectsInvalidAuthenticationWithoutEchoingResponse(t *testing.T) {
@@ -201,7 +204,7 @@ func TestClientRejectsDuplicateNativeIDsAcrossPages(t *testing.T) {
 	}
 }
 
-func TestClientFailsClosedWhenEmptyResourceKindHasNoReadScope(t *testing.T) {
+func TestClientReportsEmptyKindsWithoutDirectGrantAsSpecificScopeUnverified(t *testing.T) {
 	client, _ := newFixtureClient(t, inventoryFixtureHandler(t, func(w http.ResponseWriter, r *http.Request) bool {
 		if r.URL.Path == "/read/ListPermissions" {
 			writeFixtureJSON(w, http.StatusOK, `[]`)
@@ -209,9 +212,15 @@ func TestClientFailsClosedWhenEmptyResourceKindHasNoReadScope(t *testing.T) {
 		}
 		return false
 	}))
-	_, err := client.CollectInventory(context.Background())
-	if err == nil || !strings.Contains(strings.ToLower(err.Error()), "scope") {
-		t.Fatalf("CollectInventory error = %v, want scope verification failure", err)
+	inventory, err := client.CollectInventory(context.Background())
+	if err != nil {
+		t.Fatalf("CollectInventory: successful empty list methods should remain usable: %v", err)
+	}
+	if inventory.Count() != 0 || len(inventory.Scope.Verified) != len(resourceKinds) {
+		t.Fatalf("empty inventory=%d verified scope=%v, want empty inventory and all four read methods verified", inventory.Count(), inventory.Scope.Verified)
+	}
+	if len(inventory.Scope.SpecificPermissionsVerified) != 0 || len(inventory.Scope.SpecificPermissionsUnverified) != len(resourceKinds) {
+		t.Fatalf("specific permission scope = verified %v, unverified %v; want all kinds unverified", inventory.Scope.SpecificPermissionsVerified, inventory.Scope.SpecificPermissionsUnverified)
 	}
 }
 
@@ -338,7 +347,7 @@ func TestClientChecksPermissionsOnVisibleResources(t *testing.T) {
 	}
 }
 
-func TestClientRecognizesLevelOnlyPermissionButRequiresSpecificPermissionAttestation(t *testing.T) {
+func TestClientRecognizesLevelOnlyReadWithoutClaimingSpecificPermissionsAreAbsent(t *testing.T) {
 	client, _ := newFixtureClient(t, inventoryFixtureHandler(t, func(w http.ResponseWriter, r *http.Request) bool {
 		if r.URL.Path == "/read/ListServers" {
 			writeFixtureJSON(w, http.StatusOK, fixtureItemsForPath(r.URL.Path, "server-1"))
@@ -350,12 +359,15 @@ func TestClientRecognizesLevelOnlyPermissionButRequiresSpecificPermissionAttesta
 		}
 		return false
 	}))
-	_, err := client.CollectInventory(context.Background())
-	if err == nil || !strings.Contains(strings.ToLower(err.Error()), "specific permissions") || !strings.Contains(strings.ToLower(err.Error()), "operator") {
-		t.Fatalf("CollectInventory error = %v, want an explicit operator gate for unverifiable effective specific permissions", err)
+	inventory, err := client.CollectInventory(context.Background())
+	if err != nil {
+		t.Fatalf("level-only Read should authorize this client's read-only collection methods: %v", err)
 	}
-	if strings.Contains(err.Error(), "incompatible JSON type") {
-		t.Fatalf("level-only runtime response was not recognized: %v", err)
+	if len(inventory.Servers) != 1 || !containsResourceKind(inventory.Scope.SpecificPermissionsUnverified, KindServer) {
+		t.Fatalf("inventory=%+v, want one server and specific permission state explicitly unverified", inventory)
+	}
+	if containsResourceKind(inventory.Scope.SpecificPermissionsVerified, KindServer) {
+		t.Fatal("level-only Read was treated as proof that effective specific permissions are absent")
 	}
 }
 
@@ -497,6 +509,15 @@ func fixtureItemsForPath(path string, ids ...string) string {
 	return "[" + strings.Join(items, ",") + "]"
 }
 
+func containsResourceKind(kinds []ResourceKind, target ResourceKind) bool {
+	for _, kind := range kinds {
+		if kind == target {
+			return true
+		}
+	}
+	return false
+}
+
 func containsString(values []string, wanted string) bool {
 	for _, value := range values {
 		if value == wanted {
@@ -518,19 +539,5 @@ func TestPermissionLevelOrder(t *testing.T) {
 		if permissionSatisfiesRead(level) {
 			t.Errorf("permission %q should not satisfy minimum read-only scope", level)
 		}
-	}
-}
-
-func TestEmptyInventoryRequiresTypeWideReadGrant(t *testing.T) {
-	for _, targetID := range []string{"all", "server-1"} {
-		t.Run(targetID, func(t *testing.T) {
-			grant := permissionGrant{Level: "Read"}
-			grant.ResourceTarget.Type = string(KindServer)
-			grant.ResourceTarget.ID = targetID
-			grants := []permissionGrant{grant}
-			if got := hasDirectKindRead(grants, KindServer); got != (targetID == "all") {
-				t.Fatalf("hasDirectKindRead(%q) = %t", targetID, got)
-			}
-		})
 	}
 }

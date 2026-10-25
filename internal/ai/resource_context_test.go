@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/rcourtman/pulse-go-rewrite/internal/agentexec"
+	komodocore "github.com/rcourtman/pulse-go-rewrite/internal/komodo"
 	"github.com/rcourtman/pulse-go-rewrite/internal/truenas"
 	unifiedresources "github.com/rcourtman/pulse-go-rewrite/internal/unifiedresources"
 	"github.com/rcourtman/pulse-go-rewrite/pkg/diskinventory"
@@ -739,6 +740,31 @@ func TestBuildUnifiedResourceContextIncludesTrueNASResources(t *testing.T) {
 	}
 	if strings.Contains(got, "truenas-main") {
 		t.Fatalf("expected raw truenas host name to be redacted, got %q", got)
+	}
+}
+
+func TestBuildUnifiedResourceContextIncludesKomodoInventoryAndParents(t *testing.T) {
+	registry := unifiedresources.NewRegistry(unifiedresources.NewMemoryStore())
+	records := komodocore.NormalizeInventory("connection-1", komodocore.Inventory{
+		Servers:     []komodocore.Resource{{ID: "server-1", Name: "Jellyfin-DMZ", Kind: komodocore.KindServer, State: "Ok"}},
+		Deployments: []komodocore.Resource{{ID: "deployment-1", Name: "jellyfin", Kind: komodocore.KindDeployment, State: "Running", ServerID: "server-1"}},
+	}, time.Now().UTC())
+	registry.IngestRecords(unifiedresources.SourceKomodo, records)
+
+	service := &Service{}
+	service.SetUnifiedResourceProvider(unifiedresources.NewUnifiedAIAdapter(registry))
+	got := service.buildUnifiedResourceContext()
+	for _, expected := range []string{
+		"Total resources: 2 (Infrastructure: 1, Workloads: 1)",
+		"Komodo Servers & Swarms",
+		"Jellyfin-DMZ",
+		"On Jellyfin-DMZ",
+		"Komodo Deployment",
+		"jellyfin",
+	} {
+		if !strings.Contains(got, expected) {
+			t.Fatalf("Komodo Patrol context missing %q:\n%s", expected, got)
+		}
 	}
 }
 

@@ -279,7 +279,7 @@ func metricPercent(metric *MetricValue) float64 {
 
 func isUnifiedInfrastructure(t ResourceType) bool {
 	switch t {
-	case ResourceTypeAgent, ResourceTypeK8sNode, ResourceTypeK8sCluster:
+	case ResourceTypeAgent, ResourceTypeK8sNode, ResourceTypeK8sCluster, ResourceTypeKomodoServer, ResourceTypeKomodoSwarm:
 		return true
 	default:
 		return false
@@ -288,7 +288,7 @@ func isUnifiedInfrastructure(t ResourceType) bool {
 
 func isUnifiedWorkload(t ResourceType) bool {
 	switch t {
-	case ResourceTypeVM, ResourceTypeSystemContainer, ResourceTypeAppContainer, ResourceTypePod, ResourceTypeK8sDeployment:
+	case ResourceTypeVM, ResourceTypeSystemContainer, ResourceTypeAppContainer, ResourceTypePod, ResourceTypeK8sDeployment, ResourceTypeKomodoStack, ResourceTypeKomodoDeployment:
 		return true
 	default:
 		return false

@@ -2,11 +2,14 @@ package komodo
 
 import (
 	"context"
+	"errors"
 	"os"
 	"sort"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/rcourtman/pulse-go-rewrite/internal/unifiedresources"
 )
 
 // TestLiveCoreV2Qualification is deliberately opt-in. It reads an existing
@@ -24,23 +27,24 @@ func TestLiveCoreV2Qualification(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	client, err := NewClient(selected.Client)
+	client, err := newLiveQualificationClient(selected.Client)
 	if err != nil {
 		t.Fatal("could not create the bounded Komodo read client")
 	}
 	var permissionTransport *qualificationPermissionTransport
 	attestationPath := strings.TrimSpace(os.Getenv("PULSE_KOMODO_QUALIFICATION_ATTESTATION_FILE"))
+	var permissionAttestation qualificationPermissionAttestation
 	if attestationPath == "" {
 		t.Logf("No permission attestation file was selected; non-secret credential fingerprint for operator verification: %s", qualificationCredentialFingerprint(selected.Client))
 	}
 	if attestationPath != "" {
-		attestation, err := loadQualificationPermissionAttestation(attestationPath, selected.Client, time.Now().UTC())
+		permissionAttestation, err = loadQualificationPermissionAttestation(attestationPath, selected.Client, time.Now().UTC())
 		if err != nil {
 			t.Fatalf("permission attestation could not be accepted safely: %v", err)
 		}
-		permissionTransport = newQualificationPermissionTransport(client.httpClient.Transport, attestation)
-		client.httpClient.Transport = permissionTransport
 	}
+	permissionTransport = newQualificationPermissionTransport(client.httpClient.Transport, permissionAttestation)
+	client.httpClient.Transport = permissionTransport
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
@@ -51,14 +55,10 @@ func TestLiveCoreV2Qualification(t *testing.T) {
 	t.Logf("Komodo Core version reported: %s", version.Version)
 	first, err := client.CollectInventory(ctx)
 	if err != nil {
-		if strings.Contains(err.Error(), "operator verification is required") {
-			t.Log("Inventory counts, parent relationships, and identity stability were not qualified because permission scope verification stopped collection before returning inventory.")
-			if attestationPath == "" {
-				t.Logf("Operator verification is required for the level-only GetPermission response. If the operator confirms every required permission claim, create an owner-only attestation file (mode 0600) for endpoint %q and set PULSE_KOMODO_QUALIFICATION_ATTESTATION_FILE. The qualification guide documents the exact claims and JSON format. No permission assertion was made by this run.", client.endpoint.String())
-			}
-			t.Fatalf("effective permission verification is incomplete: %v", err)
-		}
 		t.Fatalf("first inventory collection failed safely: %v", err)
+	}
+	if len(first.Scope.SpecificPermissionsUnverified) > 0 && !permissionTransport.attested {
+		t.Fatalf("inventory read methods succeeded, but effective specific permissions remain unverified for %d resource kinds; the live qualification gate requires the existing operator attestation", len(first.Scope.SpecificPermissionsUnverified))
 	}
 	second, err := client.CollectInventory(ctx)
 	if err != nil {
@@ -70,29 +70,40 @@ func TestLiveCoreV2Qualification(t *testing.T) {
 	identitySetsStable := equalStringSets(firstIDs, secondIDs)
 	parentEvidence := summarizeParentEvidence(first)
 	stateEvidence := summarizeStateEvidence(first)
+	parentEvidenceStable := parentEvidence == summarizeParentEvidence(second)
+	normalizedEvidence, err := validateNormalizedInventory(selected.IdentityID, first)
+	if err != nil {
+		t.Fatalf("live inventory did not satisfy the Pulse normalization contract: %v", err)
+	}
 
 	permissionEvidence := "api_verified"
-	adaptedPermissions := 0
-	if permissionTransport != nil && permissionTransport.seen > 0 {
-		permissionEvidence = "operator_attested"
-		adaptedPermissions = permissionTransport.seen
+	if len(first.Scope.SpecificPermissionsUnverified) > 0 {
+		permissionEvidence = "operator_attested_for_specifics"
 	}
-	t.Logf("Komodo live qualification: Core=%s permission_evidence=%s adapted_level_only_read_responses=%d scope_checked=%d/%d counts(server=%d stack=%d deployment=%d swarm=%d) identities=%d identity_sets_stable=%t resources_with_state(server=%d stack=%d deployment=%d swarm=%d) parent_fields(stack_server=%d stack_swarm=%d deployment_server=%d deployment_swarm=%d swarm_members=%d unresolved_parent_refs=%d)",
+	t.Logf("Komodo live qualification: Core=%s permission_evidence=%s level_only_read_responses=%d api_read_scope=%d/%d api_specific_scope=%d/%d operator_attested_specific_scope=%d counts(server=%d stack=%d deployment=%d swarm=%d) identities=%d identity_sets_stable=%t resources_with_state(server=%d stack=%d deployment=%d swarm=%d) parent_fields(stack_server=%d stack_swarm=%d deployment_server=%d deployment_swarm=%d swarm_members=%d unresolved_parent_refs=%d) parent_evidence_stable=%t normalized_records=%d normalized_status(online=%d warning=%d offline=%d unknown=%d) normalized_incidents=%d normalized_hosted_by=%d normalized_member_of=%d",
 		first.Version,
-		permissionEvidence, adaptedPermissions,
+		permissionEvidence, permissionTransport.seen,
 		len(first.Scope.Verified), len(resourceKinds),
+		len(first.Scope.SpecificPermissionsVerified), len(resourceKinds),
+		len(first.Scope.SpecificPermissionsUnverified),
 		len(first.Servers), len(first.Stacks), len(first.Deployments), len(first.Swarms),
 		len(firstIDs), identitySetsStable,
 		stateEvidence.servers, stateEvidence.stacks, stateEvidence.deployments, stateEvidence.swarms,
 		parentEvidence.stackServer, parentEvidence.stackSwarm,
 		parentEvidence.deploymentServer, parentEvidence.deploymentSwarm,
 		parentEvidence.swarmMembers, parentEvidence.unresolved,
+		parentEvidenceStable, normalizedEvidence.records,
+		normalizedEvidence.online, normalizedEvidence.warning, normalizedEvidence.offline, normalizedEvidence.unknown,
+		normalizedEvidence.incidents, normalizedEvidence.hostedBy, normalizedEvidence.memberOf,
 	)
 	if first.Version != second.Version {
 		t.Error("Komodo Core version changed between consecutive inventory reads")
 	}
 	if !identitySetsStable {
 		t.Error("native inventory identity sets changed between consecutive reads; rerun during a stable inventory window")
+	}
+	if !parentEvidenceStable {
+		t.Error("parent field evidence changed between consecutive inventory reads; rerun during a stable inventory window")
 	}
 }
 
@@ -253,4 +264,114 @@ func summarizeParentEvidence(inventory Inventory) parentEvidenceSummary {
 		}
 	}
 	return summary
+}
+
+type normalizedInventorySummary struct {
+	records, online, warning, offline, unknown int
+	incidents, hostedBy, memberOf              int
+}
+
+func validateNormalizedInventory(connectionID string, inventory Inventory) (normalizedInventorySummary, error) {
+	records := NormalizeInventory(connectionID, inventory, time.Now().UTC())
+	if len(records) != inventory.Count() {
+		return normalizedInventorySummary{}, errors.New("record count does not match the API inventory")
+	}
+
+	items := make(map[string]Resource, inventory.Count())
+	for _, item := range inventory.Servers {
+		items[SourceID(connectionID, KindServer, item.ID)] = item
+	}
+	for _, item := range inventory.Swarms {
+		items[SourceID(connectionID, KindSwarm, item.ID)] = item
+	}
+	for _, item := range inventory.Stacks {
+		items[SourceID(connectionID, KindStack, item.ID)] = item
+	}
+	for _, item := range inventory.Deployments {
+		items[SourceID(connectionID, KindDeployment, item.ID)] = item
+	}
+
+	bySource := make(map[string]unifiedresources.IngestRecord, len(records))
+	for _, record := range records {
+		item, ok := items[record.SourceID]
+		if !ok || record.SourceID == "" || record.Resource.Type != ResourceType(item.Kind) {
+			return normalizedInventorySummary{}, errors.New("normalized record identity or resource type does not match the API item")
+		}
+		if _, duplicate := bySource[record.SourceID]; duplicate {
+			return normalizedInventorySummary{}, errors.New("normalized inventory contains a duplicate source identity")
+		}
+		bySource[record.SourceID] = record
+	}
+
+	summary := normalizedInventorySummary{records: len(records)}
+	for _, record := range records {
+		item := items[record.SourceID]
+		switch record.Resource.Status {
+		case unifiedresources.StatusOnline:
+			summary.online++
+		case unifiedresources.StatusWarning:
+			summary.warning++
+		case unifiedresources.StatusOffline:
+			summary.offline++
+		default:
+			summary.unknown++
+		}
+		summary.incidents += len(record.Resource.Incidents)
+		parentKind, parentID := stackParent(item)
+		if parentID == "" {
+			continue
+		}
+		parentSource := SourceID(connectionID, parentKind, parentID)
+		_, parentExists := bySource[parentSource]
+		parentType := ResourceType(parentKind)
+		parentCanonicalID := unifiedresources.SourceSpecificID(parentType, unifiedresources.SourceKomodo, parentSource)
+		if !parentExists || record.ParentSourceID != parentSource || !hasQualifiedRelationship(record.Resource.Relationships, unifiedresources.RelHostedBy, parentCanonicalID) {
+			return normalizedInventorySummary{}, errors.New("normalized parent relationship does not match the API parent fields")
+		}
+		summary.hostedBy++
+	}
+
+	for _, swarm := range inventory.Swarms {
+		swarmSource := SourceID(connectionID, KindSwarm, swarm.ID)
+		swarmCanonicalID := unifiedresources.SourceSpecificID(ResourceType(KindSwarm), unifiedresources.SourceKomodo, swarmSource)
+		for _, nativeServerID := range swarm.ServerIDs {
+			serverSource := SourceID(connectionID, KindServer, nativeServerID)
+			serverRecord, serverExists := bySource[serverSource]
+			if !serverExists {
+				continue
+			}
+			if !hasQualifiedRelationship(serverRecord.Resource.Relationships, unifiedresources.RelMemberOf, swarmCanonicalID) {
+				return normalizedInventorySummary{}, errors.New("normalized Swarm membership does not match the API member fields")
+			}
+			summary.memberOf++
+		}
+	}
+	return summary, nil
+}
+
+func hasQualifiedRelationship(relationships []unifiedresources.ResourceRelationship, kind unifiedresources.RelationshipType, targetID string) bool {
+	for _, relationship := range relationships {
+		if relationship.Type == kind && relationship.TargetID == targetID && relationship.Active {
+			return true
+		}
+	}
+	return false
+}
+
+func TestValidateNormalizedInventoryChecksParentAndMembershipMappings(t *testing.T) {
+	inventory := Inventory{
+		Servers: []Resource{{ID: "server-1", Kind: KindServer, Name: "host", State: "Running"}},
+		Swarms:  []Resource{{ID: "swarm-1", Kind: KindSwarm, Name: "cluster", ServerIDs: []string{"server-1"}}},
+		Stacks: []Resource{
+			{ID: "stack-1", Kind: KindStack, Name: "stack", SwarmID: "swarm-1"},
+			{ID: "stack-2", Kind: KindStack, Name: "stack-standalone", ServerID: "server-1"},
+		},
+	}
+	summary, err := validateNormalizedInventory("connection-1", inventory)
+	if err != nil {
+		t.Fatalf("validate normalized fixture: %v", err)
+	}
+	if summary.records != inventory.Count() || summary.hostedBy != 2 || summary.memberOf != 1 {
+		t.Fatalf("normalized summary=%+v, want %d records, two hosted_by edges, and one member_of edge", summary, inventory.Count())
+	}
 }
