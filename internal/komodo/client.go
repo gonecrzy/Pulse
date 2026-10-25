@@ -368,7 +368,18 @@ func (c *Client) call(ctx context.Context, method string, requestBody any, respo
 		return nil
 	}
 	if err := json.Unmarshal(data, responseBody); err != nil {
-		return errors.New("Komodo API response did not match the supported contract")
+		// The method is from the client-side allowlist. Reporting that bounded
+		// identifier makes compatibility failures actionable without exposing
+		// any part of the response, which can contain sensitive configuration.
+		var typeErr *json.UnmarshalTypeError
+		if errors.As(err, &typeErr) {
+			field := typeErr.Field
+			if field == "" {
+				field = "top-level"
+			}
+			return fmt.Errorf("Komodo %s response had an incompatible JSON type at field %s (received %s)", method, field, typeErr.Value)
+		}
+		return fmt.Errorf("Komodo %s response did not match the supported contract", method)
 	}
 	return nil
 }

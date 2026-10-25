@@ -108,6 +108,23 @@ func TestClientRejectsInvalidAuthenticationWithoutEchoingResponse(t *testing.T) 
 	}
 }
 
+func TestClientIdentifiesMalformedReadContractWithoutEchoingResponse(t *testing.T) {
+	client, _ := newFixtureClient(t, inventoryFixtureHandler(t, func(w http.ResponseWriter, r *http.Request) bool {
+		if r.URL.Path == "/read/ListPermissions" {
+			writeFixtureJSON(w, http.StatusOK, `"`+fixtureAPISecret+`"`)
+			return true
+		}
+		return false
+	}))
+	_, err := client.CollectInventory(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "ListPermissions") || !strings.Contains(err.Error(), "top-level") || !strings.Contains(err.Error(), "received string") {
+		t.Fatalf("CollectInventory error = %v, want safe failing-method context", err)
+	}
+	if strings.Contains(err.Error(), fixtureAPISecret) {
+		t.Fatalf("error leaked response material: %q", err)
+	}
+}
+
 func TestClientRejectsUnsupportedAPIVersionBeforeListingResources(t *testing.T) {
 	methods := []string{}
 	client, _ := newFixtureClient(t, inventoryFixtureHandler(t, func(w http.ResponseWriter, r *http.Request) bool {

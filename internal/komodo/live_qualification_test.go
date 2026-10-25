@@ -30,6 +30,11 @@ func TestLiveCoreV2Qualification(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
+	var version versionResponse
+	if err := client.call(ctx, "GetVersion", struct{}{}, &version); err != nil {
+		t.Fatalf("Core version check failed safely: %v", err)
+	}
+	t.Logf("Komodo Core version reported: %s", version.Version)
 	first, err := client.CollectInventory(ctx)
 	if err != nil {
 		t.Fatalf("first inventory collection failed safely: %v", err)
