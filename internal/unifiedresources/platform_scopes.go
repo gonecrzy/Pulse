@@ -81,6 +81,8 @@ func platformScopeForSource(source DataSource) string {
 		return "truenas"
 	case SourceVMware:
 		return "vmware-vsphere"
+	case SourceKomodo:
+		return "komodo"
 	case SourceAvailability:
 		return "availability"
 	default:

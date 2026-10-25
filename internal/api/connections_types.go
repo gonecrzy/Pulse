@@ -27,6 +27,7 @@ const (
 	ConnectionTypePMG          ConnectionType = "pmg"
 	ConnectionTypeVMware       ConnectionType = "vmware"
 	ConnectionTypeTrueNAS      ConnectionType = "truenas"
+	ConnectionTypeKomodo       ConnectionType = "komodo"
 	ConnectionTypeAgent        ConnectionType = "agent"
 	ConnectionTypeDocker       ConnectionType = "docker"
 	ConnectionTypeKubernetes   ConnectionType = "kubernetes"

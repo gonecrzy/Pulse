@@ -27,6 +27,7 @@ const primaryPathCardClass =
 
 const CARD_ICON: Record<InfrastructureSourcePickerItemId, Component<{ class?: string }>> = {
   vmware: ServerCog,
+  komodo: ServerCog,
   pve: Server,
   truenas: Database,
   unraid: Database,

@@ -243,6 +243,7 @@ describe('infrastructureOnboardingPresentation — branch coverage (branchcov2)'
       // type. Pin each exact array to prove the presentation side is used.
       const expectedAliases: Record<InfrastructureOnboardingConnectionType, readonly string[]> = {
         agent: ['host', 'server', 'machine', 'node', 'ubuntu', 'debian', 'windows', 'mac'],
+        komodo: ['komodo', 'moghtech', 'deployment manager', 'compose', 'swarm'],
         availability: [
           'ping',
           'icmp',

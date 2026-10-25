@@ -2,7 +2,16 @@ import { apiFetchJSON } from '@/utils/apiClient';
 import { MonitoringAPI } from './monitoring';
 
 export type ConnectionType =
-  'pve' | 'pbs' | 'pmg' | 'vmware' | 'truenas' | 'availability' | 'agent' | 'docker' | 'kubernetes';
+  | 'pve'
+  | 'pbs'
+  | 'pmg'
+  | 'vmware'
+  | 'truenas'
+  | 'komodo'
+  | 'availability'
+  | 'agent'
+  | 'docker'
+  | 'kubernetes';
 
 export type ConnectionState =
   'active' | 'paused' | 'unauthorized' | 'unreachable' | 'stale' | 'pending';
@@ -260,6 +269,12 @@ export class ConnectionsAPI {
           body: JSON.stringify({ enabled }),
         });
         return;
+      case 'komodo':
+        await apiFetchJSON(`/api/komodo/connections/${encodeURIComponent(suffix)}`, {
+          method: 'PUT',
+          body: JSON.stringify({ enabled }),
+        });
+        return;
       case 'availability':
         await apiFetchJSON(`/api/availability-targets/${encodeURIComponent(suffix)}`, {
           method: 'PUT',
@@ -292,6 +307,11 @@ export class ConnectionsAPI {
         return;
       case 'truenas':
         await apiFetchJSON(`/api/truenas/connections/${encodeURIComponent(suffix)}`, {
+          method: 'DELETE',
+        });
+        return;
+      case 'komodo':
+        await apiFetchJSON(`/api/komodo/connections/${encodeURIComponent(suffix)}`, {
           method: 'DELETE',
         });
         return;

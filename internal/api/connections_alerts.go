@@ -15,6 +15,7 @@ type aggregatorRuntimeSources struct {
 	orgID         string
 	vmwarePoller  *monitoring.VMwarePoller
 	truenasPoller *monitoring.TrueNASPoller
+	komodoPoller  *monitoring.KomodoPoller
 	// platformRowsOnly leaves out what only the agent rows and the PBS host
 	// aliases read: the monitor's hosts and PBS instances. A caller that keeps
 	// the platform rows alone (the connection-degraded alert feed) would
@@ -50,6 +51,9 @@ func buildAggregatorInputsWithRuntimeSources(
 		if tn, err := persistence.LoadTrueNASConfig(); err == nil {
 			inputs.truenasInstances = tn
 		}
+		if komodo, err := persistence.LoadKomodoConfig(); err == nil {
+			inputs.komodoInstances = komodo
+		}
 		if availability, err := persistence.LoadAvailabilityTargets(); err == nil {
 			inputs.availabilityTargets = availability
 		}
@@ -64,6 +68,9 @@ func buildAggregatorInputsWithRuntimeSources(
 	}
 	if runtime.truenasPoller != nil && len(inputs.truenasInstances) > 0 {
 		inputs.truenasSummaries = runtime.truenasPoller.ConnectionSummaries(orgID, inputs.truenasInstances)
+	}
+	if runtime.komodoPoller != nil && len(inputs.komodoInstances) > 0 {
+		inputs.komodoSummaries = runtime.komodoPoller.ConnectionSummaries(orgID, inputs.komodoInstances)
 	}
 
 	if monitor != nil {

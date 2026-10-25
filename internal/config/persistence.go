@@ -42,6 +42,7 @@ type ConfigPersistence struct {
 	nodesFile                  string
 	trueNASFile                string
 	vmwareFile                 string
+	komodoFile                 string
 	availabilityFile           string
 	systemFile                 string
 	ssoFile                    string
@@ -125,6 +126,7 @@ type resolvedConfigPersistencePaths struct {
 	nodesFile                  string
 	trueNASFile                string
 	vmwareFile                 string
+	komodoFile                 string
 	availabilityFile           string
 	systemFile                 string
 	ssoFile                    string
@@ -194,6 +196,10 @@ func resolveConfigPersistencePaths(configDir string) (string, resolvedConfigPers
 	vmwareFile, err := resolveLeaf("vmware.enc")
 	if err != nil {
 		return "", resolvedConfigPersistencePaths{}, fmt.Errorf("resolve vmware.enc: %w", err)
+	}
+	komodoFile, err := resolveLeaf("komodo.enc")
+	if err != nil {
+		return "", resolvedConfigPersistencePaths{}, fmt.Errorf("resolve komodo.enc: %w", err)
 	}
 	availabilityFile, err := resolveLeaf("availability_targets.enc")
 	if err != nil {
@@ -279,6 +285,7 @@ func resolveConfigPersistencePaths(configDir string) (string, resolvedConfigPers
 		nodesFile:                  nodesFile,
 		trueNASFile:                trueNASFile,
 		vmwareFile:                 vmwareFile,
+		komodoFile:                 komodoFile,
 		availabilityFile:           availabilityFile,
 		systemFile:                 systemFile,
 		ssoFile:                    ssoFile,
@@ -338,6 +345,7 @@ func newConfigPersistence(configDir string) (*ConfigPersistence, error) {
 		nodesFile:                  resolvedPaths.nodesFile,
 		trueNASFile:                resolvedPaths.trueNASFile,
 		vmwareFile:                 resolvedPaths.vmwareFile,
+		komodoFile:                 resolvedPaths.komodoFile,
 		availabilityFile:           resolvedPaths.availabilityFile,
 		systemFile:                 resolvedPaths.systemFile,
 		ssoFile:                    resolvedPaths.ssoFile,
@@ -739,6 +747,17 @@ func (c *ConfigPersistence) SaveTrueNASConfig(instances []TrueNASInstance) error
 // LoadTrueNASConfig loads TrueNAS instance configuration from encrypted storage.
 func (c *ConfigPersistence) LoadTrueNASConfig() ([]TrueNASInstance, error) {
 	return loadSlice[TrueNASInstance](c, c.trueNASFile, true)
+}
+
+// SaveKomodoConfig persists Komodo Core credentials and settings to encrypted
+// storage.
+func (c *ConfigPersistence) SaveKomodoConfig(instances []KomodoInstance) error {
+	return saveJSON(c, c.komodoFile, instances, true)
+}
+
+// LoadKomodoConfig loads Komodo Core settings from encrypted storage.
+func (c *ConfigPersistence) LoadKomodoConfig() ([]KomodoInstance, error) {
+	return loadSlice[KomodoInstance](c, c.komodoFile, true)
 }
 
 // SaveVMwareConfig persists VMware vCenter instance configuration to encrypted

@@ -19,6 +19,7 @@ type ConnectionsHandlers struct {
 	getMonitor                   func(ctx context.Context) *monitoring.Monitor
 	getTrueNASPoller             func(ctx context.Context) *monitoring.TrueNASPoller
 	getVMwarePoller              func(ctx context.Context) *monitoring.VMwarePoller
+	getKomodoPoller              func(ctx context.Context) *monitoring.KomodoPoller
 	agentCommandSessionConnected func(organizationID, tokenID, agentID, hostname string) bool
 }
 
@@ -59,6 +60,15 @@ func (h *ConnectionsHandlers) SetPlatformPollers(
 	}
 	h.getTrueNASPoller = getTrueNASPoller
 	h.getVMwarePoller = getVMwarePoller
+}
+
+// SetKomodoPoller wires cached Komodo health into the unified connections
+// ledger. It does not register Komodo with connection-alert evaluation.
+func (h *ConnectionsHandlers) SetKomodoPoller(getKomodoPoller func(ctx context.Context) *monitoring.KomodoPoller) {
+	if h == nil {
+		return
+	}
+	h.getKomodoPoller = getKomodoPoller
 }
 
 // HandleList returns every configured connection as a unified Connection row.
@@ -124,6 +134,9 @@ func (h *ConnectionsHandlers) runtimeSources(ctx context.Context, orgID string) 
 	}
 	if h.getVMwarePoller != nil {
 		runtime.vmwarePoller = h.getVMwarePoller(ctx)
+	}
+	if h.getKomodoPoller != nil {
+		runtime.komodoPoller = h.getKomodoPoller(ctx)
 	}
 	return runtime
 }

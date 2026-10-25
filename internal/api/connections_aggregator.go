@@ -115,6 +115,8 @@ type aggregatorInputs struct {
 	vmwareSummaries          map[string]monitoring.VMwareConnectionSummary
 	truenasInstances         []config.TrueNASInstance
 	truenasSummaries         map[string]monitoring.TrueNASConnectionSummary
+	komodoInstances          []config.KomodoInstance
+	komodoSummaries          map[string]monitoring.KomodoConnectionPollStatus
 	availabilityTargets      []config.AvailabilityTarget
 	availabilityStatuses     map[string]monitoring.AvailabilityProbeStatus
 	hosts                    []models.Host
@@ -180,7 +182,7 @@ func buildConnections(in aggregatorInputs) []Connection {
 
 	out := make([]Connection, 0,
 		len(in.pveInstances)+len(in.pbsInstances)+len(in.pmgInstances)+
-			len(in.vmwareInstances)+len(in.truenasInstances)+len(in.availabilityTargets)+len(in.hosts))
+			len(in.vmwareInstances)+len(in.truenasInstances)+len(in.komodoInstances)+len(in.availabilityTargets)+len(in.hosts))
 
 	for _, pve := range in.pveInstances {
 		interval := effectivePollInterval(in.pvePollingInterval, in.plannedPollIntervals["pve::"+pve.Name])
@@ -203,6 +205,9 @@ func buildConnections(in aggregatorInputs) []Connection {
 	}
 	for _, tn := range in.truenasInstances {
 		out = append(out, buildTrueNASConnection(tn, in.instanceHealth, in.truenasSummaries, now))
+	}
+	for _, komodo := range in.komodoInstances {
+		out = append(out, buildKomodoConnection(komodo, in.komodoSummaries, now))
 	}
 	for _, target := range in.availabilityTargets {
 		out = append(out, buildAvailabilityConnection(target, in.availabilityStatuses[target.ID], now))
@@ -451,6 +456,69 @@ func buildTrueNASConnection(
 		Capabilities: ConnectionCapabilities{SupportsPause: true, SupportsScope: true, SupportsTest: true},
 	}, now)
 	conn.Fleet.CredentialHealth = connectionFleetCredentialHealth(conn, connectionTrueNASCredentialKind(inst), nil, nil, now)
+	return conn
+}
+
+func buildKomodoConnection(
+	inst config.KomodoInstance,
+	summaries map[string]monitoring.KomodoConnectionPollStatus,
+	now time.Time,
+) Connection {
+	enabled := inst.Enabled
+	surfaces := []string{"servers", "stacks", "deployments", "swarms"}
+	scope := map[string]bool{"servers": true, "stacks": true, "deployments": true, "swarms": true}
+	state := ConnectionStatePending
+	reason := "waiting for the first successful Komodo inventory"
+	var lastSeen *time.Time
+	var lastError *ConnectionError
+	if !enabled {
+		state = ConnectionStatePaused
+		reason = "connection is disabled"
+	} else if summary, ok := summaries[strings.TrimSpace(inst.ID)]; ok {
+		lastSeen = cloneTime(summary.LastSuccessAt)
+		switch summary.State {
+		case "healthy":
+			state = ConnectionStateActive
+			reason = "Komodo inventory is current"
+		case "stale":
+			state = ConnectionStateStale
+			reason = "collection failed; showing last-known Komodo inventory"
+		case "failed":
+			if summary.LastError != nil && (summary.LastError.Category == "authentication" || summary.LastError.Category == "scope") {
+				state = ConnectionStateUnauthorized
+				reason = "Komodo authentication or read scope failed"
+			} else {
+				state = ConnectionStateUnreachable
+				reason = "Komodo inventory collection failed"
+			}
+		case "disabled":
+			state = ConnectionStatePaused
+			reason = "connection is disabled"
+		}
+		if summary.LastError != nil {
+			at := time.Time{}
+			if summary.LastError.At != nil {
+				at = *summary.LastError.At
+			}
+			lastError = &ConnectionError{At: at, Message: summary.LastError.Message, Category: summary.LastError.Category}
+		}
+	}
+	conn := withFleetGovernance(Connection{
+		ID:           "komodo:" + inst.ID,
+		Type:         ConnectionTypeKomodo,
+		Name:         inst.Name,
+		Address:      inst.Endpoint,
+		State:        state,
+		StateReason:  reason,
+		Enabled:      enabled,
+		Surfaces:     surfaces,
+		Scope:        scope,
+		LastSeen:     lastSeen,
+		LastError:    lastError,
+		Source:       ConnectionSourceManual,
+		Capabilities: ConnectionCapabilities{SupportsPause: true, SupportsTest: true},
+	}, now)
+	conn.Fleet.CredentialHealth = connectionFleetCredentialHealth(conn, fleetCredentialKindAPIKey, nil, nil, now)
 	return conn
 }
 

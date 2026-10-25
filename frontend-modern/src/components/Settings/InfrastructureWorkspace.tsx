@@ -23,6 +23,7 @@ import { ConnectionEditor } from './ConnectionEditor/ConnectionEditor';
 import { NodeCredentialSlot } from './ConnectionEditor/CredentialSlots/NodeCredentialSlot';
 import { TrueNASCredentialSlot } from './ConnectionEditor/CredentialSlots/TrueNASCredentialSlot';
 import { VMwareCredentialSlot } from './ConnectionEditor/CredentialSlots/VMwareCredentialSlot';
+import { KomodoCredentialSlot } from './ConnectionEditor/CredentialSlots/KomodoCredentialSlot';
 import type { Connection, ConnectionType, ProbeCandidate } from '@/api/connections';
 import type { TrueNASConnection } from '@/api/truenas';
 import type { VMwareConnection } from '@/api/vmware';
@@ -97,6 +98,7 @@ const ADD_STEP_TO_TYPE: Record<ManagedAddTypeStep, ConnectionType> = {
   pmg: 'pmg',
   truenas: 'truenas',
   vmware: 'vmware',
+  komodo: 'komodo',
 };
 
 const ADD_STEP_TO_INSTALLER_FOCUS: Partial<
@@ -119,7 +121,8 @@ const describeManagedSourceType = (type: ConnectionType | null): string => {
     type === 'truenas' ||
     type === 'pve' ||
     type === 'pbs' ||
-    type === 'pmg'
+    type === 'pmg' ||
+    type === 'komodo'
   ) {
     return getInfrastructureOnboardingProductPresentation(
       type as InfrastructureOnboardingConnectionType,
@@ -829,6 +832,21 @@ const InfrastructureWorkspaceContent: Component<InfrastructureWorkspaceProps> = 
             />
           );
         }
+        case 'komodo':
+          return (
+            <KomodoCredentialSlot
+              editingConnection={connection}
+              onCancel={context.onCancel}
+              onSaved={context.onSaved}
+              onToggleEnabled={() => void rowActions.togglePause(connection)}
+              togglePending={rowActions.pendingAction(connection.id) === 'pause'}
+              connectionEnabled={connection.enabled}
+              onDelete={() => void rowActions.requestRemove(connection)}
+              deletePending={rowActions.pendingAction(connection.id) === 'remove'}
+              deleteConfirming={rowActions.confirmingRemove(connection.id)}
+              deleteError={rowActions.actionError(connection.id)}
+            />
+          );
         default:
           return (
             <div class="text-sm text-muted">
@@ -895,6 +913,8 @@ const InfrastructureWorkspaceContent: Component<InfrastructureWorkspaceProps> = 
             onSaved={context.onSaved}
           />
         );
+      case 'komodo':
+        return <KomodoCredentialSlot onCancel={context.onCancel} onSaved={context.onSaved} />;
       case 'agent':
         return renderAgentAddSlot();
       default:

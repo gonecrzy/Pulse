@@ -359,6 +359,44 @@ func (r *Router) registerConfigSystemRoutes(updateHandlers *UpdateHandlers) {
 		}
 	}))
 
+	// Komodo connection management uses the settings authorization shared by
+	// the existing platform integrations.
+	r.mux.HandleFunc("/api/komodo/connections", func(w http.ResponseWriter, req *http.Request) {
+		if r.komodoHandlers == nil {
+			writeErrorResponse(w, http.StatusServiceUnavailable, "komodo_unavailable", "Komodo service unavailable", nil)
+			return
+		}
+		switch req.Method {
+		case http.MethodGet:
+			RequireOrgAdmin(r.config, RequireScope(config.ScopeSettingsRead, r.komodoHandlers.HandleList))(w, req)
+		case http.MethodPost:
+			RequireOrgAdmin(r.config, RequireScope(config.ScopeSettingsWrite, r.komodoHandlers.HandleAdd))(w, req)
+		default:
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+	r.mux.HandleFunc("/api/komodo/connections/test", func(w http.ResponseWriter, req *http.Request) {
+		if r.komodoHandlers == nil {
+			writeErrorResponse(w, http.StatusServiceUnavailable, "komodo_unavailable", "Komodo service unavailable", nil)
+			return
+		}
+		if req.Method == http.MethodPost {
+			RequireOrgAdmin(r.config, RequireScope(config.ScopeSettingsWrite, r.komodoHandlers.HandleTestConnection))(w, req)
+		} else {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+	r.mux.HandleFunc("/api/komodo/connections/", r.platformConnectionItemRoute("komodo_unavailable", "Komodo service unavailable", func() *platformConnectionItemHandlers {
+		if r.komodoHandlers == nil {
+			return nil
+		}
+		return &platformConnectionItemHandlers{
+			test:   r.komodoHandlers.HandleTestSavedConnection,
+			delete: r.komodoHandlers.HandleDelete,
+			update: r.komodoHandlers.HandleUpdate,
+		}
+	}))
+
 	// VMware vCenter connection management
 	r.mux.HandleFunc("/api/vmware/connections", func(w http.ResponseWriter, req *http.Request) {
 		if r.vmwareHandlers == nil {

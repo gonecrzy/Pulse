@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -1326,6 +1327,46 @@ func TestBuildConnections_PlatformPollerSummariesDriveRuntimeState(t *testing.T)
 	}
 	if tn.Fleet.CredentialStatus != fleetStateVerified || tn.Fleet.CredentialHealth == nil || tn.Fleet.CredentialHealth.Status != fleetStateVerified {
 		t.Fatalf("truenas credential governance = %+v", tn.Fleet)
+	}
+}
+
+func TestBuildKomodoConnectionMapsPollStatus(t *testing.T) {
+	now := time.Now().UTC()
+	lastSuccess := now.Add(-time.Minute)
+	instance := config.KomodoInstance{
+		ID: "87ef53c3-9a5a-4d7b-a159-997ccca19811", Name: "core", Endpoint: "https://komodo.example.test",
+		APIKey: "never-return-this-key", APISecret: "never-return-this-secret", Enabled: true,
+	}
+
+	tests := []struct {
+		name      string
+		summary   *monitoring.KomodoConnectionPollStatus
+		wantState ConnectionState
+	}{
+		{name: "before first poll", wantState: ConnectionStatePending},
+		{name: "successful empty inventory is healthy", summary: &monitoring.KomodoConnectionPollStatus{Enabled: true, State: "healthy", LastSuccessAt: &lastSuccess}, wantState: ConnectionStateActive},
+		{name: "failed refresh keeps stale inventory", summary: &monitoring.KomodoConnectionPollStatus{Enabled: true, State: "stale", LastSuccessAt: &lastSuccess}, wantState: ConnectionStateStale},
+		{name: "scope error is unauthorized", summary: &monitoring.KomodoConnectionPollStatus{Enabled: true, State: "failed", LastError: &monitoring.KomodoPollError{Category: "scope", Message: "Komodo read scope could not be verified"}}, wantState: ConnectionStateUnauthorized},
+		{name: "transport error is unreachable", summary: &monitoring.KomodoConnectionPollStatus{Enabled: true, State: "failed", LastError: &monitoring.KomodoPollError{Category: "timeout", Message: "Komodo API request timed out"}}, wantState: ConnectionStateUnreachable},
+		{name: "disabled connection is paused", summary: &monitoring.KomodoConnectionPollStatus{Enabled: false, State: "disabled"}, wantState: ConnectionStatePaused},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			summaries := map[string]monitoring.KomodoConnectionPollStatus{}
+			if test.summary != nil {
+				summaries[instance.ID] = *test.summary
+			}
+			got := buildKomodoConnection(instance, summaries, now)
+			if got.State != test.wantState {
+				t.Fatalf("state = %q, want %q", got.State, test.wantState)
+			}
+			if got.ID != "komodo:"+instance.ID || got.Type != ConnectionTypeKomodo {
+				t.Fatalf("connection identity/type = %q/%q", got.ID, got.Type)
+			}
+			if got.LastError != nil && (strings.Contains(got.LastError.Message, instance.APIKey) || strings.Contains(got.LastError.Message, instance.APISecret)) {
+				t.Fatalf("connection error leaked credential material: %+v", got.LastError)
+			}
+		})
 	}
 }
 

@@ -36,6 +36,7 @@ export const CONNECTION_TYPE_LABELS: Record<ConnectionType, string> = {
   pmg: 'Proxmox Mail Gateway',
   vmware: 'VMware vCenter',
   truenas: 'TrueNAS SCALE',
+  komodo: 'Komodo Core',
   availability: 'Network Endpoint',
   agent: 'Pulse Agent',
   docker: 'Docker',

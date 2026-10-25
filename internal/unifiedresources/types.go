@@ -207,6 +207,10 @@ const (
 	ResourceTypePhysicalDisk          ResourceType = "physical_disk"
 	ResourceTypeNetworkShare          ResourceType = "network-share"
 	ResourceTypeNetworkEndpoint       ResourceType = "network-endpoint"
+	ResourceTypeKomodoServer          ResourceType = "komodo-server"
+	ResourceTypeKomodoStack           ResourceType = "komodo-stack"
+	ResourceTypeKomodoDeployment      ResourceType = "komodo-deployment"
+	ResourceTypeKomodoSwarm           ResourceType = "komodo-swarm"
 )
 
 // CanonicalResourceType normalizes resource type spellings into the internal
@@ -259,6 +263,7 @@ const (
 	SourceK8s          DataSource = "kubernetes"
 	SourceTrueNAS      DataSource = "truenas"
 	SourceVMware       DataSource = "vmware"
+	SourceKomodo       DataSource = "komodo"
 	SourceAvailability DataSource = "availability"
 )
 

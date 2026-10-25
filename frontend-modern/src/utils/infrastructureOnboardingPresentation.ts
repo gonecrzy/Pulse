@@ -10,8 +10,17 @@ import {
 
 export type InfrastructureOnboardingConnectionType = Extract<
   ConnectionType,
-  'agent' | 'availability' | 'pve' | 'pbs' | 'pmg' | 'truenas' | 'vmware'
+  'agent' | 'availability' | 'pve' | 'pbs' | 'pmg' | 'truenas' | 'vmware' | 'komodo'
 >;
+
+type InfrastructureSupportFloor = Omit<
+  PlatformSupportFloor,
+  'alerts' | 'assistantRead' | 'assistantControl'
+> & {
+  alerts: PlatformSupportFloor['alerts'] | 'n/a';
+  assistantRead: PlatformSupportFloor['assistantRead'] | 'n/a';
+  assistantControl: PlatformSupportFloor['assistantControl'] | 'n/a';
+};
 
 export interface InfrastructureOnboardingProductPresentation {
   type: InfrastructureOnboardingConnectionType;
@@ -26,7 +35,7 @@ export interface InfrastructureOnboardingProductPresentation {
   readinessStage: PlatformReadinessStage;
   primaryMode: PlatformPrimaryMode;
   canonicalProjections: readonly string[];
-  supportFloor: PlatformSupportFloor;
+  supportFloor: InfrastructureSupportFloor;
   defaultSurfaceKeys: readonly string[];
 }
 
@@ -35,7 +44,16 @@ export interface InfrastructureSourceManagerProductPresentation extends Infrastr
 }
 
 export type InfrastructureSourcePickerItemId =
-  'vmware' | 'pve' | 'truenas' | 'unraid' | 'pbs' | 'pmg' | 'linux-host' | 'docker' | 'kubernetes';
+  | 'vmware'
+  | 'komodo'
+  | 'pve'
+  | 'truenas'
+  | 'unraid'
+  | 'pbs'
+  | 'pmg'
+  | 'linux-host'
+  | 'docker'
+  | 'kubernetes';
 
 export type InfrastructureSourcePickerRouteStep = InfrastructureSourcePickerItemId;
 
@@ -54,7 +72,7 @@ export interface InfrastructureSourcePickerItemPresentation {
   readinessStage: PlatformReadinessStage;
   primaryMode: PlatformPrimaryMode;
   canonicalProjections: readonly string[];
-  supportFloor: PlatformSupportFloor;
+  supportFloor: InfrastructureSupportFloor;
 }
 
 interface BaseProductPresentation {
@@ -69,6 +87,7 @@ interface BaseProductPresentation {
   primaryMode?: PlatformPrimaryMode;
   canonicalProjections?: readonly string[];
   defaultSurfaceKeys: readonly string[];
+  supportFloor?: InfrastructureSupportFloor;
 }
 
 export type InfrastructureSourceStrategy = 'api' | 'agent' | 'api-agent' | 'probe';
@@ -174,6 +193,28 @@ const PRODUCT_PRESENTATION: Record<
     autoDetect: true,
     sourcePlatformId: 'vmware-vsphere',
     defaultSurfaceKeys: ['vms', 'hosts', 'datastores'],
+  },
+  komodo: {
+    label: 'Komodo Core',
+    bestFor: 'Komodo-managed servers, stacks, deployments, and swarms',
+    coverage: 'Read-only inventory and health state from Komodo Core',
+    catalogDescription: 'Servers, stacks, deployments, swarms',
+    searchAliases: ['komodo', 'moghtech', 'deployment manager', 'compose', 'swarm'],
+    sourceStrategy: 'api',
+    autoDetect: false,
+    primaryMode: 'api-backed',
+    canonicalProjections: [],
+    supportFloor: {
+      setup: 'supported',
+      visibility: 'supported',
+      workloads: 'n/a',
+      storage: 'n/a',
+      recovery: 'n/a',
+      alerts: 'n/a',
+      assistantRead: 'n/a',
+      assistantControl: 'n/a',
+    },
+    defaultSurfaceKeys: ['servers', 'stacks', 'deployments', 'swarms'],
   },
   truenas: {
     label: 'TrueNAS SCALE',
@@ -325,6 +366,7 @@ const SOURCE_PICKER_PRODUCT_ITEMS: Partial<
   Record<InfrastructureSourcePickerItemId, InfrastructureOnboardingConnectionType>
 > = {
   vmware: 'vmware',
+  komodo: 'komodo',
   pve: 'pve',
   truenas: 'truenas',
   pbs: 'pbs',
@@ -346,6 +388,7 @@ const manifestEntryForType = (type: InfrastructureOnboardingConnectionType) => {
 
 const API_PRODUCT_ORDER: InfrastructureOnboardingConnectionType[] = [
   'vmware',
+  'komodo',
   'truenas',
   'pve',
   'pbs',
@@ -380,7 +423,7 @@ export const INFRASTRUCTURE_ONBOARDING_PATHS: Record<
     title: 'Connect platform API',
     description:
       'Use a management API when the platform exposes one. Pulse validates the endpoint, requests credentials, and then starts collecting platform inventory and health.',
-    bestFor: 'TrueNAS, Proxmox, and the current VMware vCenter integration path',
+    bestFor: 'Komodo, TrueNAS, Proxmox, and VMware vCenter integration paths',
     coverage: 'Platform inventory, workloads, storage, backups, and health',
   },
   agent: {
@@ -409,6 +452,7 @@ const SOURCE_PICKER_ITEM_ORDER: InfrastructureSourcePickerItemId[] = [
   // Other platform-API integrations.
   'truenas',
   'vmware',
+  'komodo',
   // Agent-install paths, named platforms first then the generic host card.
   'unraid',
   'docker',
@@ -430,7 +474,8 @@ export const getInfrastructureOnboardingProductPresentation = (
     primaryMode: manifestEntry?.primaryMode ?? presentation.primaryMode ?? 'agent-backed',
     canonicalProjections: manifestEntry?.canonicalProjections ??
       presentation.canonicalProjections ?? ['agent'],
-    supportFloor: manifestEntry?.supportFloor ?? DEFAULT_AGENT_SUPPORT_FLOOR,
+    supportFloor:
+      manifestEntry?.supportFloor ?? presentation.supportFloor ?? DEFAULT_AGENT_SUPPORT_FLOOR,
   };
 };
 
@@ -539,4 +584,4 @@ export const getInfrastructureEmptyStateSummary = (): string =>
   'Choose an infrastructure source to start monitoring your environment.';
 
 export const getInfrastructureEmptyStateDetail = (): string =>
-  'Supported source types include TrueNAS SCALE, Proxmox VE, Proxmox Backup Server, Proxmox Mail Gateway, and Pulse Agent hosts. VMware vCenter is available as a preview platform while live support is validated. Docker and Kubernetes are discovered from supported agent hosts.';
+  'Supported source types include Komodo Core, TrueNAS SCALE, Proxmox VE, Proxmox Backup Server, Proxmox Mail Gateway, and Pulse Agent hosts. VMware vCenter is available as a preview platform while live support is validated. Docker and Kubernetes are discovered from supported agent hosts.';

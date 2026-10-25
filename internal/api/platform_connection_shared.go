@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -44,17 +45,20 @@ func decodeOptionalInstanceRequest[T any](w http.ResponseWriter, r *http.Request
 // single-sourcing it means a new platform cannot forget masked-secret
 // preservation.
 type platformConnectionUpdateSpec[T any] struct {
-	notFoundCode string
-	saveFailCode string
-	saveFailMsg  string
-	id           func(T) string
-	decode       func(http.ResponseWriter, *http.Request, T) (T, bool)
-	setID        func(*T, string)
-	normalize    func(*T)
-	preserve     func(updated *T, stored T)
-	validate     func(T) error
-	redacted     func(T) any
-	save         func([]T) error
+	notFoundCode    string
+	saveFailCode    string
+	saveFailMsg     string
+	preSaveFailCode string
+	preSaveFailMsg  string
+	preSave         func(context.Context, T, T) error
+	id              func(T) string
+	decode          func(http.ResponseWriter, *http.Request, T) (T, bool)
+	setID           func(*T, string)
+	normalize       func(*T)
+	preserve        func(updated *T, stored T)
+	validate        func(T) error
+	redacted        func(T) any
+	save            func([]T) error
 }
 
 // updatePlatformConnection runs the shared platform connection update flow
@@ -82,6 +86,20 @@ func updatePlatformConnection[T any](w http.ResponseWriter, r *http.Request, con
 	if err := spec.validate(instance); err != nil {
 		writeErrorResponse(w, http.StatusBadRequest, "validation_error", err.Error(), nil)
 		return
+	}
+	if spec.preSave != nil {
+		if err := spec.preSave(r.Context(), instance, instances[index]); err != nil {
+			code := spec.preSaveFailCode
+			if code == "" {
+				code = "connection_validation_failed"
+			}
+			message := spec.preSaveFailMsg
+			if message == "" {
+				message = "Connection validation failed"
+			}
+			writeErrorResponse(w, http.StatusBadRequest, code, message, nil)
+			return
+		}
 	}
 	instances[index] = instance
 	if err := spec.save(instances); err != nil {

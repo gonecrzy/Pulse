@@ -89,6 +89,7 @@ type Router struct {
 	configHandlers                  *ConfigHandlers
 	trueNASHandlers                 *TrueNASHandlers
 	vmwareHandlers                  *VMwareHandlers
+	komodoHandlers                  *KomodoHandlers
 	connectionsHandlers             *ConnectionsHandlers
 	availabilityHandlers            *AvailabilityHandlers
 	notificationHandlers            *NotificationHandlers
@@ -108,6 +109,7 @@ type Router struct {
 	resourceRegistry                *unifiedresources.ResourceRegistry
 	trueNASPoller                   *monitoring.TrueNASPoller
 	vmwarePoller                    *monitoring.VMwarePoller
+	komodoPoller                    *monitoring.KomodoPoller
 	monitorResourceAdapter          *unifiedresources.MonitorAdapter
 	monitorResourceAdapters         map[string]*unifiedresources.MonitorAdapter
 	monitorAdapterMu                sync.Mutex
@@ -443,6 +445,10 @@ func (r *Router) setupRoutes() {
 		getMonitor:     r.configHandlers.Monitor,
 		getPoller:      func(context.Context) *monitoring.VMwarePoller { return r.vmwarePoller },
 	}
+	r.komodoHandlers = &KomodoHandlers{
+		getPersistence: r.configHandlers.Persistence,
+		getPoller:      func(context.Context) *monitoring.KomodoPoller { return r.komodoPoller },
+	}
 	r.connectionsHandlers = NewConnectionsHandlers(
 		r.configHandlers.Config,
 		r.configHandlers.Persistence,
@@ -452,6 +458,7 @@ func (r *Router) setupRoutes() {
 		func(context.Context) *monitoring.TrueNASPoller { return r.trueNASPoller },
 		func(context.Context) *monitoring.VMwarePoller { return r.vmwarePoller },
 	)
+	r.connectionsHandlers.SetKomodoPoller(func(context.Context) *monitoring.KomodoPoller { return r.komodoPoller })
 	r.availabilityHandlers = NewAvailabilityHandlers(
 		r.configHandlers.Persistence,
 		r.configHandlers.Monitor,
@@ -482,6 +489,8 @@ func (r *Router) setupRoutes() {
 	r.trueNASPoller.Start(r.lifecycleCtx)
 	r.vmwarePoller = monitoring.NewVMwarePoller(r.multiTenant, 0)
 	r.vmwarePoller.Start(r.lifecycleCtx)
+	r.komodoPoller = monitoring.NewKomodoPoller(r.multiTenant, 0)
+	r.komodoPoller.Start(r.lifecycleCtx)
 	// The connection-degraded lister is installed by
 	// configureMonitorDependencies, which runs below for the startup monitor
 	// and again for every monitor a reload or tenant initializer attaches.
@@ -1920,14 +1929,17 @@ func (r *Router) syncPlatformSupplementalProviders(mockEnabled bool) {
 
 		trueNASAdapter := mockSupplementalRecordsAdapter{source: unifiedresources.SourceTrueNAS}
 		vmwareAdapter := mockSupplementalRecordsAdapter{source: unifiedresources.SourceVMware}
+		komodoAdapter := mockSupplementalRecordsAdapter{source: unifiedresources.SourceKomodo}
 
 		if r.resourceHandlers != nil {
 			r.resourceHandlers.SetSupplementalRecordsProvider(unifiedresources.SourceTrueNAS, trueNASAdapter)
 			r.resourceHandlers.SetSupplementalRecordsProvider(unifiedresources.SourceVMware, vmwareAdapter)
+			r.resourceHandlers.SetSupplementalRecordsProvider(unifiedresources.SourceKomodo, komodoAdapter)
 		}
 		r.setMonitorSupplementalRecordsProviders(map[unifiedresources.DataSource]monitoring.MonitorSupplementalRecordsProvider{
 			unifiedresources.SourceTrueNAS: trueNASAdapter,
 			unifiedresources.SourceVMware:  vmwareAdapter,
+			unifiedresources.SourceKomodo:  komodoAdapter,
 		})
 		return
 	}
@@ -1938,10 +1950,12 @@ func (r *Router) syncPlatformSupplementalProviders(mockEnabled bool) {
 	if r.resourceHandlers != nil {
 		r.resourceHandlers.SetSupplementalRecordsProvider(unifiedresources.SourceTrueNAS, r.trueNASPoller)
 		r.resourceHandlers.SetSupplementalRecordsProvider(unifiedresources.SourceVMware, r.vmwarePoller)
+		r.resourceHandlers.SetSupplementalRecordsProvider(unifiedresources.SourceKomodo, r.komodoPoller)
 	}
 	r.setMonitorSupplementalRecordsProviders(map[unifiedresources.DataSource]monitoring.MonitorSupplementalRecordsProvider{
 		unifiedresources.SourceTrueNAS: r.trueNASPoller,
 		unifiedresources.SourceVMware:  r.vmwarePoller,
+		unifiedresources.SourceKomodo:  r.komodoPoller,
 	})
 }
 
@@ -2995,6 +3009,9 @@ func (r *Router) shutdownBackgroundWorkers() {
 		}
 		if r.vmwarePoller != nil {
 			r.vmwarePoller.Stop()
+		}
+		if r.komodoPoller != nil {
+			r.komodoPoller.Stop()
 		}
 		if r.deployStore != nil {
 			if err := r.deployStore.Close(); err != nil {

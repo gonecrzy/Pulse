@@ -9,7 +9,8 @@ export type InfrastructureAddStep =
   | 'pbs'
   | 'pmg'
   | 'truenas'
-  | 'vmware';
+  | 'vmware'
+  | 'komodo';
 export type InfrastructurePanelStep = 'pick' | InfrastructureAddStep;
 
 const INFRASTRUCTURE_BASE_PATH = '/settings/infrastructure';
@@ -39,6 +40,7 @@ export function normalizeInfrastructurePanelStep(
     case 'pmg':
     case 'truenas':
     case 'vmware':
+    case 'komodo':
       return value!.trim() as InfrastructurePanelStep;
     default:
       return null;

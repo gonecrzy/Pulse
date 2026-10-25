@@ -32,6 +32,7 @@ var defaultStaleThresholds = map[DataSource]time.Duration{
 	SourceK8s:          120 * time.Second,
 	SourceTrueNAS:      120 * time.Second,
 	SourceVMware:       120 * time.Second,
+	SourceKomodo:       120 * time.Second,
 	SourceAvailability: 120 * time.Second,
 }
 
@@ -271,6 +272,7 @@ func NewRegistryWithStaleThresholds(store ResourceStore, thresholds map[DataSour
 	rr.bySource[SourceK8s] = make(map[string]string)
 	rr.bySource[SourceTrueNAS] = make(map[string]string)
 	rr.bySource[SourceVMware] = make(map[string]string)
+	rr.bySource[SourceKomodo] = make(map[string]string)
 	rr.bySource[SourceAvailability] = make(map[string]string)
 
 	rr.loadOverrides()
@@ -5164,6 +5166,7 @@ func (rr *ResourceRegistry) mergeResourceData(primary *Resource, other *Resource
 	if other == nil || primary == nil {
 		return
 	}
+	primary.Relationships = mergeResourceRelationships(primary.Relationships, other.Relationships)
 	if other.parentBySource != nil {
 		if primary.parentBySource == nil {
 			primary.parentBySource = make(map[DataSource]string, len(other.parentBySource))
@@ -5260,6 +5263,7 @@ func (rr *ResourceRegistry) updateParentReferencesLocked(fromID, toID string) {
 		if resource.ParentID != nil && CanonicalResourceID(strings.TrimSpace(*resource.ParentID)) == fromID {
 			resource.ParentID = &toID
 		}
+		resource.Relationships = rewriteResourceRelationshipEndpoint(resource.Relationships, fromID, toID)
 		for source, parentID := range resource.parentBySource {
 			if CanonicalResourceID(strings.TrimSpace(parentID)) == fromID {
 				resource.parentBySource[source] = toID
