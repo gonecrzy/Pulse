@@ -3621,6 +3621,12 @@ func populateMockDockerSwarmNodeInventories(hosts []models.DockerHost, now time.
 	}
 }
 
+func boundedMockHostMemoryUsage(sampledPercent float64) float64 {
+	// Persona-adjusted samples can exceed 100%; host inventory must stay within
+	// physical capacity and leave room for the fixture's reclaimable cache.
+	return clampFloat(sampledPercent, 0, 99)
+}
+
 func generateHosts(config MockConfig) []models.Host {
 	count := config.GenericHostCount
 	if count <= 0 {
@@ -3660,7 +3666,7 @@ func generateHosts(config MockConfig) []models.Host {
 			memTotalGiB = 16 + rand.Intn(64)
 		}
 		memTotal := int64(memTotalGiB) << 30
-		memUsage := SampleMetric("agent", hostID, "memory", now)
+		memUsage := boundedMockHostMemoryUsage(SampleMetric("agent", hostID, "memory", now))
 		memUsed := int64(float64(memTotal) * (memUsage / 100.0))
 		// Roughly a third of the non-used pages read as reclaimable buff/cache
 		// so the machine memory split is exercisable in mock mode.

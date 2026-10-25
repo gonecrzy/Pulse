@@ -161,6 +161,15 @@ func TestBuildFixtureStateIncludesHostAgents(t *testing.T) {
 	}
 }
 
+func TestBoundedMockHostMemoryUsageCapsPersonaOverage(t *testing.T) {
+	if got := boundedMockHostMemoryUsage(100.5); got != 99 {
+		t.Fatalf("bounded mock host memory usage = %v, want 99", got)
+	}
+	if got := boundedMockHostMemoryUsage(64.25); got != 64.25 {
+		t.Fatalf("bounded mock host memory usage = %v, want 64.25", got)
+	}
+}
+
 func TestBuildFixtureStatePreservesStandaloneHostAgentsWhenLinkingNodes(t *testing.T) {
 	cfg := DefaultConfig
 	cfg.NodeCount = 3

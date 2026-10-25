@@ -202,7 +202,9 @@ func TestOperatorDependenciesCoexistWithAvailabilityCheckRelationship(t *testing
 }
 
 func TestDiscoveredRelationshipFreshnessFollowsProviderStatus(t *testing.T) {
-	observed := time.Date(2026, 10, 25, 12, 0, 0, 0, time.UTC)
+	// IngestResources applies the registry's stale pass against the wall clock,
+	// so keep fixture sightings relative to the test start time.
+	observed := time.Now().UTC()
 	resource := Resource{
 		ID: "komodo-server-a", Type: ResourceTypeKomodoServer, Name: "server-a", Sources: []DataSource{SourceKomodo},
 		Status:       StatusOnline,
