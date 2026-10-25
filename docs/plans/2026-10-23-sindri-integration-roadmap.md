@@ -3,7 +3,38 @@ Total output lines: 178
 
 # Pulse + Sindri integration roadmap
 
-**Status (2026-10-25):** Komodo Phase 2E monitoring integration is implemented on `feature/komodo-phase2-foundation` and is covered by fixtures. Live qualification passed against Core `2.3.4` through the operator-supplied `http://10.1.10.101:9120` LAN endpoint: 11 Servers, 32 Stacks, no Deployments or Swarms, 43 stable identities across two reads, 43 resources with state, and 32 resolved Stack-to-Server parent references. Normalization produced 43 records and 32 `hosted_by` relationships with no unresolved parents. All four inventory list methods succeeded. `GetPermission` returned level-only `Read` 86 times; effective specific permissions were operator-attested for all four kinds and were not API-verified. The HTTP exception exists only in the explicitly opted-in test harness for this exact address; production connection validation and the monitoring client remain HTTPS-only. Komodo polling still uses only allowlisted read methods. Read-only is the current Phase 2 implementation boundary, not a permanent product limitation: future provider actions must be separately enabled by Pulse policy and requested through Pulse's canonical authorization, approval, execution, audit, and verification lifecycle. The upstream Komodo credential alone never grants Pulse action authority. A local `linux/amd64` test image was built from source `a175f299dd45b9e98549831daaeab8fec2c9cedb` and passed the repository runtime smoke test; it was not pushed or deployed. No action methods, merge, or production deployment have occurred. Codex-LB remains optional later work; Phase 0 read-only and action-safety contracts remain in force.
+**Status (2026-10-25):** Komodo Phase 2E monitoring integration is implemented on `feature/komodo-phase2-foundation` and is covered by fixtures. Live qualification passed against Core `2.3.4` through the operator-supplied `http://10.1.10.101:9120` LAN endpoint: 11 Servers, 32 Stacks, no Deployments or Swarms, 43 stable identities across two reads, 43 resources with state, and 32 resolved Stack-to-Server parent references. Normalization produced 43 records and 32 `hosted_by` relationships with no unresolved parents. All four inventory list methods succeeded. `GetPermission` returned level-only `Read` 86 times; effective specific permissions were operator-attested for all four kinds and were not API-verified. The HTTP exception exists only in the explicitly opted-in test harness for this exact address; production connection validation and the monitoring client remain HTTPS-only. Komodo polling still uses only allowlisted read methods. Read-only is the current Phase 2 implementation boundary, not a permanent product limitation: future provider actions must be separately enabled by Pulse policy and requested through Pulse's canonical authorization, approval, execution, audit, and verification lifecycle. The upstream Komodo credential alone never grants Pulse action authority. Phase 2F adds a branch-scoped test-image workflow and isolated Compose procedure; the first registry result is pending the post-push workflow run, so no GHCR digest is asserted here. No action methods, merge, or production deployment have occurred. Codex-LB remains optional later work; Phase 0 read-only and action-safety contracts remain in force.
+
+### Phase 2F — Automated test image and isolated acceptance
+
+The `komodo-phase2f-image.yml` workflow runs only for pushes to
+`feature/komodo-phase2-foundation` and manual dispatches targeting that branch.
+It calls the existing full `build-and-test.yml` workflow and runs the
+`canonical-governance.yml` checks, builds the existing production
+`Dockerfile` `runtime` target for `linux/amd64`, and runs
+`deploy/sindri/verify-image.sh` before publication. A separate publisher job
+has the only `packages: write` permission and publishes
+`ghcr.io/gonecrzy/pulse:komodo-test` plus
+`ghcr.io/gonecrzy/pulse:komodo-<first-12-commit-characters>`. The workflow checks
+that both tags resolve to the same digest, then pulls by digest and repeats the
+runtime/health/data-persistence smoke test. It does not publish stable, latest,
+production, or Sindri tags and does not deploy.
+
+Existing `.github/workflows/sindri-build.yml` remains the exact-full-SHA GHCR
+pipeline for `feature/sindri-integration` and `sindri`; its triggers and tag
+convention are unchanged. `build-and-test.yml` is callable so the Phase 2F
+pipeline reuses the existing full test suite. The Phase 2F workflow runs the
+same bounded checks as `canonical-governance.yml`; that workflow's triggers and
+permissions remain unchanged. The personal fork has no
+separate upstream commercial release/signing/installer publication pipeline.
+
+`deploy/komodo-phase2f/compose.yml` defines a distinct fixed container and
+network, loopback port, and explicitly supplied persistent bind directory. Its
+`.env.example` contains only image digest, data path, port, and timezone; the
+Komodo credential is entered through Pulse's protected UI. The live Compose
+acceptance remains an operator action and requires trusted HTTPS/DNS on the test
+host. The workflow itself uses fixtures and local smoke tests only and has no
+Komodo or Proxmox credentials.
 
 ## Workspace and baseline
 

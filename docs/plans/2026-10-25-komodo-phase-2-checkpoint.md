@@ -687,3 +687,73 @@ If validating existing Proxmox identity links and dependency edges, use a consis
 | `rtk make lint-backend` | Not run: `golangci-lint` is not installed in this environment. |
 
 The entire `go test ./...` suite was not rerun in this focused Phase 2E continuation. No merge, deployment, registry push, or use of the production writable database occurred.
+
+## Phase 2F — Automated Docker test builds and acceptance preparation
+
+### CI/CD audit
+
+| Area | Existing behavior and Phase 2F decision |
+|---|---|
+| `sindri-build.yml` | Builds the production `Dockerfile` `runtime` target for `linux/amd64`, smoke-tests it, and publishes an exact full-source-SHA tag. It is scoped to `feature/sindri-integration` and `sindri`; left unchanged. |
+| `build-and-test.yml` | Owns secret scanning, frontend validation/unit tests, Go race-test shards, scripts, and backend builds. Added `workflow_call` so the Phase 2F publisher reuses the existing full check suite rather than copying its test commands. |
+| `canonical-governance.yml` | Owns workflow trust, mutation-registry, and repository governance checks. The Phase 2F workflow runs those same bounded checks in a read-only job; canonical governance triggers and permissions remain unchanged. |
+| GHCR and release convention | The retained fork image workflow uses `ghcr.io/gonecrzy/pulse` and the job-scoped `GITHUB_TOKEN`. No separate commercial upstream release/signing pipeline is retained in this fork. The Phase 2F publisher alone receives `packages: write`. |
+
+### Phase 2F workflow and image tags
+
+`.github/workflows/komodo-phase2f-image.yml` runs on pushes to
+`feature/komodo-phase2-foundation` and supports `workflow_dispatch` for that
+branch. After the reusable test workflow and the canonical governance checks
+pass, it builds the production Dockerfile's `runtime` target as `linux/amd64`
+with the `release` Go build tag and full source SHA label. It runs the existing
+`deploy/sindri/verify-image.sh`, transfers the exact qualified image between
+jobs, and publishes:
+
+| Tag | Meaning |
+|---|---|
+| `ghcr.io/gonecrzy/pulse:komodo-test` | Most recently successful Phase 2F feature-branch image. |
+| `ghcr.io/gonecrzy/pulse:komodo-<12-character-sha>` | Commit-specific image tag; use the reported OCI digest for immutable deployment. |
+
+The publisher compares the two pushed manifests' digests. A following
+read-only GHCR job pulls the digest-pinned reference and reruns architecture,
+source label, startup, health, and data-persistence checks. The workflow does
+not write production/Sindri tags or deploy. The first Phase 2F image digest is
+reported by the successful workflow summary after this checkpoint is pushed;
+it is not guessed or recorded before the registry result exists. Manual dispatch
+requires the workflow definition to be available to GitHub Actions and the
+selected ref to be `feature/komodo-phase2-foundation`.
+
+If publication is denied, the workflow reports that repository Actions must
+have `packages: write` and the existing `pulse` GHCR package must grant access
+to this repository's GitHub Actions token. No PAT, repository secret, or wider
+permission scope is requested.
+
+### Isolated test deployment
+
+`deploy/komodo-phase2f/compose.yml` uses the fixed container
+`pulse-komodo-phase2f-test`, network `pulse-komodo-phase2f-test`, loopback-only
+port `17656`, and a separately specified host bind directory mounted at `/data`.
+The required `.env` is copied from `.env.example` and contains only a digest
+image reference, dedicated test path, port, and timezone. It must not point at
+production data. The image digest comes from the workflow summary. Komodo
+credentials are entered only in the isolated Pulse UI using the trusted HTTPS
+endpoint; they are not build arguments, Compose environment, or image content.
+
+There is no Phase 2F database migration. A fresh test data directory does not
+require a production backup. For a copied test database, use a consistent
+SQLite backup and retain the matching encryption-key/configuration pair.
+Before updating a configured test instance, make a cold backup of its test data.
+To roll back, stop only the test Compose project, restore its own backup if
+needed, pin its previous image digest, and recreate the test container. Restore
+the pre-upgrade copy before using an older binary if newer code has migrated
+the test database. No production container, volume, or data path is part of
+this procedure.
+
+The detailed operator checklist is in `deploy/komodo-phase2f/README.md`. It
+covers Core 2.3.4 connection health, Proxmox compatibility, current inventory
+counts (the live baseline was 11 Servers and 32 Stacks, not a permanent
+requirement), parent relations, explicit Proxmox/Komodo links, Proxmox metric
+history, service dependencies, alerts and recovery, NotificationManager,
+Patrol sanitization, and monitoring with Sindri AI disabled. CI does not contact
+infrastructure or intentionally interrupt services; live acceptance uses only
+the already approved read-only account and test-only failures.

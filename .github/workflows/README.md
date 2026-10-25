@@ -10,7 +10,8 @@ private-repository automation.
 | Workflow | Purpose | Trigger notes |
 | --- | --- | --- |
 | `sindri-build.yml` | Build the runtime image, publish the exact source-SHA image to GHCR, then pull and qualify it with Compose. | Pushes to `feature/sindri-integration` and `sindri`; manual runs are restricted to the default branch. |
-| `build-and-test.yml` | Secret scan, frontend validation, Go tests, script checks, and backend build. | Push and PR to `main`, `sindri`, or `feature/sindri-integration`; docs-only changes skip code jobs. |
+| `komodo-phase2f-image.yml` | Reuse the full build/test workflow and run the canonical governance checks, build and smoke-test the production runtime target, then publish `komodo-test` and a 12-character commit tag. | Pushes to `feature/komodo-phase2-foundation`; manual runs target that branch after the workflow is available on the default branch. GHCR write access is confined to its publisher job. |
+| `build-and-test.yml` | Secret scan, frontend validation, Go tests, script checks, and backend build. | Push and PR to `main`, `sindri`, or `feature/sindri-integration`; docs-only changes skip code jobs. Also callable by the Phase 2F image workflow. |
 | `canonical-governance.yml` | Local workflow trust, mutation registry, and repository governance checks. | Push and PR to `main`, `sindri`, or `feature/sindri-integration`. No cross-repository credentials. |
 | `repo-boundary-audit.yml` | Enforce API, paid-surface, and private-source boundaries. | Pull requests, pushes to `main`, `sindri`, or `feature/sindri-integration`, and manual runs. |
 | `test-e2e.yml` | Source-bound browser and integration acceptance. | Path-filtered PRs and pushes to `main`, `sindri`, or `feature/sindri-integration`; keep it optional in branch protection because no always-present verdict is emitted for unrelated paths. |
@@ -32,6 +33,11 @@ permission.
 ## Delivery
 
 The supported delivery path is GitHub Actions to GHCR to Docker Compose or
-Komodo. The image workflow builds from the exact triggering source revision,
-qualifies the image before publication, publishes an immutable SHA tag, then
-pulls that tag and verifies startup, health, and persistent-volume behavior.
+Komodo. `sindri-build.yml` publishes its immutable full-SHA tag. The Phase 2F
+workflow publishes a commit-specific 12-character tag and the mutable
+`komodo-test` convenience tag, after the reused full build/test workflow, the
+canonical governance checks, and production Dockerfile runtime smoke test
+pass. It then pulls the published image by digest and repeats the runtime and
+persistent-volume smoke test. The
+digest in the workflow summary is the reproducible deployment reference. No
+workflow deploys or changes an existing Pulse container.

@@ -1,0 +1,33 @@
+name: pulse-komodo-phase2f-test
+
+services:
+  pulse:
+    image: ${PULSE_IMAGE:?Set PULSE_IMAGE to ghcr.io/gonecrzy/pulse@sha256:<digest>}
+    container_name: pulse-komodo-phase2f-test
+    restart: unless-stopped
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    ports:
+      - "127.0.0.1:${PULSE_TEST_PORT:-17656}:7655"
+    volumes:
+      - type: bind
+        source: ${PULSE_TEST_DATA_DIR:?Set PULSE_TEST_DATA_DIR to a new, dedicated directory}
+        target: /data
+        bind:
+          create_host_path: false
+    environment:
+      PULSE_DATA_DIR: /data
+      PULSE_DEPLOYMENT_METHOD: docker_compose
+      PULSE_DISABLE_AUTO_UPDATE: "true"
+      TZ: ${TZ:-UTC}
+    networks:
+      - pulse-komodo-phase2f-test
+
+networks:
+  pulse-komodo-phase2f-test:
+    name: pulse-komodo-phase2f-test
+    driver: bridge

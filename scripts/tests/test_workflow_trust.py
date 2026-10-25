@@ -66,6 +66,7 @@ class WorkflowTrustTest(unittest.TestCase):
             "build-and-test.yml",
             "canonical-governance.yml",
             "dependency-advisory-watch.yml",
+            "komodo-phase2f-image.yml",
             "patrol-qualification-regression.yml",
             "public-docs.yml",
             "repo-boundary-audit.yml",
@@ -87,7 +88,6 @@ class WorkflowTrustTest(unittest.TestCase):
                     "rcourtman/pulse",
                     "pulse-enterprise",
                     "workflow_run:",
-                    "workflow_call:",
                     "PULSE_TRIAGE_APP_PRIVATE_KEY",
                     "WORKFLOW_PAT",
                     "PULSE_UPDATE_SIGNING_PUBLIC_KEY",
@@ -110,7 +110,33 @@ class WorkflowTrustTest(unittest.TestCase):
                     self.assertNotIn(forbidden, source)
             if "packages: write" in source:
                 package_writers.append(path.name)
-        self.assertEqual(["sindri-build.yml"], package_writers)
+        self.assertEqual(
+            ["komodo-phase2f-image.yml", "sindri-build.yml"], package_writers
+        )
+
+    def test_phase2f_image_publisher_is_branch_scoped_and_least_privilege(self) -> None:
+        workflow = (
+            REPO_ROOT / ".github/workflows/komodo-phase2f-image.yml"
+        ).read_text(encoding="utf-8")
+        self.assertIn("feature/komodo-phase2-foundation", workflow)
+        self.assertIn("packages: write", workflow)
+        self.assertEqual(workflow.count("packages: write"), 1)
+        self.assertIn("packages: read", workflow)
+        self.assertIn("komodo-test", workflow)
+        self.assertIn("komodo-${short_sha}", workflow)
+        self.assertIn("verify-image.sh", workflow)
+        self.assertNotIn("secrets.", workflow)
+        for forbidden_tag in (":latest", ":stable", ":sindri"):
+            self.assertNotIn(forbidden_tag, workflow)
+
+    def test_only_shared_validation_workflows_are_reusable(self) -> None:
+        workflow_directory = REPO_ROOT / ".github" / "workflows"
+        reusable = {
+            path.name
+            for path in workflow_directory.glob("*.yml")
+            if "workflow_call:" in path.read_text(encoding="utf-8")
+        }
+        self.assertEqual({"build-and-test.yml"}, reusable)
 
     def test_accepts_immutable_dependencies_and_explicit_checkout_credentials(self) -> None:
         findings = self.audit(

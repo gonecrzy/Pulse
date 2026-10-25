@@ -1,0 +1,265 @@
+name: Komodo Phase 2F test image
+run-name: Komodo Phase 2F image ${{ github.sha }}
+
+on:
+  push:
+    branches:
+      - feature/komodo-phase2-foundation
+  workflow_dispatch:
+
+concurrency:
+  group: komodo-phase2f-image-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  repository-tests:
+    name: Existing full build and test workflow
+    if: ${{ github.ref == 'refs/heads/feature/komodo-phase2-foundation' }}
+    uses: ./.github/workflows/build-and-test.yml
+    permissions:
+      contents: read
+
+  repository-governance:
+    name: Existing repository governance checks
+    if: ${{ github.ref == 'refs/heads/feature/komodo-phase2-foundation' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Validate workflow trust policy
+        run: python3 scripts/check_workflow_trust.py .github/workflows
+
+      - name: Test workflow trust policy
+        run: python3 scripts/tests/test_workflow_trust.py
+
+      - name: Run canonical mutation registry audits
+        run: >-
+          go test ./internal/mutationregistry ./internal/ai/tools
+          -run 'Test(EveryRegisteredMutationHasDisposition|InfrastructureAPIRoutesResolveToRegistry|TransportCommandCatalogsResolveToRegistry|PatrolJobRegistrationResolvesToRegistry|RuntimeCandidateAuditNegativeFixtures|ActionRouteMethodAuthorityIsExactAndLookalikesFailClosed|NonAdmittingTransportMessagesCannotCarryDispatchAuthority|UnknownTransportLookalikeFailsClosed|RegisteredModelMutationSchemasResolveToClosedRegistry|RetiredMutationAliasesCannotShadowExtensions)'
+          -count=1
+
+      - name: Run repository governance tests
+        run: go test ./internal/repoctl -count=1
+
+  build:
+    name: Build and smoke-test linux/amd64
+    needs: [repository-tests, repository-governance]
+    if: ${{ github.ref == 'refs/heads/feature/komodo-phase2-foundation' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    permissions:
+      contents: read
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+
+      # No registry cache or package-write permission is granted to this job.
+      - name: Build the existing release runtime target
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          target: runtime
+          platforms: linux/amd64
+          push: false
+          load: true
+          tags: local/pulse:${{ github.sha }}
+          build-args: |
+            GO_BUILD_TAGS=release
+            SOURCE_REVISION=${{ github.sha }}
+
+      - name: Smoke-test the built image
+        env:
+          SOURCE_REVISION: ${{ github.sha }}
+        run: deploy/sindri/verify-image.sh "local/pulse:${SOURCE_REVISION}" "${SOURCE_REVISION}"
+
+      - name: Save the qualified image for publication
+        env:
+          SOURCE_REVISION: ${{ github.sha }}
+        run: docker save --output "${RUNNER_TEMP}/pulse-runtime.tar" "local/pulse:${SOURCE_REVISION}"
+
+      - name: Transfer the exact qualified image
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: pulse-komodo-phase2f-${{ github.sha }}
+          path: ${{ runner.temp }}/pulse-runtime.tar
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+
+      - name: Record source build qualification
+        env:
+          SOURCE_REVISION: ${{ github.sha }}
+        run: |
+          {
+            printf '%s\n' '## Komodo Phase 2F image build qualification'
+            printf '\n'
+            printf '%s\n' "- Source revision: ${SOURCE_REVISION}"
+            printf '%s\n' '- Target: `runtime` (`linux/amd64`, Go `release` build tag)'
+            printf '%s\n' '- Result: full build/test and governance workflows passed; runtime smoke, health, and `/data` restart persistence passed.'
+            printf '%s\n' '- Credentials and infrastructure secrets: not supplied to this workflow.'
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+  publish:
+    name: Publish test tags to GHCR
+    needs: build
+    if: ${{ github.ref == 'refs/heads/feature/komodo-phase2-foundation' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    outputs:
+      digest: ${{ steps.publish.outputs.digest }}
+      commit_ref: ${{ steps.publish.outputs.commit_ref }}
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Download the qualified image
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: pulse-komodo-phase2f-${{ github.sha }}
+          path: ${{ runner.temp }}/pulse-runtime
+
+      - name: Load and verify the qualified image identity
+        env:
+          SOURCE_REVISION: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          docker load --input "${RUNNER_TEMP}/pulse-runtime/pulse-runtime.tar"
+          image="local/pulse:${SOURCE_REVISION}"
+          actual_revision="$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "${image}")"
+          actual_arch="$(docker image inspect --format '{{.Os}}/{{.Architecture}}' "${image}")"
+          test "${actual_revision}" = "${SOURCE_REVISION}"
+          test "${actual_arch}" = linux/amd64
+
+      - name: Authenticate to GHCR with the job token
+        env:
+          GHCR_TOKEN: ${{ github.token }}
+          GHCR_USERNAME: ${{ github.actor }}
+        run: |
+          set -euo pipefail
+          printf '%s' "${GHCR_TOKEN}" | docker login ghcr.io --username "${GHCR_USERNAME}" --password-stdin
+
+      - name: Publish commit-specific and convenience tags
+        id: publish
+        env:
+          SOURCE_REVISION: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          source_image="local/pulse:${SOURCE_REVISION}"
+          short_sha="${SOURCE_REVISION:0:12}"
+          commit_ref="ghcr.io/gonecrzy/pulse:komodo-${short_sha}"
+          latest_ref="ghcr.io/gonecrzy/pulse:komodo-test"
+          docker tag "${source_image}" "${commit_ref}"
+          docker tag "${source_image}" "${latest_ref}"
+
+          commit_log="$(docker push "${commit_ref}" 2>&1)" || {
+            printf '%s\n' "${commit_log}"
+            echo 'GHCR publication failed. Confirm this repository has package-write permission and that the pulse package grants Actions access; no personal access token is used.' >&2
+            exit 1
+          }
+          printf '%s\n' "${commit_log}"
+          commit_digest="$(printf '%s\n' "${commit_log}" | sed -nE 's/.*digest: (sha256:[0-9a-f]{64}).*/\1/p' | tail -n 1)"
+          if [[ ! "${commit_digest}" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo 'Could not read the commit-tag digest from docker push output.' >&2
+            exit 1
+          fi
+
+          latest_log="$(docker push "${latest_ref}" 2>&1)" || {
+            printf '%s\n' "${latest_log}"
+            echo 'GHCR publication of komodo-test failed. The commit-specific tag may already be available.' >&2
+            exit 1
+          }
+          printf '%s\n' "${latest_log}"
+          latest_digest="$(printf '%s\n' "${latest_log}" | sed -nE 's/.*digest: (sha256:[0-9a-f]{64}).*/\1/p' | tail -n 1)"
+          if [[ ! "${latest_digest}" =~ ^sha256:[0-9a-f]{64}$ || "${latest_digest}" != "${commit_digest}" ]]; then
+            echo 'The convenience tag does not resolve to the commit-specific image digest.' >&2
+            exit 1
+          fi
+
+          echo "digest=${commit_digest}" >> "${GITHUB_OUTPUT}"
+          echo "commit_ref=${commit_ref}" >> "${GITHUB_OUTPUT}"
+          {
+            printf '%s\n' '## Published Komodo Phase 2F test image'
+            printf '\n'
+            printf '%s\n' "- Source commit: ${SOURCE_REVISION}"
+            printf '%s\n' "- Commit-specific image: ${commit_ref}"
+            printf '%s\n' "- Convenience image: ${latest_ref}"
+            printf '%s\n' "- OCI digest: ${commit_digest}"
+            printf '%s\n' "- Digest-pinned reference: ghcr.io/gonecrzy/pulse@${commit_digest}"
+            printf '%s\n' '- Architecture: `linux/amd64`'
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Remove registry credentials from the runner
+        if: always()
+        run: docker logout ghcr.io || true
+
+  verify-published:
+    name: Pull and smoke-test the published digest
+    needs: publish
+    if: ${{ github.ref == 'refs/heads/feature/komodo-phase2-foundation' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Check out smoke-test script
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Authenticate to GHCR with the job token
+        env:
+          GHCR_TOKEN: ${{ github.token }}
+          GHCR_USERNAME: ${{ github.actor }}
+        run: |
+          set -euo pipefail
+          printf '%s' "${GHCR_TOKEN}" | docker login ghcr.io --username "${GHCR_USERNAME}" --password-stdin
+
+      - name: Pull and qualify the exact published digest
+        env:
+          SOURCE_REVISION: ${{ github.sha }}
+          IMAGE_DIGEST: ${{ needs.publish.outputs.digest }}
+        run: |
+          set -euo pipefail
+          image_ref="ghcr.io/gonecrzy/pulse@${IMAGE_DIGEST}"
+          docker pull "${image_ref}"
+          deploy/sindri/verify-image.sh "${image_ref}" "${SOURCE_REVISION}"
+
+      - name: Remove registry credentials from the runner
+        if: always()
+        run: docker logout ghcr.io || true
+
+      - name: Record published-image smoke result
+        env:
+          SOURCE_REVISION: ${{ github.sha }}
+          IMAGE_DIGEST: ${{ needs.publish.outputs.digest }}
+          COMMIT_REF: ${{ needs.publish.outputs.commit_ref }}
+        run: |
+          {
+            printf '%s\n' '## Published image digest acceptance'
+            printf '\n'
+            printf '%s\n' "- Source commit: ${SOURCE_REVISION}"
+            printf '%s\n' "- Commit-specific image: ${COMMIT_REF}"
+            printf '%s\n' "- Digest-pinned reference: ghcr.io/gonecrzy/pulse@${IMAGE_DIGEST}"
+            printf '%s\n' '- Result: pulled by digest; architecture, source label, startup, health, and `/data` persistence passed.'
+          } >> "${GITHUB_STEP_SUMMARY}"

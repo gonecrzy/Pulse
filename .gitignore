@@ -60,6 +60,7 @@ internal/cloudcp/portal/frontend/node_modules/
 
 # Environment
 .env
+.env.before-upgrade
 .env.local
 .env.*.local
 .env.devcontainer
