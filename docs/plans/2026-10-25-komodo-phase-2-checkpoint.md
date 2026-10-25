@@ -1,6 +1,6 @@
 # Pulse + Sindri — Komodo Phase 2 foundation checkpoint
 
-**Status (updated 2026-10-25):** Phase 2C relationship foundation and Phase 2D fixture harness are complete on `feature/komodo-phase2-foundation`. The operator's non-admin/read-only permission attestation was accepted by the opt-in harness. Live qualification passed against Komodo Core `2.3.4` through the exact operator-provided test-only LAN HTTP endpoint: 11 Servers, 32 Stacks, no Deployments or Swarms, 43 stable identities across two consecutive reads, 43 resources with non-empty state, and 32 resolved Stack-to-Server parent references. Normalization produced 43 records, 32 `hosted_by` relationships, zero unresolved parents, 43 online statuses, and no incidents. All four inventory list methods succeeded; the small inventory did not exercise a second API page, which remains fixture-tested. `GetPermission` returned level-only `Read` 86 times; specific-permission absence is operator-attested for all four kinds, not API-verified. The one-off HTTP route does not encrypt credentials and was used only in the explicitly opted-in test harness. Production connection validation and client transport remain HTTPS-only. Fixture-backed connection alerts, resource incidents and recovery, NotificationManager delivery, Patrol context, frontend resource presentation/reporting, and the read-method-only collector are implemented. No Komodo action methods, merge, deployment, or production database access are included. Codex-LB remains optional and deferred.
+**Status (updated 2026-10-25):** Phase 2C relationship foundation and Phase 2D fixture harness are complete on `feature/komodo-phase2-foundation`. The operator's non-admin/read-only permission attestation was accepted by the opt-in harness. Live qualification passed against Komodo Core `2.3.4` through the exact operator-provided test-only LAN HTTP endpoint: 11 Servers, 32 Stacks, no Deployments or Swarms, 43 stable identities across two consecutive reads, 43 resources with non-empty state, and 32 resolved Stack-to-Server parent references. Normalization produced 43 records, 32 `hosted_by` relationships, zero unresolved parents, 43 online statuses, and no incidents. All four inventory list methods succeeded; the small inventory did not exercise a second API page, which remains fixture-tested. `GetPermission` returned level-only `Read` 86 times; specific-permission absence is operator-attested for all four kinds, not API-verified. The one-off HTTP route does not encrypt credentials and was used only in the explicitly opted-in test harness. Production connection validation and client transport remain HTTPS-only. Fixture-backed connection alerts, resource incidents and recovery, NotificationManager delivery, Patrol context, frontend resource presentation/reporting, and the read-method-only collector are implemented. The local `linux/amd64` image `local/pulse:phase-2e-a175f299dd45b9e98549831daaeab8fec2c9cedb` built and passed the repository smoke test; local image ID is `sha256:7c4a6fcb4c2a51f3aa2ac7837211e7fb7d3d91ada7ee3c330ab5ec26cfcbea21`. It was not pushed or deployed. No Komodo action methods or production database access are included. Codex-LB remains optional and deferred.
 
 ## Contract and implementation boundary
 
@@ -350,7 +350,7 @@ The seven packages previously identified were rerun under UID 65534 (`nobody`) w
 
 No failure was ignored or rewritten. The hostmetrics and sensors fixture-isolation gaps remain outside this Komodo checkpoint; the full seven-package matrix is not green until those fixtures stop observing live host state. The prior root-only failures in Docker ownership, config encryption migration, alerts file permissions, API write-denial, installer root refusal, and missing `gawk` are resolved by running the expected unprivileged/dependency-complete test environment.
 
-### Smallest next integration plan (gated on successful live qualification)
+### Smallest next integration plan at that checkpoint (superseded)
 
 1. **Connection health and alerts:** feed `KomodoConnectionPollStatus` already projected by `internal/api/connections_aggregator.go` into the existing `alerts.ConnectionSnapshot`/`CheckConnection` boundary in `internal/alerts/connection.go`. Decide activation grace, stale thresholds, and org policy mapping; do not add an alert manager.
 2. **Canonical resource health/incidents:** map only validated Komodo state and stale-source evidence into existing unified-resource health and incident synthesis. Keep connection failure distinct from a workload's reported state. Do not add Komodo metric/history series until a separate live metrics contract is approved.
@@ -360,7 +360,7 @@ No failure was ignored or rewritten. The hostmetrics and sensors fixture-isolati
 
 No connection-alert, resource-alert, notification, monitoring UI, Patrol, metrics, or live Komodo behavior was expanded in Phase 2D. Review this checkpoint and the qualification procedure before continuing.
 
-## Phase 2E — live integration attempt and current blocker
+## Phase 2E — earlier live integration attempt and blocker (historical; superseded below)
 
 ### Live access discovery
 
@@ -413,7 +413,7 @@ Once the live gate and implementation tests pass, build from the existing produc
 
 No production deployment, stable-image update, Komodo mutation, action authority, execution capability, or remediation was performed.
 
-## Phase 2E resumed endpoint qualification — 2026-10-25
+## Phase 2E resumed endpoint qualification — 2026-10-25 (historical DNS/TLS attempt; superseded by LAN qualification below)
 
 The operator supplied the Komodo HTTPS endpoint. DNS resolved it to a private address, TLS 1.3 negotiated with the expected wildcard certificate and certificate verification succeeded. An unauthenticated `POST /read/GetVersion` reached the API and returned HTTP 401. This confirms DNS, HTTPS/TLS, and API route reachability only; it does not verify a Komodo Core version or authenticated API compatibility.
 
@@ -423,13 +423,13 @@ The previous protected-store-only instruction is superseded by the test-only fil
 
 Until that run succeeds and the operator confirms effective non-admin/read-only permissions, do not claim live compatibility, begin the conditional Phase 2E monitoring integration, or build a Phase 2E test image. No Komodo mutation, deployment, or merge occurred.
 
-## Phase 2E test-only credential file update — 2026-10-25
+## Phase 2E test-only credential file update — 2026-10-25 (historical preparation)
 
 The qualification harness now prefers an explicitly selected encrypted Pulse connection and offers a test-binary-only fallback for initial qualification. File mode reads a strict JSON object with `apiKey` and `apiSecret` from a regular non-symlink file owned by the test operator and readable only by that owner. It requires the explicit live-test opt-in, caps input size, rejects duplicate/unknown fields and unsafe permissions, and returns generic errors. The credential file path and endpoint use non-secret environment variables; credentials are never accepted through CLI arguments or environment variables. The existing Komodo client still enforces HTTPS, normal certificate verification, bounded transport, and its read-method allowlist. Production configuration storage and authentication were not changed.
 
 The current workspace has no configured credential file path or protected connection selection. No credential contents were read. `go test ./internal/komodo -count=1` passed (43 tests), including file permission, symlink, parser, opt-in, protected-store precedence, and stable test identity coverage. `go vet ./internal/komodo` passed. The live test was not run against the endpoint because no approved local credential file was available. The operator action is to place an already-approved read-only key and secret in the documented owner-only file, set its path and the endpoint for the opted-in test, then provide only non-secret test output for review. Do not start Phase 2E monitoring integration or build an image until live qualification succeeds.
 
-## Phase 2E credential-backed qualification attempt — 2026-10-25
+## Phase 2E credential-backed qualification attempt — 2026-10-25 (historical, prior to effective-scope attestation)
 
 The operator supplied an owner-only qualification credential file. Metadata was checked without displaying or exporting its contents: it is a regular non-symlink file, owned by the test user, with owner-only access. The opt-in live harness loaded the credentials from that file; no credential value was logged, persisted elsewhere, or passed on a command line. TLS verification remained enabled, and the client made only its explicitly allowlisted read calls.
 
@@ -530,13 +530,13 @@ Focused tests cover missing and non-opted-in use, endpoint and credential mismat
 | `docs/plans/2026-10-23-sindri-integration-roadmap.md` | Update Phase 2E status and the remaining permission-attestation gate. |
 | `docs/plans/2026-10-25-komodo-phase-2-checkpoint.md` | Record the attestation contract, freshness and file rules, test evidence, and current live blocker. |
 
-### Current environment rerun
+### Environment rerun at that checkpoint
 
 The opt-in test loaded the already-approved owner-only credential file and emitted its HMAC credential fingerprint without displaying credential material. The subsequent authenticated API request could not begin because this Codex environment currently failed DNS resolution for `komodo.home.goneczy.com` (`getent` exit 2; curl error 6, “Could not resolve host”). This is a current environment/network blocker, distinct from the earlier successful authenticated `GetVersion` result reporting Core `2.3.4`. This rerun produced no new authentication, permission, inventory, resource-state, parent, or identity-stability result. The operator attestation has not been recorded in this checkpoint, and Phase 2E integration and image preparation remain gated on both accepted attestation and a reachable endpoint.
 
 Validation for this focused change: `rtk go test ./internal/komodo -count=1` passed (102 tests); `rtk go vet ./internal/komodo`, `rtk git diff --check`, and `rtk npm run lint:planning-docs` passed. The live qualification command was attempted separately and is not counted as a successful live test.
 
-## Resume Phase 2E operator evidence review
+## Resume Phase 2E operator evidence review (historical evidence review)
 
 The operator supplied additional Core `2.3.4` observations: DNS resolved to `10.1.10.201`; HTTPS certificate validation and authentication succeeded; `GetVersion` returned `2.3.4`; `ListPermissions` returned an empty array; five Servers and five Stacks returned level-only effective `GetPermission: "Read"`; no Deployments or Swarms were accessible in the sampled inventory; and the UI showed `sindri-api` as non-admin, with Create Server/Create Build disabled, base Read permissions, and no specific grants displayed. These are operator-reported observations for this resumed checkpoint, not live requests reproduced in this run.
 
@@ -612,8 +612,78 @@ Future Komodo actions are not a permanent product prohibition, but remain outsid
 | `docs/plans/2026-10-23-sindri-integration-roadmap.md` | Record Phase 2E live qualification, the HTTP test-only limitation, the trusted HTTPS production requirement, and the separately governed future-action direction. |
 | `docs/plans/2026-10-25-komodo-phase-2-checkpoint.md` | Record current API evidence, integration status, remaining decisions, test-image instructions, and this file report. |
 
-### Remaining production transport and image requirements
+### Remaining live transport and linked-resource qualification
 
 Before configuring Komodo in a deployed Pulse instance, restore DNS for `komodo.home.goneczy.com` and ensure its certificate chain is trusted through the system trust store, or provide another trusted HTTPS origin. A private or self-signed certificate requires the authorized CA certificate to be installed; do not disable TLS validation. No further qualification credential or permission confirmation is required. A live Proxmox-to-Komodo canonical pair and operator-authored service dependency were not independently checked against a live Proxmox inventory in this run; fixture regression tests cover the existing explicit identity and dependency mechanisms, and names are never used to merge resources automatically.
 
-The test image has not been built yet. After the source is committed, build the existing production `Dockerfile` under a unique local tag containing the source SHA; do not push a stable/latest tag. Use a separate test container and a copied data directory, preserve the matching encryption key/config pair in that copy, and never point the test container at the live writable database. This continuation adds no database schema migration. Retain a verified backup of the copy before testing; rollback by stopping the test container and returning to the pristine pre-test data copy or restoring its verified backup. A local image build alone does not complete operator acceptance or authorize deployment.
+### Local Phase 2E test image and isolated operator procedure
+
+The existing production `Dockerfile` `runtime` target built successfully as `linux/amd64` using the `release` Go build tag and full source revision `a175f299dd45b9e98549831daaeab8fec2c9cedb`.
+
+| Artifact | Result |
+|---|---|
+| Local reference | `local/pulse:phase-2e-a175f299dd45b9e98549831daaeab8fec2c9cedb` |
+| Architecture | `linux/amd64` |
+| Source label | `a175f299dd45b9e98549831daaeab8fec2c9cedb` |
+| Local Docker image ID | `sha256:7c4a6fcb4c2a51f3aa2ac7837211e7fb7d3d91ada7ee3c330ab5ec26cfcbea21` |
+| Build and smoke | Passed. `deploy/sindri/verify-image.sh` verified source label/architecture, executable and entrypoint files, healthy runtime, `/api/health`, and `/data` persistence over restart using its temporary named volume. |
+| Registry | Not pushed; there is no registry digest. No stable/latest tag was written. |
+
+The image is present only in this Docker Engine. To transfer it to another test host over the operator's approved artifact channel, export and import the exact tag:
+
+```sh
+docker save --output /secure/path/pulse-phase2e-a175f299.tar \
+  local/pulse:phase-2e-a175f299dd45b9e98549831daaeab8fec2c9cedb
+docker load --input /secure/path/pulse-phase2e-a175f299.tar
+```
+
+This continuation adds no database schema migration. The image sets `PULSE_DATA_DIR=/data`, `PULSE_DOCKER=true`, and `PULSE_DEPLOYMENT_METHOD=container_other` in its base; the isolated run should also set `PULSE_DISABLE_AUTO_UPDATE=true`. Configure Komodo inside the isolated Pulse UI using the trusted HTTPS Core origin. The test-only HTTP endpoint is not accepted by production connection validation and must not be used for a running Pulse connection.
+
+For a clean isolated test, use a new writable data directory and an unused loopback port. This does not require a production database backup because it does not touch or copy production data:
+
+```sh
+mkdir -p /srv/pulse-phase2e-a175f299/data
+docker run -d --name pulse-phase2e-a175f299 \
+  --publish 127.0.0.1:17656:7655 \
+  --mount type=bind,src=/srv/pulse-phase2e-a175f299/data,dst=/data \
+  --env PULSE_DATA_DIR=/data \
+  --env PULSE_DEPLOYMENT_METHOD=container_other \
+  --env PULSE_DISABLE_AUTO_UPDATE=true \
+  --env TZ=UTC \
+  local/pulse:phase-2e-a175f299dd45b9e98549831daaeab8fec2c9cedb
+curl --fail http://127.0.0.1:17656/api/health
+```
+
+If validating existing Proxmox identity links and dependency edges, use a consistent copy of Pulse's database and preserve the matching encryption-key/configuration pair. Stop the source Pulse instance before a filesystem copy, or use its supported SQLite backup procedure. Create and verify a backup of the copy before starting the test image. Never mount the production writable path. The test instance may run migrations against its own copy; rollback by stopping/removing only the test container and restoring the pristine copied data/verified backup before testing an earlier image. With a fresh test directory, rollback is simply stopping and removing the test container and directory; production remains untouched.
+
+#### Operator acceptance checklist
+
+- [ ] Confirm `https://komodo.home.goneczy.com` resolves from the test host and its certificate chain validates normally. If it does not, repair DNS/trust or use another trusted HTTPS origin; do not substitute the test-only HTTP address.
+- [ ] Start the local image on loopback with a new data directory and confirm `/api/health` and the UI work.
+- [ ] Add the already-approved Komodo read-only connection in Infrastructure settings, run Test, and confirm the displayed status is redacted. Do not enable or add any action capability.
+- [ ] Confirm expected inventory, states, and Stack parent relationships. Compare actual counts because inventory changes over time. The qualification run observed 11 Servers and 32 Stacks; it observed no Deployments or Swarms.
+- [ ] Confirm the connection's healthy status is visible and stale/failure state is distinguishable after a test-only, controlled connection outage. Do not stop, alter, or redeploy Komodo workloads to create a test failure.
+- [ ] Confirm a naturally unhealthy resource produces the existing alert/notification lifecycle and recovery clears it. Firing/recovery delivery is already covered by the integration fixture test.
+- [ ] If validating the requested Proxmox examples, confirm the exact Proxmox VM/Komodo Server IDs with the operator, create only the explicit identity link, and verify the canonical resource retains both source identities and the existing Proxmox metrics/history target. Do not link by name alone.
+- [ ] Verify `runs_on`/`hosted_by`, availability-check association, and operator-authored dependency edges remain after polling and test-container restart. Do not invent Traefik `routes_to` data without reliable route evidence.
+- [ ] Inspect Patrol context for safe resource labels/status and verify no credentials, response configuration, or environment values appear. Turn Sindri AI off and confirm polling, canonical alerts, and notifications continue.
+- [ ] Stop and remove only the isolated test container after acceptance. Retain the test data copy only if needed for review; otherwise remove it after preserving the review evidence.
+
+#### Validation results
+
+| Check | Result |
+|---|---|
+| `rtk go test ./internal/komodo -count=1` | Passed: 108 tests. |
+| `rtk go test ./internal/unifiedresources -count=1` | Passed: 3,044 tests. Includes identity linking, Proxmox metrics target preservation, availability associations, and persistent relationships. |
+| `rtk go test ./internal/ai -count=1` | Passed: 2,138 tests. |
+| `rtk go test ./internal/monitoring -count=1` | Passed: 4,076 tests. |
+| `rtk go test ./internal/api` | 7,194 passed, 10 skipped, 1 environment-only failure: `TestTelemetryUpdate_NoMutationOnPersistFailure` expected 500 but got 200 because root can write the chmod-0500 directory. The same test passed when run as unprivileged `nobody`. |
+| `rtk go test ./internal/alerts` | 2,783 passed, 1 environment-only failure as root: `TestLoadHistory_PermissionError` expected denial reading a mode-000 file. The full package passed as unprivileged `nobody`. |
+| Focused API Komodo CRUD/redaction/rotation/action-authority tests | Passed: 4 tests. |
+| Focused frontend tests | Passed: 5 files, 10 tests. |
+| `rtk npm run type-check`, `rtk npm run lint` | Passed. |
+| `rtk go vet ./internal/api ./internal/alerts ./internal/komodo ./internal/unifiedresources ./internal/ai ./internal/monitoring` | Passed. |
+| Gofmt, `git diff --check`, planning-document audit | Passed. |
+| `rtk make lint-backend` | Not run: `golangci-lint` is not installed in this environment. |
+
+The entire `go test ./...` suite was not rerun in this focused Phase 2E continuation. No merge, deployment, registry push, or use of the production writable database occurred.
