@@ -48,10 +48,10 @@ def recipe(source):
     assert "path: ${{ runner.temp }}/pulse-agent-removal.json\n" in retained
     assert "retention-days: 7" in retained
     assert len(re.findall(r"(?m)^          path:", retained)) == 1 and "*.log" not in retained
-    for event in ("push", "pull_request"):
-        section = re.search(r"(?ms)^  " + event + r":\n(.*?)(?=^  [a-z_]+:|\Z)", source)[1]
-        assert "'scripts/tests/test_agent_removal_systemd.py'" in section
-        assert "'scripts/installtests/**'" in section and "'scripts/install.sh'" in section
+    section = re.search(r"(?ms)^  pull_request:\n(.*?)(?=^  [a-z_]+:|\Z)", source)[1]
+    assert "'scripts/tests/test_agent_removal_systemd.py'" in section
+    assert "'scripts/installtests/**'" in section and "'scripts/install.sh'" in section
+    assert not re.search(r"(?m)^  push:\s*$", source)
     return shell
 
 
