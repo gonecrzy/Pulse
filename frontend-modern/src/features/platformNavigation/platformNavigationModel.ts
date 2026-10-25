@@ -12,7 +12,10 @@ import { normalizeSourcePlatformKey, resolveResourcePlatformType } from '@/utils
 export type PrimaryPlatformNavId =
   'proxmox' | 'docker' | 'kubernetes' | 'truenas' | 'vmware' | 'komodo' | 'standalone';
 
-export type PlatformNavigationVisibility = Record<Exclude<PrimaryPlatformNavId, 'komodo'>, boolean> & {
+export type PlatformNavigationVisibility = Record<
+  Exclude<PrimaryPlatformNavId, 'komodo'>,
+  boolean
+> & {
   komodo?: boolean;
 };
 
@@ -186,9 +189,7 @@ export function buildPrimaryPlatformNavigationVisibility(
       resource.platformType === 'availability' ||
       resource.sources?.includes('availability'),
   );
-  const komodo = PRIMARY_PLATFORM_NAV_SCOPE_IDS.komodo.some((id) =>
-    presentNavigableScopes.has(id),
-  );
+  const komodo = PRIMARY_PLATFORM_NAV_SCOPE_IDS.komodo.some((id) => presentNavigableScopes.has(id));
   return {
     proxmox: PRIMARY_PLATFORM_NAV_SCOPE_IDS.proxmox.some((id) => presentNavigableScopes.has(id)),
     docker: PRIMARY_PLATFORM_NAV_SCOPE_IDS.docker.some((id) => presentNavigableScopes.has(id)),

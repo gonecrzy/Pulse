@@ -321,9 +321,7 @@ export const useAppRuntimeState = () => {
       // this resolves navigation without reading an estate-sized payload.
       const payload = await apiFetchJSON<{
         aggregations?: { platformAdmission?: unknown; bySource?: unknown };
-      }>(
-        '/api/resources?page=1&limit=1',
-      );
+      }>('/api/resources?page=1&limit=1');
       // A tenant switch or newer refresh supersedes this response, even if
       // that newer request failed. Never restore an outgoing tenant facet.
       if (request !== platformAdmissionRequest) return;

@@ -292,7 +292,9 @@ export function KomodoPageSurface() {
                                 {status().label}
                               </span>
                               <Show
-                                when={(resource.incidentCount ?? resource.incidents?.length ?? 0) > 0}
+                                when={
+                                  (resource.incidentCount ?? resource.incidents?.length ?? 0) > 0
+                                }
                               >
                                 <span class="ml-2 text-xs text-muted">
                                   {resource.incidentCount ?? resource.incidents?.length} incident(s)
@@ -300,7 +302,10 @@ export function KomodoPageSurface() {
                               </Show>
                             </TableCell>
                             <TableCell class="px-3 py-2 text-sm">
-                              <Show when={resource.parentId} fallback={<span class="text-muted">—</span>}>
+                              <Show
+                                when={resource.parentId}
+                                fallback={<span class="text-muted">—</span>}
+                              >
                                 <Show
                                   when={parentPathFor(resource)}
                                   fallback={<span>{parentNameFor(resource)}</span>}
