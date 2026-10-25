@@ -1,13 +1,12 @@
 name: Sindri fork image
 run-name: Sindri fork image ${{ github.sha }}
 
-# workflow_dispatch is available after this file exists on the repository's
-# default branch. Until then, pushes to the feature and future stable branches
-# trigger it. Manual runs publish only the selected default-branch revision.
+# The stable image channel is sourced only from the `sindri` branch. Manual
+# runs may qualify and publish only the repository default branch, which is
+# `sindri`; the published reference remains commit-specific and immutable.
 on:
   push:
     branches:
-      - feature/sindri-integration
       - sindri
   workflow_dispatch:
 
@@ -19,9 +18,34 @@ permissions:
   contents: read
 
 jobs:
+  repository-tests:
+    name: Build and Test
+    if: ${{ github.ref == 'refs/heads/sindri' && (github.event_name != 'workflow_dispatch' || github.ref_name == github.event.repository.default_branch) }}
+    uses: ./.github/workflows/build-and-test.yml
+    permissions:
+      contents: read
+
+  repository-governance:
+    name: Canonical Governance
+    if: ${{ github.ref == 'refs/heads/sindri' && (github.event_name != 'workflow_dispatch' || github.ref_name == github.event.repository.default_branch) }}
+    uses: ./.github/workflows/canonical-governance.yml
+    permissions:
+      contents: read
+
+  repository-boundary-audit:
+    name: Repo Boundary Audit
+    if: ${{ github.ref == 'refs/heads/sindri' && (github.event_name != 'workflow_dispatch' || github.ref_name == github.event.repository.default_branch) }}
+    uses: ./.github/workflows/repo-boundary-audit.yml
+    permissions:
+      contents: read
+
   qualify:
     name: Build and smoke-test linux/amd64
-    if: ${{ github.event_name != 'workflow_dispatch' || github.ref_name == github.event.repository.default_branch }}
+    if: ${{ github.ref == 'refs/heads/sindri' && (github.event_name != 'workflow_dispatch' || github.ref_name == github.event.repository.default_branch) }}
+    needs:
+      - repository-tests
+      - repository-governance
+      - repository-boundary-audit
     runs-on: ubuntu-24.04
     timeout-minutes: 150
     permissions:
@@ -94,6 +118,7 @@ jobs:
 
   publish:
     name: Publish exact-SHA image to GHCR
+    if: ${{ github.ref == 'refs/heads/sindri' && (github.event_name != 'workflow_dispatch' || github.ref_name == github.event.repository.default_branch) }}
     needs: qualify
     outputs:
       digest: ${{ steps.publish.outputs.digest }}
@@ -184,6 +209,7 @@ jobs:
 
   verify-published:
     name: Pull and qualify published Compose image
+    if: ${{ github.ref == 'refs/heads/sindri' && (github.event_name != 'workflow_dispatch' || github.ref_name == github.event.repository.default_branch) }}
     needs: publish
     runs-on: ubuntu-24.04
     timeout-minutes: 30

@@ -1,10 +1,9 @@
 name: Canonical Governance
 
 on:
-  push:
-    branches: [main, sindri, feature/sindri-integration]
+  workflow_call:
   pull_request:
-    branches: [main, sindri, feature/sindri-integration]
+    branches: [sindri]
   workflow_dispatch:
 
 permissions:

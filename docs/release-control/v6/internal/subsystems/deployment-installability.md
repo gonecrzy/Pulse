@@ -8219,13 +8219,13 @@ service-state exclusions and the existing lifecycle checks are unchanged.
 
 The existing native-agent jobs install the locked frontend graph and build real
 API-linked assets on every platform. Windows additionally executes generated
-installation commands using that graph's test runtime in PowerShell 5.1. Both
-PR and main path filters therefore include the frontend manifest and lockfile,
-even when no Go or command-generator file changes. Ordinary UI-only edits do
-not gain a new full native matrix trigger.
+installation commands using that graph's test runtime in PowerShell 5.1. The
+PR path filter therefore includes the frontend manifest and lockfile, even
+when no Go or command-generator file changes. Ordinary UI-only edits do not
+gain a new full native matrix trigger.
 
-`TestNativeAgentWorkflowAdmitsFrontendGraphChanges` decodes each event and rejects
-either omitted graph input or a later exclusion. Existing real-build ordering,
+`TestNativeAgentWorkflowAdmitsFrontendGraphChanges` decodes the PR event and
+rejects either omitted graph input or a later exclusion. Existing real-build ordering,
 Linux helper, Windows exit/service and installer checks remain unchanged. This
 is admission coverage, not a local Windows/macOS verdict or installed recovery.
 
@@ -8233,9 +8233,9 @@ is admission coverage, not a local Windows/macOS verdict or installed recovery.
 
 The native Unix installer inventory already exercises the root `install.sh`,
 `scripts/pulse-auto-update.sh`, and their service-state/log-sink, systemd-oracle
-and service-discovery Python fixtures. Both push-to-main and PR path filters
-now admit those five exact inputs, so changing one alone cannot bypass the
-existing native matrix. Agent install triggers, jobs, tools, assertions and
+and service-discovery Python fixtures. The PR path filter admits those five
+exact inputs, so changing one alone cannot bypass the existing native matrix.
+Agent install triggers, jobs, tools, assertions and
 deadlines are unchanged; no unrelated script or UI path is added.
 
 `TestNativeInstallerWorkflowAdmitsServerUpgradeSource` decodes each event and

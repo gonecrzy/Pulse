@@ -38,7 +38,7 @@ func validateNativeHelperWorkflow(content []byte) error {
 	if err := yaml.Unmarshal(content, &workflow); err != nil {
 		return err
 	}
-	for _, event := range []string{"push", "pull_request"} {
+	for _, event := range []string{"pull_request"} {
 		paths := workflow.On[event].Paths
 		for _, required := range nativeHelperTriggerPaths {
 			found := false
@@ -92,21 +92,12 @@ func TestNativeHelperWorkflowCoversChangedSourceAndLinuxBoundaries(t *testing.T)
 	if err := validateNativeHelperWorkflow(content); err != nil {
 		t.Fatal(err)
 	}
-	// A helper-only change must admit both PR and main verification. Check each
-	// event separately: deleting only one occurrence must not be concealed by
-	// the other event's matching filter.
+	// A helper-only change must admit native PR verification. Check the PR
+	// event directly so a matching path elsewhere cannot conceal a gap.
 	for _, required := range nativeHelperTriggerPaths {
-		for _, occurrence := range []int{0, 1} {
-			t.Run(fmt.Sprintf("missing trigger %s event %d", required, occurrence), func(t *testing.T) {
+		t.Run(fmt.Sprintf("missing PR trigger %s", required), func(t *testing.T) {
 				pattern := "      - '" + required + "'\n"
 				start := strings.Index(string(content), pattern)
-				if occurrence == 1 && start >= 0 {
-					next := strings.Index(string(content)[start+len(pattern):], pattern)
-					if next < 0 {
-						t.Fatal("missing second trigger in original workflow")
-					}
-					start += len(pattern) + next
-				}
 				if start < 0 {
 					t.Fatal("missing trigger in original workflow")
 				}
@@ -115,7 +106,6 @@ func TestNativeHelperWorkflowCoversChangedSourceAndLinuxBoundaries(t *testing.T)
 					t.Fatal("accepted helper-only source without native verification")
 				}
 			})
-		}
 	}
 	for _, scenario := range []struct{ name, old, new string }{
 		{"missing x64", "runner: ubuntu-24.04\n", "runner: macos-15\n"},

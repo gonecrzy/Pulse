@@ -113,7 +113,7 @@ func validateNativeAgentFrontendTriggers(content []byte) error {
 	if err := yaml.Unmarshal(content, &workflow); err != nil {
 		return err
 	}
-	for _, event := range []string{"push", "pull_request"} {
+	for _, event := range []string{"pull_request"} {
 		paths := workflow.On[event].Paths
 		for _, required := range []string{"frontend-modern/package.json", "frontend-modern/package-lock.json"} {
 			found := false
@@ -139,9 +139,9 @@ func TestNativeAgentWorkflowAdmitsFrontendGraphChanges(t *testing.T) {
 	if err := validateNativeAgentFrontendTriggers(content); err != nil {
 		t.Fatal(err)
 	}
-	// Decode each event, rather than accepting a matching path elsewhere in
-	// the file. Both PR qualification and containing-main checks need it.
-	for _, event := range []string{"push", "pull_request"} {
+	// Decode the PR event, rather than accepting a matching path elsewhere in
+	// the file. Native frontend changes must be qualified before integration.
+	for _, event := range []string{"pull_request"} {
 		for _, required := range []string{"frontend-modern/package.json", "frontend-modern/package-lock.json"} {
 			t.Run(event+" missing "+required, func(t *testing.T) {
 				var workflow map[string]interface{}

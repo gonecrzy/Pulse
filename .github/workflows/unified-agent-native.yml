@@ -1,43 +1,8 @@
 name: Unified Agent Native Verification
 
 on:
-  push:
-    branches: [main, sindri, feature/sindri-integration]
-    paths:
-      - '.github/workflows/unified-agent-native.yml'
-      - 'cmd/pulse-agent/**'
-      - 'cmd/pulse-agent-helper/**'
-      - 'internal/agenthelper/**'
-      - 'internal/agenttls/**'
-      - 'internal/agentupdate/**'
-      - 'internal/dockeragent/**'
-      - 'internal/filesystemprobe/**'
-      - 'internal/hostagent/**'
-      - 'internal/kubernetesagent/**'
-      - 'internal/remoteconfig/**'
-      - 'internal/updatesignature/**'
-      - 'pkg/agents/**'
-      # Every native platform installs/builds this graph, and Windows uses its
-      # Vitest runtime for the generated PowerShell 5.1 install command.
-      - 'frontend-modern/package.json'
-      - 'frontend-modern/package-lock.json'
-      - 'frontend-modern/src/utils/agentInstallCommand.ts'
-      - 'frontend-modern/src/utils/__tests__/agentInstallCommand.windows.test.ts'
-      - 'scripts/install.sh'
-      - 'scripts/install.ps1'
-      # The Unix installer inventory also executes server/update fixtures.
-      # Keep direct source and Python fixture edits in native admission.
-      - 'install.sh'
-      - 'scripts/pulse-auto-update.sh'
-      - 'scripts/tests/test_auto_update_service_state.py'
-      - 'scripts/tests/test_auto_update_systemd.py'
-      - 'scripts/tests/test_agent_removal_systemd.py'
-      - 'scripts/tests/test_server_service_discovery.py'
-      - 'scripts/installtests/**'
-      - 'go.mod'
-      - 'go.sum'
   pull_request:
-    branches: [main, sindri, feature/sindri-integration]
+    branches: [sindri]
     paths:
       - '.github/workflows/unified-agent-native.yml'
       - 'cmd/pulse-agent/**'

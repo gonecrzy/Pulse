@@ -81,8 +81,9 @@ application database or schema downgrade.
 
 ## Branch layout
 
-Recommended eventual layout: retain `main` as the upstream baseline, use
-`sindri` as the future tested/default branch, and keep
-`feature/sindri-integration` for active development. Do not detach the fork,
-create/promote `sindri`, or change the default branch until the build and
-Compose qualification have passed independent review.
+The fork uses `sindri` as its default integration branch and stable image
+source. Stable image builds are triggered only by `sindri` and publish
+commit-specific tags; feature branches cannot overwrite a stable tag. The
+Komodo integration branch has a separate test-image workflow and publishes
+feature-only tags. Use the full source SHA or recorded image digest when
+deploying either image. Neither workflow deploys automatically.

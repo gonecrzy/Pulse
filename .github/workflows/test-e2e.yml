@@ -3,30 +3,7 @@ name: Core E2E Tests
 on:
   pull_request:
     branches:
-      - main
       - sindri
-      - feature/sindri-integration
-    paths:
-      - 'frontend-modern/**'
-      - 'internal/**'
-      - 'tests/integration/**'
-      - 'Dockerfile'
-      - '.github/workflows/test-e2e.yml'
-      - 'scripts/playwright-apt.conf'
-      - 'scripts/tests/test_playwright_acquisition.py'
-      - 'scripts/browser_os_packages.py'
-      - 'scripts/tests/test_browser_os_packages.py'
-      - 'scripts/e2e_test_images.py'
-      - 'scripts/tests/test_e2e_test_images.py'
-      - 'scripts/collect_e2e_container_logs.py'
-      - 'scripts/tests/test_e2e_container_logs.py'
-      - 'scripts/ci_browser_proof_only.py'
-      - 'scripts/tests/test_ci_browser_proof_only.py'
-  push:
-    branches:
-      - main
-      - sindri
-      - feature/sindri-integration
     paths:
       - 'frontend-modern/**'
       - 'internal/**'
@@ -45,9 +22,9 @@ on:
       - 'scripts/tests/test_ci_browser_proof_only.py'
   workflow_dispatch:
 
-# Let branch runs finish so main, sindri, and the active integration branch retain E2E verdicts.
-# A newer PR commit supersedes its previous validation, so do not queue the
-# replacement behind obsolete checks. Keep this aligned with Build and Test.
+# Run the resource-intensive E2E suite on relevant PRs before integration and
+# allow a newer PR commit to supersede obsolete validation. Keep this aligned
+# with Build and Test.
 concurrency:
   group: e2e-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}

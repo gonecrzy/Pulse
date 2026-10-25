@@ -114,14 +114,14 @@ class PlaywrightAcquisitionTest(unittest.TestCase):
     def test_all_browser_jobs_bound_setup_without_weakening_gates(self):
         self.assert_workflow_policy(WORKFLOW.read_text())
 
-    def test_policy_and_tests_trigger_both_pr_and_main_validation(self):
+    def test_policy_and_tests_trigger_pr_validation(self):
         workflow = WORKFLOW.read_text()
-        for event in ("pull_request", "push"):
-            block = re.split(r"(?m)^  \S", workflow.split(f"  {event}:\n", 1)[1], maxsplit=1)[0]
-            self.assertIn("'scripts/playwright-apt.conf'", block)
-            self.assertIn("'scripts/tests/test_playwright_acquisition.py'", block)
-            self.assertIn("'scripts/browser_os_packages.py'", block)
-            self.assertIn("'scripts/tests/test_browser_os_packages.py'", block)
+        block = workflow.split("  pull_request:\n", 1)[1].split("\n  workflow_dispatch:", 1)[0]
+        self.assertIn("'scripts/playwright-apt.conf'", block)
+        self.assertIn("'scripts/tests/test_playwright_acquisition.py'", block)
+        self.assertIn("'scripts/browser_os_packages.py'", block)
+        self.assertIn("'scripts/tests/test_browser_os_packages.py'", block)
+        self.assertNotRegex(workflow, r"(?m)^  push:\s*$")
         selection = job_block(workflow, "tier-selection")
         for test in ("test_playwright_acquisition.py", "test_browser_os_packages.py"):
             self.assertLess(

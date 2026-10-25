@@ -118,10 +118,10 @@ class WorkflowContractTest(unittest.TestCase):
     text = WORKFLOW_PATH.read_text(encoding="utf-8")
     workflow = yaml.safe_load(text)
 
-    def test_triggers_are_daily_schedule_and_dispatch_only(self) -> None:
+    def test_trigger_is_manual_only_without_a_daily_schedule(self) -> None:
         triggers = self.workflow[True]
-        self.assertEqual(set(triggers), {"schedule", "workflow_dispatch"})
-        self.assertRegex(triggers["schedule"][0]["cron"], r"^\d+ \d+ \* \* \*$")
+        self.assertEqual(set(triggers), {"workflow_dispatch"})
+        self.assertIsNone(triggers["workflow_dispatch"])
 
     def test_read_only_hosted_without_secrets_or_uploads(self) -> None:
         self.assertEqual(self.workflow["permissions"], {"contents": "read"})
