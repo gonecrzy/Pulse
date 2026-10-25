@@ -89,7 +89,13 @@ describe('infrastructureOnboardingPresentation', () => {
   it('separates supported API products from admitted preview products', () => {
     expect(
       getInfrastructureApiProductsByGovernanceState('supported').map((product) => product.label),
-    ).toEqual(['TrueNAS SCALE', 'Proxmox VE', 'Proxmox Backup Server', 'Proxmox Mail Gateway']);
+    ).toEqual([
+      'Komodo Core',
+      'TrueNAS SCALE',
+      'Proxmox VE',
+      'Proxmox Backup Server',
+      'Proxmox Mail Gateway',
+    ]);
     expect(
       getInfrastructureApiProductsByGovernanceState('admitted').map((product) => product.label),
     ).toEqual(['VMware vCenter']);
@@ -104,6 +110,11 @@ describe('infrastructureOnboardingPresentation', () => {
         type: 'vmware',
         label: 'VMware vCenter',
         actionLabel: 'Add VMware vCenter',
+      }),
+      expect.objectContaining({
+        type: 'komodo',
+        label: 'Komodo Core',
+        actionLabel: 'Add Komodo Core',
       }),
       expect.objectContaining({
         type: 'truenas',
@@ -158,6 +169,11 @@ describe('infrastructureOnboardingPresentation', () => {
         label: 'VMware vCenter',
       }),
       expect.objectContaining({
+        id: 'komodo',
+        connectionType: 'komodo',
+        label: 'Komodo Core',
+      }),
+      expect.objectContaining({
         id: 'unraid',
         connectionType: 'agent',
         label: 'Unraid',
@@ -186,6 +202,7 @@ describe('infrastructureOnboardingPresentation', () => {
 
     expect(getInfrastructureSupportSummaryBadges()).toMatchObject({
       supportedToday: [
+        'Komodo Core',
         'TrueNAS SCALE',
         'Proxmox VE',
         'Proxmox Backup Server',
@@ -209,7 +226,7 @@ describe('infrastructureOnboardingPresentation', () => {
       'Choose an infrastructure source to start monitoring your environment.',
     );
     expect(getInfrastructureEmptyStateDetail()).toContain(
-      'Supported source types include TrueNAS SCALE',
+      'Supported source types include Komodo Core, TrueNAS SCALE',
     );
     expect(getInfrastructureEmptyStateDetail()).toContain(
       'VMware vCenter is available as a preview platform',
