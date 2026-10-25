@@ -39,6 +39,7 @@ import { useKioskMode } from '@/hooks/useKioskMode';
 import {
   DOCKER_PATH,
   KUBERNETES_PATH,
+  KOMODO_PATH,
   PATROL_PATH,
   PROXMOX_PATH,
   STANDALONE_PATH,
@@ -46,6 +47,7 @@ import {
   VMWARE_PATH,
   buildDockerPath,
   buildKubernetesPath,
+  buildKomodoPath,
   buildProxmoxPath,
   buildStandalonePath,
   buildTrueNASPath,
@@ -101,6 +103,7 @@ const SettingsPage = lazy(() => import('./components/Settings/Settings'));
 const ProxmoxPage = lazy(() => import('./pages/Proxmox'));
 const DockerPage = lazy(() => import('./pages/Docker'));
 const KubernetesPage = lazy(() => import('./pages/Kubernetes'));
+const KomodoPage = lazy(() => import('./pages/Komodo'));
 const TrueNASPage = lazy(() => import('./pages/TrueNAS'));
 const VmwarePage = lazy(() => import('./pages/Vmware'));
 const StandalonePage = lazy(() => import('./pages/Standalone'));
@@ -123,6 +126,7 @@ const PRIMARY_INFRASTRUCTURE_ROUTE_BY_ID: Record<PrimaryPlatformNavId, string> =
   kubernetes: buildKubernetesPath(),
   truenas: buildTrueNASPath(),
   vmware: buildVmwarePath(),
+  komodo: buildKomodoPath(),
   standalone: buildStandalonePath(),
 };
 
@@ -600,6 +604,8 @@ function App() {
       <Route path={`${TRUENAS_PATH}/*`} component={TrueNASPage} />
       <Route path={VMWARE_PATH} component={VmwarePage} />
       <Route path={`${VMWARE_PATH}/*`} component={VmwarePage} />
+      <Route path={KOMODO_PATH} component={KomodoPage} />
+      <Route path={`${KOMODO_PATH}/*`} component={KomodoPage} />
       <Route path={STANDALONE_PATH} component={StandalonePage} />
       <Route path={`${STANDALONE_PATH}/*`} component={StandalonePage} />
 

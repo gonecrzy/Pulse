@@ -3,6 +3,7 @@ import {
   buildAlertThresholdsPath,
   buildDockerPath,
   buildKubernetesPath,
+  buildKomodoPath,
   buildProxmoxPath,
   buildStandalonePath,
   buildStorageRouteSearch,
@@ -138,6 +139,7 @@ const platformFromResource = (resource: Resource, type: string): PrimaryPlatform
   if (isKubernetesType(type)) return 'kubernetes';
   if (evidence.has('vmware-vsphere')) return 'vmware';
   if ([...evidence].some((scope) => scope.startsWith('proxmox-'))) return 'proxmox';
+  if (evidence.has('komodo')) return 'komodo';
   if (evidence.has('kubernetes')) return 'kubernetes';
   if (evidence.has('docker')) return 'docker';
   if (evidence.has('agent')) return 'standalone';
@@ -149,6 +151,7 @@ const platformFromTypeHint = (type: string): PrimaryPlatformNavId | null => {
   if (!type) return null;
   if (type.startsWith('truenas-')) return 'truenas';
   if (type.startsWith('vmware-')) return 'vmware';
+  if (type.startsWith('komodo-')) return 'komodo';
   if (isDockerType(type)) return 'docker';
   if (isKubernetesType(type) || type === 'kubernetes') return 'kubernetes';
   if (type === 'agent') return 'standalone';
@@ -181,7 +184,7 @@ export function resolveResourcePlatform(subject: ResourcePageSubject): PrimaryPl
     : platformFromTypeHint(type);
 }
 
-const THRESHOLDS_TAB_BY_PLATFORM: Record<PrimaryPlatformNavId, AlertThresholdsTab> = {
+const THRESHOLDS_TAB_BY_PLATFORM: Partial<Record<PrimaryPlatformNavId, AlertThresholdsTab>> = {
   proxmox: 'proxmox',
   docker: 'docker',
   kubernetes: 'kubernetes',
@@ -220,7 +223,7 @@ export function buildResourceThresholdsPath(subject: ResourcePageSubject): strin
  * The page that shows a resource, selecting or filtering to it where that
  * page can: `?resource=` on workload and Proxmox storage tables (resolved
  * through the registry), a name filter on Docker containers, Kubernetes,
- * TrueNAS storage, apps, VMs and shares, and Machines, and the owning tab
+ * TrueNAS storage, apps, VMs and shares, Komodo inventory, and Machines, and the owning tab
  * elsewhere. Returns null when nothing names a
  * platform.
  */
@@ -237,6 +240,16 @@ export function buildResourcePagePath(subject: ResourcePageSubject): string | nu
   const isStorage = STORAGE_TYPES.has(type) || STORAGE_TYPES.has(hintType);
   const isDisk = DISK_TYPES.has(type) || DISK_TYPES.has(hintType);
   const isNetwork = NETWORK_TYPES.has(type) || NETWORK_TYPES.has(hintType);
+  const komodoTab =
+    type === 'komodo-server' || type === 'komodo-swarm'
+      ? type === 'komodo-server'
+        ? 'servers'
+        : 'swarms'
+      : type === 'komodo-stack'
+        ? 'stacks'
+        : type === 'komodo-deployment'
+          ? 'deployments'
+          : undefined;
 
   // Availability checks are endpoints Pulse probes, listed beside Machines.
   if (type === 'network-endpoint') return buildStandalonePath('availability');
@@ -288,6 +301,8 @@ export function buildResourcePagePath(subject: ResourcePageSubject): string | nu
         ? buildDockerPath(tab)
         : withQuery(buildDockerPath(), DOCKER_QUERY_PARAMS.query, name);
     }
+    case 'komodo':
+      return withQuery(buildKomodoPath(komodoTab), 'q', name);
     case 'kubernetes':
       return withQuery(
         buildKubernetesPath(KUBERNETES_TAB_BY_TYPE[type]),

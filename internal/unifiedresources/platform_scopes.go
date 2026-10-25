@@ -16,6 +16,7 @@ var canonicalPlatformScopeOrder = []string{
 	"docker",
 	"kubernetes",
 	"vmware-vsphere",
+	"komodo",
 	"availability",
 }
 

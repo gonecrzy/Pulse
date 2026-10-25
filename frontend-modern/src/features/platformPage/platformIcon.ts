@@ -8,20 +8,20 @@ import { ProxmoxIcon } from '@/components/icons/ProxmoxIcon';
 import { TrueNASIcon } from '@/components/icons/TrueNASIcon';
 
 export type PlatformIconKey =
-  'proxmox' | 'docker' | 'kubernetes' | 'truenas' | 'vmware' | 'standalone' | 'systems';
+  'proxmox' | 'docker' | 'kubernetes' | 'truenas' | 'vmware' | 'komodo' | 'standalone' | 'systems';
 
 export type PlatformIcon = (props: { class?: string }) => JSX.Element;
 
 // Single source of truth for the icon shown per platform. Brand marks (Proxmox,
-// Docker, Kubernetes, TrueNAS) come from inlined simple-icons SVGs; vSphere has
-// no legible square brand glyph so it keeps a generic CPU mark. Systems/Standalone
-// are not third-party brands and use semantic generic icons.
+// Docker, Kubernetes, TrueNAS) come from inlined simple-icons SVGs; vSphere and
+// Komodo use generic CPU/server marks. Systems/Standalone use semantic icons.
 const PLATFORM_ICONS: Record<PlatformIconKey, PlatformIcon> = {
   proxmox: ProxmoxIcon,
   docker: DockerIcon,
   kubernetes: KubernetesIcon,
   truenas: TrueNASIcon,
   vmware: CpuIcon,
+  komodo: ServerIcon,
   standalone: ServerIcon,
   systems: UsersIcon,
 };

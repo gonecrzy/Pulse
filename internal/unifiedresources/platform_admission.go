@@ -20,6 +20,7 @@ type PlatformAdmission struct {
 	Kubernetes bool `json:"kubernetes"`
 	TrueNAS    bool `json:"truenas"`
 	VMware     bool `json:"vmware"`
+	Komodo     bool `json:"komodo"`
 	Standalone bool `json:"standalone"`
 }
 
@@ -33,6 +34,7 @@ var agentProviderOwnerPlatformScopes = map[string]struct{}{
 	"kubernetes":     {},
 	"truenas":        {},
 	"vmware-vsphere": {},
+	"komodo":         {},
 }
 
 // platformScopesForResource returns the canonical platform scopes for a
@@ -104,6 +106,8 @@ func BuildPlatformAdmission(resources []Resource) PlatformAdmission {
 				admission.TrueNAS = true
 			case "vmware-vsphere":
 				admission.VMware = true
+			case "komodo":
+				admission.Komodo = true
 			case "availability":
 				// Availability endpoints are operated from the standalone page.
 				admission.Standalone = true

@@ -52,6 +52,11 @@ export const TRUENAS_QUERY_PARAMS = {
 } as const;
 export const VMWARE_PATH = '/vmware';
 export const VMWARE_DEFAULT_TAB = 'overview';
+export const KOMODO_PATH = '/komodo';
+export const KOMODO_DEFAULT_TAB = 'all';
+export const KOMODO_QUERY_PARAMS = {
+  query: 'q',
+} as const;
 export const ALERT_THRESHOLDS_PATH = '/alerts/thresholds';
 export const PMG_THRESHOLDS_PATH = '/alerts/thresholds/mail-gateway';
 // The Recovery section, whose fresh and stale hours colour every backup shield.
@@ -353,6 +358,11 @@ export const buildTrueNASPath = (tab: string = TRUENAS_DEFAULT_TAB): string => {
 export const buildVmwarePath = (tab: string = VMWARE_DEFAULT_TAB): string => {
   const normalized = tab.trim().replace(/^\/+|\/+$/g, '');
   return normalized ? `${VMWARE_PATH}/${normalized}` : VMWARE_PATH;
+};
+
+export const buildKomodoPath = (tab: string = KOMODO_DEFAULT_TAB): string => {
+  const normalized = tab.trim().replace(/^\/+|\/+$/g, '');
+  return normalized ? `${KOMODO_PATH}/${normalized}` : KOMODO_PATH;
 };
 
 export const parseStorageLinkSearch = (search: string) => {

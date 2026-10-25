@@ -289,13 +289,28 @@ export const useAppRuntimeState = () => {
     }
   };
 
-  const normalizePlatformAdmission = (value: unknown): PlatformNavigationVisibility | null => {
+  const normalizePlatformAdmission = (
+    value: unknown,
+    bySource: unknown,
+  ): PlatformNavigationVisibility | null => {
     if (!isRecord(value)) return null;
-    const flags = PRIMARY_PLATFORM_NAV_IDS.map((navId) => [navId, value[navId]] as const);
+    const legacyNavIds = PRIMARY_PLATFORM_NAV_IDS.filter(
+      (navId): navId is Exclude<PrimaryPlatformNavId, 'komodo'> => navId !== 'komodo',
+    );
+    const flags = legacyNavIds.map((navId) => [navId, value[navId]] as const);
     // Partial payloads are rejected outright: a missing flag would read as a
     // hidden platform, which is indistinguishable from a real absence.
     if (flags.some(([, flag]) => typeof flag !== 'boolean')) return null;
-    return Object.fromEntries(flags) as PlatformNavigationVisibility;
+    const sourceCounts = isRecord(bySource) ? bySource : {};
+    const komodoCount = Number(sourceCounts.komodo);
+    const komodo =
+      typeof value.komodo === 'boolean'
+        ? value.komodo
+        : Number.isFinite(komodoCount) && komodoCount > 0;
+    return {
+      ...Object.fromEntries(flags),
+      ...(komodo ? { komodo: true } : {}),
+    } as PlatformNavigationVisibility;
   };
 
   let platformAdmissionRequest = 0;
@@ -304,13 +319,20 @@ export const useAppRuntimeState = () => {
     try {
       // One resource is enough: the aggregations describe the whole set, so
       // this resolves navigation without reading an estate-sized payload.
-      const payload = await apiFetchJSON<{ aggregations?: { platformAdmission?: unknown } }>(
+      const payload = await apiFetchJSON<{
+        aggregations?: { platformAdmission?: unknown; bySource?: unknown };
+      }>(
         '/api/resources?page=1&limit=1',
       );
       // A tenant switch or newer refresh supersedes this response, even if
       // that newer request failed. Never restore an outgoing tenant facet.
       if (request !== platformAdmissionRequest) return;
-      setPlatformAdmission(normalizePlatformAdmission(payload?.aggregations?.platformAdmission));
+      setPlatformAdmission(
+        normalizePlatformAdmission(
+          payload?.aggregations?.platformAdmission,
+          payload?.aggregations?.bySource,
+        ),
+      );
     } catch (error) {
       // A failed refresh says nothing about which platforms still exist.
       // Keep the last valid facet until a successful response replaces it.

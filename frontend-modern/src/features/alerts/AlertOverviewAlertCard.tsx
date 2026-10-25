@@ -51,6 +51,7 @@ import {
   VMWARE_PATH,
   buildDockerPath,
   buildKubernetesPath,
+  buildKomodoPath,
   buildProxmoxPath,
   buildStandalonePath,
   buildTrueNASPath,
@@ -85,6 +86,7 @@ const PLATFORM_PAGE_PATHS: Record<PrimaryPlatformNavId, string> = {
   kubernetes: buildKubernetesPath(),
   truenas: buildTrueNASPath(),
   vmware: buildVmwarePath(),
+  komodo: buildKomodoPath(),
   standalone: buildStandalonePath(),
 };
 

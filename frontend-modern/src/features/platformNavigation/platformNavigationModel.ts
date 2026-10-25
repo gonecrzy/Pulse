@@ -10,9 +10,11 @@ import {
 import { normalizeSourcePlatformKey, resolveResourcePlatformType } from '@/utils/sourcePlatforms';
 
 export type PrimaryPlatformNavId =
-  'proxmox' | 'docker' | 'kubernetes' | 'truenas' | 'vmware' | 'standalone';
+  'proxmox' | 'docker' | 'kubernetes' | 'truenas' | 'vmware' | 'komodo' | 'standalone';
 
-export type PlatformNavigationVisibility = Record<PrimaryPlatformNavId, boolean>;
+export type PlatformNavigationVisibility = Record<Exclude<PrimaryPlatformNavId, 'komodo'>, boolean> & {
+  komodo?: boolean;
+};
 
 export type PlatformNavigationShortcut = {
   key: string;
@@ -25,6 +27,7 @@ export const PRIMARY_PLATFORM_NAV_IDS: readonly PrimaryPlatformNavId[] = [
   'kubernetes',
   'truenas',
   'vmware',
+  'komodo',
   'standalone',
 ] as const;
 
@@ -34,12 +37,14 @@ export const PRIMARY_PLATFORM_NAV_SCOPE_IDS: Record<PrimaryPlatformNavId, readon
   kubernetes: ['kubernetes'],
   truenas: ['truenas'],
   vmware: ['vmware-vsphere'],
+  komodo: ['komodo'],
   standalone: ['agent'],
 };
 
 const NAVIGABLE_PLATFORM_ID_SET = new Set<string>([
   ...SUPPORTED_PLATFORM_IDS,
   ...ADMITTED_PLATFORM_IDS,
+  'komodo',
 ]);
 
 const KUBERNETES_RESOURCE_TYPES = new Set<ResourceType>([
@@ -57,6 +62,10 @@ const asRecord = (value: unknown): Record<string, unknown> | null =>
 const addManifestPlatformId = (ids: Set<string>, value: string | null | undefined): void => {
   const normalized = normalizeSourcePlatformKey(value);
   if (!normalized || normalized === 'generic') return;
+  if (normalized === 'komodo') {
+    ids.add(normalized);
+    return;
+  }
   if (!getSourcePlatformManifestEntry(normalized)) return;
   ids.add(normalized);
 };
@@ -143,6 +152,9 @@ export function collectResourcePlatformEvidence(resource: Resource): string[] {
   if (KUBERNETES_RESOURCE_TYPES.has(resource.type)) {
     ids.add('kubernetes');
   }
+  if (resource.type.startsWith('komodo-')) {
+    ids.add('komodo');
+  }
 
   return [...ids];
 }
@@ -156,8 +168,9 @@ export function buildNavigableResourcePlatformScopeSet(
       const manifestEntry = getSourcePlatformManifestEntry(
         platformId,
       ) as SourcePlatformManifestEntry | null;
-      if (!manifestEntry || !NAVIGABLE_PLATFORM_ID_SET.has(manifestEntry.id)) continue;
-      present.add(manifestEntry.id);
+      const normalizedId = manifestEntry?.id ?? platformId;
+      if (!NAVIGABLE_PLATFORM_ID_SET.has(normalizedId)) continue;
+      present.add(normalizedId);
     }
   }
   return present;
@@ -173,6 +186,9 @@ export function buildPrimaryPlatformNavigationVisibility(
       resource.platformType === 'availability' ||
       resource.sources?.includes('availability'),
   );
+  const komodo = PRIMARY_PLATFORM_NAV_SCOPE_IDS.komodo.some((id) =>
+    presentNavigableScopes.has(id),
+  );
   return {
     proxmox: PRIMARY_PLATFORM_NAV_SCOPE_IDS.proxmox.some((id) => presentNavigableScopes.has(id)),
     docker: PRIMARY_PLATFORM_NAV_SCOPE_IDS.docker.some((id) => presentNavigableScopes.has(id)),
@@ -181,6 +197,7 @@ export function buildPrimaryPlatformNavigationVisibility(
     ),
     truenas: PRIMARY_PLATFORM_NAV_SCOPE_IDS.truenas.some((id) => presentNavigableScopes.has(id)),
     vmware: PRIMARY_PLATFORM_NAV_SCOPE_IDS.vmware.some((id) => presentNavigableScopes.has(id)),
+    ...(komodo ? { komodo: true } : {}),
     standalone: resources.some(isPulseAgentPlatformResource) || hasAvailabilityEndpoints,
   };
 }

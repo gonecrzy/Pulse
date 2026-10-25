@@ -24,6 +24,7 @@ import type {
   ResourcePBSMeta,
   ResourcePMGMeta,
   ResourcePolicyPostureSummary,
+  ResourceRelationship,
   ResourcePhysicalDiskMeta,
   ResourcePoolHealth,
   ResourceStatus,
@@ -214,6 +215,7 @@ type APIResource = {
   sources?: string[];
   platformScopes?: string[];
   sourceStatus?: Record<string, { status: string; lastSeen: string; error?: string }>;
+  relationships?: ResourceRelationship[];
   actionReadiness?: ResourceActionReadiness[];
   technology?: string;
   health?: ResourceHealth;
@@ -668,6 +670,10 @@ const resolveType = (value?: string): ResourceType => {
     case 'network':
     case 'network-share':
     case 'network-endpoint':
+    case 'komodo-server':
+    case 'komodo-stack':
+    case 'komodo-deployment':
+    case 'komodo-swarm':
       return canonicalFrontendType;
     case 'disk':
       return 'physical_disk';
@@ -890,6 +896,7 @@ const toResource = (v2: APIResource): Resource => {
     // facets: Docker lifecycle actions and storage freshness read them from
     // the top level, and the websocket rows carry them there.
     sourceStatus: v2.sourceStatus,
+    relationships: v2.relationships,
     actionReadiness: v2.actionReadiness,
     technology: v2.technology,
     availability: v2.availability as ResourceAvailabilityMeta | undefined,
@@ -1223,6 +1230,7 @@ const SUPPORTED_UNIFIED_RESOURCE_SOURCES = new Set([
   'kubernetes',
   'truenas',
   'vmware',
+  'komodo',
   'availability',
 ]);
 

@@ -39,12 +39,14 @@ import { preloadRouteModule } from '@/routing/routePreload';
 import {
   DOCKER_PATH,
   KUBERNETES_PATH,
+  KOMODO_PATH,
   PROXMOX_PATH,
   STANDALONE_PATH,
   TRUENAS_PATH,
   VMWARE_PATH,
   buildDockerPath,
   buildKubernetesPath,
+  buildKomodoPath,
   buildProxmoxPath,
   buildStandalonePath,
   buildTrueNASPath,
@@ -67,6 +69,7 @@ const ROOT_DOCKER_PATH = buildDockerPath();
 const ROOT_KUBERNETES_PATH = buildKubernetesPath();
 const ROOT_TRUENAS_PATH = buildTrueNASPath();
 const ROOT_VMWARE_PATH = buildVmwarePath();
+const ROOT_KOMODO_PATH = buildKomodoPath();
 const ROOT_STANDALONE_PATH = buildStandalonePath();
 const ROOT_INFRASTRUCTURE_SETTINGS_PATH = buildInfrastructureWorkspacePath();
 const ROOT_ALERTS_PATH = '/alerts';
@@ -76,6 +79,7 @@ const PRIMARY_ROUTE_PREFIX_BY_ID: Record<PrimaryPlatformNavId, string> = {
   kubernetes: KUBERNETES_PATH,
   truenas: TRUENAS_PATH,
   vmware: VMWARE_PATH,
+  komodo: KOMODO_PATH,
   standalone: STANDALONE_PATH,
 };
 type PrimaryRouteMemory = Partial<Record<PrimaryPlatformNavId, string>>;
@@ -332,6 +336,7 @@ export function AppLayout(props: AppLayoutProps) {
     kubernetes: ROOT_KUBERNETES_PATH,
     truenas: ROOT_TRUENAS_PATH,
     vmware: ROOT_VMWARE_PATH,
+    komodo: ROOT_KOMODO_PATH,
     standalone: ROOT_STANDALONE_PATH,
   };
   const primaryWorkspacePath = createMemo(() => {
@@ -447,9 +452,9 @@ export function AppLayout(props: AppLayoutProps) {
     return `${count} active attention ${count === 1 ? 'item' : 'items'}`;
   });
 
-  // Platform/runtime nav is resource-admitted. A platform or runtime lens only
-  // appears when the support manifest says the surface is supported and the
-  // current resource snapshot proves that surface is actually present.
+  // Platform/runtime navigation follows current canonical resource evidence.
+  // Manifest-governed providers use the support manifest; Komodo is admitted
+  // from its explicit source evidence while its integration surface is built.
   const primaryTabsSource = createMemo<PrimaryTab[]>(() => {
     const visible = platformNavigationVisibility();
     const isVisible = (id: PrimaryTab['id']) =>
@@ -509,6 +514,19 @@ export function AppLayout(props: AppLayoutProps) {
         live: isVisible('vmware'),
         icon: getPlatformIcon('vmware'),
         alwaysShow: false,
+      },
+      {
+        id: 'komodo',
+        label: 'Komodo',
+        route: ROOT_KOMODO_PATH,
+        settingsRoute: ROOT_INFRASTRUCTURE_SETTINGS_PATH,
+        tooltip: 'Komodo Core Servers, Stacks, Deployments, and Swarms',
+        // Keep the inventory view reachable before the first successful poll
+        // so an empty or failed import still has a visible destination.
+        enabled: true,
+        live: isVisible('komodo'),
+        icon: getPlatformIcon('komodo'),
+        alwaysShow: true,
       },
       {
         id: 'standalone',

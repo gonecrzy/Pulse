@@ -2692,6 +2692,8 @@ func parseSources(raw string) map[unified.DataSource]struct{} {
 			result[unified.SourceVMware] = struct{}{}
 		case "availability":
 			result[unified.SourceAvailability] = struct{}{}
+		case "komodo":
+			result[unified.SourceKomodo] = struct{}{}
 		}
 	}
 	return result

@@ -2,6 +2,7 @@ import {
   ACTIONS_PATH,
   DOCKER_PATH,
   KUBERNETES_PATH,
+  KOMODO_PATH,
   PATROL_PATH,
   PROXMOX_PATH,
   STANDALONE_PATH,
@@ -55,6 +56,11 @@ const ROUTE_PRELOADERS: readonly RoutePreloader[] = [
     id: 'vmware',
     matches: (route) => route === VMWARE_PATH || route.startsWith(`${VMWARE_PATH}/`),
     preload: () => import('@/pages/Vmware').then(() => undefined),
+  },
+  {
+    id: 'komodo',
+    matches: (route) => route === KOMODO_PATH || route.startsWith(`${KOMODO_PATH}/`),
+    preload: () => import('@/pages/Komodo').then(() => undefined),
   },
   {
     id: 'standalone',

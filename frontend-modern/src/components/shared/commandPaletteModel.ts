@@ -27,6 +27,7 @@ export type CommandPaletteCommandPaths = {
   trueNasPath: string;
   vmwarePath: string;
   vmwareNetworksPath: string;
+  komodoPath?: string;
 };
 
 export function buildCommandPaletteCommands(options: {
@@ -109,6 +110,18 @@ export function buildCommandPaletteCommands(options: {
         action: () => options.navigate(options.paths.vmwareNetworksPath),
       },
     );
+  }
+
+  if (primaryPlatformNavigationIsVisible(options.platformVisibility, 'komodo')) {
+    const komodoPath = options.paths.komodoPath ?? '/komodo/all';
+    commands.push({
+      id: 'nav-komodo',
+      label: 'Go to Komodo',
+      description: komodoPath,
+      shortcut: 'g m',
+      keywords: ['komodo', 'core', 'servers', 'stacks', 'deployments', 'swarms'],
+      action: () => options.navigate(komodoPath),
+    });
   }
 
   if (primaryPlatformNavigationIsVisible(options.platformVisibility, 'standalone')) {

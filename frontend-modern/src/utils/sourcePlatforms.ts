@@ -10,7 +10,7 @@ import {
 import { titleCaseDelimitedLabel } from '@/utils/textPresentation';
 
 export type PresentationOnlySourcePlatform = (typeof PRESENTATION_ONLY_PLATFORM_IDS)[number];
-export type ProviderSourcePlatform = 'availability';
+export type ProviderSourcePlatform = 'availability' | 'komodo';
 export type KnownSourcePlatform = GeneratedKnownSourcePlatform | ProviderSourcePlatform;
 
 export interface SourcePlatformPresentation {
@@ -35,6 +35,10 @@ export const SOURCE_PLATFORM_PRESENTATION: Record<KnownSourcePlatform, SourcePla
     availability: {
       label: 'Availability',
       tone: 'bg-sky-100 text-sky-700 dark:bg-sky-900/25 dark:text-sky-300',
+    },
+    komodo: {
+      label: 'Komodo',
+      tone: 'bg-orange-100 text-orange-700 dark:bg-orange-900/25 dark:text-orange-300',
     },
   } as Record<KnownSourcePlatform, SourcePlatformPresentation>;
 
@@ -200,6 +204,7 @@ export const resolvePlatformTypeFromSources = (sources?: string[]): PlatformType
   if (flags.hasPmg) return 'proxmox-pmg';
   if (flags.hasVMware) return 'vmware-vsphere';
   if (flags.hasTrueNAS) return 'truenas';
+  if (sources?.some((source) => normalizeSourcePlatformKey(source) === 'komodo')) return 'komodo';
   if (flags.hasKubernetes) return 'kubernetes';
   if (flags.hasDocker) return 'docker';
   if (flags.hasAgent) return 'agent';
@@ -233,6 +238,7 @@ export const resolveSourceTypeFromSources = (sources?: string[]): SourceType => 
     flags.hasPmg ||
     flags.hasTrueNAS ||
     flags.hasVMware ||
+    sources?.some((source) => normalizeSourcePlatformKey(source) === 'komodo') ||
     hasGenericSource(sources) ||
     hasAvailabilitySource(sources);
   if (flags.hasAgent && hasOther) return 'hybrid';

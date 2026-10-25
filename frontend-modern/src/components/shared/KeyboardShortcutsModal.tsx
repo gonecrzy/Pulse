@@ -26,6 +26,7 @@ const UNIFIED_NAV_SHORTCUTS: ShortcutGroup = {
     { keys: 'g then k', description: 'Go to Kubernetes' },
     { keys: 'g then n', description: 'Go to TrueNAS' },
     { keys: 'g then v', description: 'Go to vSphere' },
+    { keys: 'g then m', description: 'Go to Komodo' },
     { keys: 'g then a', description: 'Go to Alerts' },
     { keys: 'g then r', description: 'Go to Patrol' },
     { keys: 'g then t', description: 'Go to Settings' },
@@ -41,6 +42,7 @@ const NAV_PRIMARY_SHORTCUTS: Record<string, keyof PlatformNavigationVisibility> 
   'g then k': 'kubernetes',
   'g then n': 'truenas',
   'g then v': 'vmware',
+  'g then m': 'komodo',
 };
 
 const SEARCH_SHORTCUTS: ShortcutGroup = {

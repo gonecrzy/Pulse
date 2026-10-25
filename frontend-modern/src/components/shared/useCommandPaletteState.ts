@@ -3,6 +3,7 @@ import { createEffect, createMemo, createSignal } from 'solid-js';
 import {
   buildDockerPath,
   buildKubernetesPath,
+  buildKomodoPath,
   buildProxmoxPath,
   buildStandalonePath,
   buildTrueNASPath,
@@ -40,6 +41,7 @@ export function useCommandPaletteState(props: CommandPaletteModalProps) {
         trueNasPath: buildTrueNASPath(),
         vmwarePath: buildVmwarePath(),
         vmwareNetworksPath: buildVmwarePath('networks'),
+        komodoPath: buildKomodoPath(),
       },
       platformVisibility: props.platformVisibility(),
       patrolVisible: aiAvailable(),

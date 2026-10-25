@@ -76,6 +76,7 @@ const PLATFORM_API_TYPES: ReadonlySet<ConnectionType> = new Set([
   'pmg',
   'vmware',
   'truenas',
+  'komodo',
 ]);
 
 const EDITABLE_CONNECTION_TYPES: readonly ConnectionType[] = [
@@ -84,6 +85,7 @@ const EDITABLE_CONNECTION_TYPES: readonly ConnectionType[] = [
   'pmg',
   'vmware',
   'truenas',
+  'komodo',
   'availability',
 ];
 

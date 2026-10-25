@@ -3,6 +3,7 @@ import { useNavigate } from '@solidjs/router';
 import {
   buildDockerPath,
   buildKubernetesPath,
+  buildKomodoPath,
   buildProxmoxPath,
   buildStandalonePath,
   buildTrueNASPath,
@@ -95,6 +96,7 @@ export function useKeyboardShortcuts(options: KeyboardShortcutsOptions = {}) {
         kubernetes: { key: 'k', route: buildKubernetesPath() },
         truenas: { key: 'n', route: buildTrueNASPath() },
         vmware: { key: 'v', route: buildVmwarePath() },
+        komodo: { key: 'm', route: buildKomodoPath() },
         standalone: { key: 's', route: buildStandalonePath() },
       },
       platformVisibility,

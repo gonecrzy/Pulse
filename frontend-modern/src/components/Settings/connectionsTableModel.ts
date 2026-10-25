@@ -16,6 +16,7 @@ import { getAgentHostProfileFamily } from '@/utils/platformSupportManifest';
 import {
   buildDockerPath,
   buildKubernetesPath,
+  buildKomodoPath,
   buildProxmoxPath,
   buildTrueNASPath,
   buildVmwarePath,
@@ -1056,6 +1057,7 @@ const MONITORING_PATH_BY_CONNECTION_TYPE: Partial<Record<ConnectionType, string>
   pmg: buildProxmoxPath('mail'),
   vmware: buildVmwarePath(),
   truenas: buildTrueNASPath(),
+  komodo: buildKomodoPath(),
   docker: buildDockerPath(),
   kubernetes: buildKubernetesPath(),
 };
