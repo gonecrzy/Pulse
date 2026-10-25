@@ -698,16 +698,33 @@ jobs:
 
   chart-latency-slo:
     name: Workload chart 90ms SLO
-    needs: changes
-    if: github.event_name == 'pull_request' && needs.changes.outputs.go_compile == 'true'
+    needs: [changes, frontend, test-compile, backend, backend-api-verdict, script-smoke, scripts-and-build, benchmarks]
+    # Run the paired chart proof after the other CPU-heavy checks to reduce
+    # runner-fleet contention. Skipped path-filtered jobs are allowed; failures
+    # remain visible through their own required checks and do not start a proof.
+    if: >-
+      ${{ !cancelled() && github.event_name == 'pull_request' &&
+      needs.changes.outputs.go_compile == 'true' &&
+      !contains(needs.*.result, 'failure') &&
+      !contains(needs.*.result, 'cancelled') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     env:
       GOMAXPROCS: "2"
     steps:
-      - name: Checkout repository
+      - name: Checkout pull request head
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+
+      - name: Checkout sindri baseline
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ github.repository }}
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: chart-latency/base
           persist-credentials: false
 
       - name: Set up Go
@@ -716,10 +733,10 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Check idle proof guards
+      - name: Check paired proof guards
         run: python3 -m unittest discover -s internal/api/testdata -p test_chart_latency_proof.py -v
 
-      - name: Compile fixed candidate executable
+      - name: Compile baseline and candidate executables with one Go toolchain
         run: |
           set -euo pipefail
           proof_dir="$RUNNER_TEMP/chart-latency"
@@ -728,6 +745,10 @@ jobs:
           [ -f internal/api/frontend-modern/dist/index.html ] || \
             printf '<!doctype html><title>ci embed stub</title>\n' \
               > internal/api/frontend-modern/dist/index.html
+          mkdir -p chart-latency/base/internal/api/frontend-modern/dist
+          [ -f chart-latency/base/internal/api/frontend-modern/dist/index.html ] || \
+            printf '<!doctype html><title>ci embed stub</title>\n' \
+              > chart-latency/base/internal/api/frontend-modern/dist/index.html
           {
             date -u +%FT%TZ
             go version
@@ -735,20 +756,26 @@ jobs:
             lscpu
             printf 'GOMAXPROCS=%s\nGITHUB_RUN_ID=%s\nGITHUB_RUN_ATTEMPT=%s\n' \
               "$GOMAXPROCS" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT"
+            printf 'baseline HEAD/tree:\n'
+            git -C chart-latency/base rev-parse HEAD 'HEAD^{tree}'
             printf 'candidate HEAD/tree:\n'
             git rev-parse HEAD HEAD^{tree}
-            printf 'candidate source changes:\n'
+            printf 'candidate tracked source changes:\n'
             git diff --exit-code
           } > "$proof_dir/metadata.txt"
+          (
+            cd chart-latency/base
+            go test -p 1 ./internal/api -run '^$' -c -o "$proof_dir/baseline-api.test"
+          )
           go test -p 1 ./internal/api -run '^$' -c -o "$proof_dir/candidate-api.test"
           sha256sum "$proof_dir/"*.test >> "$proof_dir/metadata.txt"
 
-      # This additional evidence job keeps the ordinary hosted envelope and
-      # required source checks intact. A fresh VM must first demonstrate
-      # idle capacity; the candidate then enforces the existing local 90 ms SLO.
-      - name: Verify chart latency on observed idle capacity
+      # The 90 ms value remains a reported product target. The blocking gate
+      # compares paired p95 measurements against sindri on this same runner.
+      - name: Compare chart latency against sindri baseline
         run: |
           python3 internal/api/testdata/chart_latency_proof.py \
+            --baseline "$RUNNER_TEMP/chart-latency/baseline-api.test" \
             --candidate "$RUNNER_TEMP/chart-latency/candidate-api.test" \
             --output "$RUNNER_TEMP/chart-latency/samples"
 

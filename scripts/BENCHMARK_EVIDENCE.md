@@ -96,3 +96,34 @@ revised harness on both recorded runtime trees for diagnostic continuity.
 The original +12.72% signal from #3052 remains historical evidence, not a
 validated chart-runtime regression or a claimed speedup from this harness fix.
 See the scoped [investigation record](../docs/release-control/v6/internal/records/workload-chart-benchmark-reliability-2026-10-18.md).
+
+## Workload chart CI comparison
+
+`Workload chart 90ms SLO` builds the exact `sindri` base SHA and pull request
+head with the same Go toolchain, build flags, `GOMAXPROCS=2`, fixture stub,
+and runner. It then runs eight baseline/candidate pairs in alternating order.
+Each run uses `TestSLO_WorkloadCharts`: 70 workloads, 20 untimed warm-up
+requests, and 200 measured requests. The test reports the absolute 90 ms p95
+target for both builds, while the blocking decision compares paired p95 values.
+
+The comparison uses the median paired log(candidate/baseline) p95 ratio,
+reported as a percent difference, and a deterministic, 20,000-resample paired
+bootstrap 95% confidence interval. The gate passes only when the interval's
+upper bound is at or below a 15% regression;
+it fails as a confirmed regression when the lower bound is above 15%. An
+interval overlapping 15% is inconclusive and fails closed. One noisy sample
+does not establish a regression by itself.
+
+The harness waits for a 30-second low-pressure window, then records Linux CPU
+PSI every second during every baseline and candidate run, along with host CPU
+busy time, background process use, steal time, and swap activity. PSI above
+20% in the interval or rolling average marks the whole comparison inconclusive;
+missing pressure samples, steal, or swapping also invalidate it. The complete
+measurements, process names, build identities, p95 values, and comparison
+verdict are uploaded even when the gate fails. The job runs after the other
+CPU-heavy checks and does not retry a contaminated or inconclusive run.
+
+The 90 ms target remains a reported performance objective, not the sole
+blocking criterion on heterogeneous hosted hardware. The relative gate does
+not waive the existing Go test budget, the other benchmark jobs, or any
+workflow security and governance checks.
