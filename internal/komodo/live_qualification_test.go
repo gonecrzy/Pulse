@@ -28,6 +28,19 @@ func TestLiveCoreV2Qualification(t *testing.T) {
 	if err != nil {
 		t.Fatal("could not create the bounded Komodo read client")
 	}
+	var permissionTransport *qualificationPermissionTransport
+	attestationPath := strings.TrimSpace(os.Getenv("PULSE_KOMODO_QUALIFICATION_ATTESTATION_FILE"))
+	if attestationPath == "" {
+		t.Logf("No permission attestation file was selected; non-secret credential fingerprint for operator verification: %s", qualificationCredentialFingerprint(selected.Client))
+	}
+	if attestationPath != "" {
+		attestation, err := loadQualificationPermissionAttestation(attestationPath, selected.Client, time.Now().UTC())
+		if err != nil {
+			t.Fatalf("permission attestation could not be accepted safely: %v", err)
+		}
+		permissionTransport = newQualificationPermissionTransport(client.httpClient.Transport, attestation)
+		client.httpClient.Transport = permissionTransport
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
@@ -40,6 +53,9 @@ func TestLiveCoreV2Qualification(t *testing.T) {
 	if err != nil {
 		if strings.Contains(err.Error(), "operator verification is required") {
 			t.Log("Inventory counts, parent relationships, and identity stability were not qualified because permission scope verification stopped collection before returning inventory.")
+			if attestationPath == "" {
+				t.Logf("Operator verification is required for the level-only GetPermission response. If the operator confirms every required permission claim, create an owner-only attestation file (mode 0600) for endpoint %q and set PULSE_KOMODO_QUALIFICATION_ATTESTATION_FILE. The qualification guide documents the exact claims and JSON format. No permission assertion was made by this run.", client.endpoint.String())
+			}
 			t.Fatalf("effective permission verification is incomplete: %v", err)
 		}
 		t.Fatalf("first inventory collection failed safely: %v", err)
@@ -55,8 +71,15 @@ func TestLiveCoreV2Qualification(t *testing.T) {
 	parentEvidence := summarizeParentEvidence(first)
 	stateEvidence := summarizeStateEvidence(first)
 
-	t.Logf("Komodo live qualification: Core=%s scope_verified=%d/%d counts(server=%d stack=%d deployment=%d swarm=%d) identities=%d identity_sets_stable=%t resources_with_state(server=%d stack=%d deployment=%d swarm=%d) parent_fields(stack_server=%d stack_swarm=%d deployment_server=%d deployment_swarm=%d swarm_members=%d unresolved_parent_refs=%d)",
+	permissionEvidence := "api_verified"
+	adaptedPermissions := 0
+	if permissionTransport != nil && permissionTransport.seen > 0 {
+		permissionEvidence = "operator_attested"
+		adaptedPermissions = permissionTransport.seen
+	}
+	t.Logf("Komodo live qualification: Core=%s permission_evidence=%s adapted_level_only_read_responses=%d scope_checked=%d/%d counts(server=%d stack=%d deployment=%d swarm=%d) identities=%d identity_sets_stable=%t resources_with_state(server=%d stack=%d deployment=%d swarm=%d) parent_fields(stack_server=%d stack_swarm=%d deployment_server=%d deployment_swarm=%d swarm_members=%d unresolved_parent_refs=%d)",
 		first.Version,
+		permissionEvidence, adaptedPermissions,
 		len(first.Scope.Verified), len(resourceKinds),
 		len(first.Servers), len(first.Stacks), len(first.Deployments), len(first.Swarms),
 		len(firstIDs), identitySetsStable,

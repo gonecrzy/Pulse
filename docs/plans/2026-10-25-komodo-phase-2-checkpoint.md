@@ -1,6 +1,6 @@
 # Pulse + Sindri — Komodo Phase 2 foundation checkpoint
 
-**Status:** Phase 2C relationship foundation is complete; Phase 2D fixture harness and live procedure are prepared on `feature/komodo-phase2-foundation`. The operator-supplied Phase 2E endpoint passes DNS and TLS checks and its read API is reachable. No approved credential is configured in this workspace. A test-only, owner-only credential-file fallback is now implemented; live qualification, gated integration work, and a Phase 2E image remain blocked until the operator makes an approved credential file available. This checkpoint is not merged or deployed. Codex-LB remains optional and deferred. Phase 0 read-only, least-privilege, and action-safety contracts remain in force.
+**Status:** Phase 2C relationship foundation and Phase 2D fixture harness are complete on `feature/komodo-phase2-foundation`. The Phase 2E endpoint and owner-only credential file have been used to confirm authenticated Komodo Core `2.3.4` access. Inventory qualification stopped safely because the live `GetPermission` response is the level-only string `"Read"` and does not expose effective specific grants. A test-only, owner-only credential-file fallback and a narrowly scoped operator-attestation gate are implemented; the operator attestation is still pending. Live inventory qualification, gated integration work, and a Phase 2E image remain blocked. This checkpoint is not merged or deployed. Codex-LB remains optional and deferred. Phase 0 read-only, least-privilege, and action-safety contracts remain in force.
 
 ## Contract and implementation boundary
 
@@ -487,3 +487,51 @@ The opt-in harness was rerun using the provided owner-only test credential file 
 An authorized Komodo administrator must verify that the API-key principal is non-admin and that, for every Server, Stack, Deployment, and Swarm that this key can expose, the effective permission is `Read` with no specific grants. That verification must include direct user grants, every applicable user group including Everyone groups, resource base permissions, and inherited target permissions. The live endpoint's level-only response cannot provide this attestation, and the existing non-admin read endpoints cannot independently reconstruct it. Do not treat a key described as “read-only” as sufficient evidence. No additional credential or raw API schema is required; rerun live qualification after the effective-permission representation is corrected or the operator verification gate is explicitly resolved in a reviewed change.
 
 The focused fixture suite passes (`go test ./internal/komodo -count=1`: 67 tests), and `go vet ./internal/komodo` passes. The live qualification test exits with the expected safe permission-verification gate. No monitoring, alert, notification, UI, Patrol, metrics, or Docker-image work was started. No Komodo mutation, merge, deployment, or execution authority was introduced.
+
+## Phase 2E operator permission attestation gate — 2026-10-25
+
+The live `GetPermission` string response cannot establish the absence of effective specific permissions. The non-admin read APIs previously reviewed cannot reconstruct the resolver's complete permission set, including direct grants, UserGroups (including Everyone), resource defaults, and inherited permissions. Production validation remains unchanged: it accepts only supported structured `Read` with an empty `specific` list and rejects unknown/elevated levels, malformed responses, and non-empty specifics.
+
+The opt-in test harness now accepts the observed top-level JSON string `"Read"` only when an operator attestation is loaded from an explicitly selected, owner-only file. The gate is test-only and cannot be reached by production credential validation or the monitoring poller. Once loaded, the harness adapts only successful `/read/GetPermission` bodies that are exactly the JSON string `"Read"` into the existing structured `{ "level":"Read", "specific":[] }` decoder input. It passes structured responses unchanged, so elevated specific permissions remain rejected, and it passes `None`, `Execute`, `Write`, unknown levels, malformed bodies, error responses, and other methods unchanged. The test output labels adapted evidence `operator_attested`; it does not label it API-verified.
+
+Attestation is bound to the canonical HTTPS Core origin and an HMAC-SHA256 fingerprint derived from the credential's API key and secret. The secret is only used as the in-memory HMAC key; it is not printed or persisted by this mechanism. A credential rotation or endpoint change invalidates the binding. The owner-only attestation file must be no larger than 4 KiB, must be a regular non-symlink file owned by the test operator, and must grant no group/other permissions. Claims expire after 24 hours; timestamps more than five minutes in the future are rejected. This freshness window is a qualification safeguard, not API evidence.
+
+The accepted file has this exact schema; all claims must be `true`, the version must be `1`, and `verifiedAt` must be the UTC RFC3339 time at which an authorized operator completed the check:
+
+```json
+{
+  "version": 1,
+  "endpoint": "https://komodo.home.goneczy.com",
+  "credentialFingerprint": "<64-character fingerprint printed by the opted-in harness>",
+  "verifiedAt": "<UTC RFC3339 timestamp>",
+  "principalNonAdmin": true,
+  "allExposedResourcesRead": true,
+  "noEffectiveSpecificPermissions": true,
+  "noElevatedDirectGrants": true,
+  "noElevatedUserGroupGrants": true,
+  "noElevatedEveryoneGroupGrants": true,
+  "noElevatedResourceDefaults": true,
+  "noElevatedInheritedPermissions": true
+}
+```
+
+`credentialFingerprint` is never a credential and does not reveal the API secret. When no attestation path is selected, the opt-in harness prints the fingerprint before contacting Core so an operator can prepare a bound assertion even if the endpoint is temporarily unavailable. The operator must set `PULSE_KOMODO_QUALIFICATION_ATTESTATION_FILE` to the file path and rerun only the opt-in live test (`PULSE_KOMODO_LIVE_QUALIFICATION=1`). The file is an operator assertion and must not be described as verified by Komodo's API.
+
+Focused tests cover missing and non-opted-in use, endpoint and credential mismatch, stale and future timestamps, incomplete permission claims, owner-only file enforcement, endpoint/key/secret fingerprint binding, the exact level-only adaptation, and pass-through of structured, elevated, non-Read, error, and unrelated responses. Existing client tests continue to assert rejection of elevated structured specifics and unsafe permission levels with no test adapter. No production auth or permission validation changed.
+
+### File-by-file changes in this checkpoint
+
+| File | Change |
+|---|---|
+| `internal/komodo/live_qualification_credentials_test.go` | Share a single owner-only, non-symlink qualification-file reader between the approved credential file and operator attestation. Existing opt-in and file-safety rules remain in force. |
+| `internal/komodo/live_qualification_attestation_impl_test.go` | Add test-binary-only attestation parsing, owner-only file validation, endpoint/credential HMAC fingerprint binding, 24-hour freshness checks, strict all-claims validation, and the attested exact-`"Read"` response adapter. No production package code changes. |
+| `internal/komodo/live_qualification_attestation_test.go` | Cover opt-in, missing/mismatched/stale/future/invalid/incomplete attestations, file permissions, fingerprint binding, narrow response adaptation, elevated-response rejection, and end-to-end fixture inventory collection. |
+| `internal/komodo/live_qualification_test.go` | Load the explicitly selected owner-only assertion for the live harness, print only a non-secret fingerprint when no assertion path is selected, and label permission evidence as API-verified or operator-attested. |
+| `docs/plans/2026-10-23-sindri-integration-roadmap.md` | Update Phase 2E status and the remaining permission-attestation gate. |
+| `docs/plans/2026-10-25-komodo-phase-2-checkpoint.md` | Record the attestation contract, freshness and file rules, test evidence, and current live blocker. |
+
+### Current environment rerun
+
+The opt-in test loaded the already-approved owner-only credential file and emitted its HMAC credential fingerprint without displaying credential material. The subsequent authenticated API request could not begin because this Codex environment currently failed DNS resolution for `komodo.home.goneczy.com` (`getent` exit 2; curl error 6, “Could not resolve host”). This is a current environment/network blocker, distinct from the earlier successful authenticated `GetVersion` result reporting Core `2.3.4`. This rerun produced no new authentication, permission, inventory, resource-state, parent, or identity-stability result. The operator attestation has not been recorded in this checkpoint, and Phase 2E integration and image preparation remain gated on both accepted attestation and a reachable endpoint.
+
+Validation for this focused change: `rtk go test ./internal/komodo -count=1` passed (102 tests); `rtk go vet ./internal/komodo`, `rtk git diff --check`, and `rtk npm run lint:planning-docs` passed. The live qualification command was attempted separately and is not counted as a successful live test.

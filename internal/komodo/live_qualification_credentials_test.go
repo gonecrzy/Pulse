@@ -106,49 +106,9 @@ func loadLiveQualificationConfig() (liveQualificationConfig, error) {
 // file owned by the current test operator and readable by that owner alone.
 // It never includes file contents or the path in returned errors.
 func readQualificationCredentialFile(path string) (qualificationCredentials, error) {
-	if os.Getenv("PULSE_KOMODO_LIVE_QUALIFICATION") != "1" {
-		return qualificationCredentials{}, errors.New("credential-file access requires an explicitly opted in test")
-	}
-	if strings.TrimSpace(path) == "" {
-		return qualificationCredentials{}, errors.New("could not read protected qualification credential file")
-	}
-	initialInfo, err := os.Lstat(path)
-	if err != nil || !initialInfo.Mode().IsRegular() {
-		return qualificationCredentials{}, errors.New("could not read protected qualification credential file")
-	}
-
-	fd, err := syscall.Open(path, syscall.O_RDONLY|syscall.O_CLOEXEC|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+	contents, err := readOwnerOnlyQualificationFile(path)
 	if err != nil {
-		return qualificationCredentials{}, errors.New("could not read protected qualification credential file")
-	}
-	file := os.NewFile(uintptr(fd), "komodo-qualification-credentials")
-	if file == nil {
-		_ = syscall.Close(fd)
-		return qualificationCredentials{}, errors.New("could not read protected qualification credential file")
-	}
-	defer file.Close()
-
-	openedInfo, err := file.Stat()
-	if err != nil || !os.SameFile(initialInfo, openedInfo) {
-		return qualificationCredentials{}, errors.New("could not read protected qualification credential file")
-	}
-	currentInfo, err := os.Lstat(path)
-	if err != nil || !currentInfo.Mode().IsRegular() || !os.SameFile(openedInfo, currentInfo) {
-		return qualificationCredentials{}, errors.New("could not read protected qualification credential file")
-	}
-	permissions := openedInfo.Mode().Perm()
-	specialPermissions := openedInfo.Mode() & (os.ModeSetuid | os.ModeSetgid | os.ModeSticky)
-	if permissions&0077 != 0 || permissions&0400 == 0 || permissions&0111 != 0 || specialPermissions != 0 || !qualificationFileOwnedByCurrentUser(openedInfo) {
-		return qualificationCredentials{}, errors.New("qualification credential file must be owner-only and owned by the test operator")
-	}
-	if openedInfo.Size() > maxQualificationCredentialFileBytes {
-		return qualificationCredentials{}, errors.New("qualification credential file exceeds the safe size limit")
-	}
-
-	contents, err := io.ReadAll(io.LimitReader(file, maxQualificationCredentialFileBytes+1))
-	if err != nil || len(contents) > maxQualificationCredentialFileBytes {
-		zeroQualificationBytes(contents)
-		return qualificationCredentials{}, errors.New("could not read protected qualification credential file")
+		return qualificationCredentials{}, err
 	}
 	credentials, err := decodeQualificationCredentials(contents)
 	zeroQualificationBytes(contents)
@@ -156,6 +116,54 @@ func readQualificationCredentialFile(path string) (qualificationCredentials, err
 		return qualificationCredentials{}, errors.New("qualification credential file has an invalid format")
 	}
 	return credentials, nil
+}
+
+func readOwnerOnlyQualificationFile(path string) ([]byte, error) {
+	if os.Getenv("PULSE_KOMODO_LIVE_QUALIFICATION") != "1" {
+		return nil, errors.New("protected qualification file access requires an explicitly opted in test")
+	}
+	if strings.TrimSpace(path) == "" {
+		return nil, errors.New("could not read protected qualification file")
+	}
+	initialInfo, err := os.Lstat(path)
+	if err != nil || !initialInfo.Mode().IsRegular() {
+		return nil, errors.New("could not read protected qualification file")
+	}
+
+	fd, err := syscall.Open(path, syscall.O_RDONLY|syscall.O_CLOEXEC|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+	if err != nil {
+		return nil, errors.New("could not read protected qualification file")
+	}
+	file := os.NewFile(uintptr(fd), "komodo-qualification-protected-file")
+	if file == nil {
+		_ = syscall.Close(fd)
+		return nil, errors.New("could not read protected qualification file")
+	}
+	defer file.Close()
+
+	openedInfo, err := file.Stat()
+	if err != nil || !os.SameFile(initialInfo, openedInfo) {
+		return nil, errors.New("could not read protected qualification file")
+	}
+	currentInfo, err := os.Lstat(path)
+	if err != nil || !currentInfo.Mode().IsRegular() || !os.SameFile(openedInfo, currentInfo) {
+		return nil, errors.New("could not read protected qualification file")
+	}
+	permissions := openedInfo.Mode().Perm()
+	specialPermissions := openedInfo.Mode() & (os.ModeSetuid | os.ModeSetgid | os.ModeSticky)
+	if permissions&0077 != 0 || permissions&0400 == 0 || permissions&0111 != 0 || specialPermissions != 0 || !qualificationFileOwnedByCurrentUser(openedInfo) {
+		return nil, errors.New("qualification file must be owner-only and owned by the test operator")
+	}
+	if openedInfo.Size() > maxQualificationCredentialFileBytes {
+		return nil, errors.New("qualification file exceeds the safe size limit")
+	}
+
+	contents, err := io.ReadAll(io.LimitReader(file, maxQualificationCredentialFileBytes+1))
+	if err != nil || len(contents) > maxQualificationCredentialFileBytes {
+		zeroQualificationBytes(contents)
+		return nil, errors.New("could not read protected qualification file")
+	}
+	return contents, nil
 }
 
 func zeroQualificationBytes(contents []byte) {
