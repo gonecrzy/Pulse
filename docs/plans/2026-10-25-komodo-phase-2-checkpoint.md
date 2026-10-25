@@ -1,6 +1,6 @@
 # Pulse + Sindri — Komodo Phase 2 foundation checkpoint
 
-**Status:** focused implementation for independent review on `feature/komodo-phase2-foundation`, based on current `origin/sindri`. This checkpoint is not merged or deployed. Codex-LB remains optional and deferred. Phase 0 read-only, least-privilege, and action-safety contracts remain in force.
+**Status:** Phase 2C relationship foundation is complete; Phase 2D fixture harness and live procedure are prepared on `feature/komodo-phase2-foundation`. Live qualification is blocked because this workspace has no configured Komodo endpoint/connection. This checkpoint is not merged or deployed. Codex-LB remains optional and deferred. Phase 0 read-only, least-privilege, and action-safety contracts remain in force.
 
 ## Contract and implementation boundary
 
@@ -286,3 +286,75 @@ Additional Phase 2C checks:
 
 - Komodo [API and clients](https://komo.do/docs/ecosystem/api), [permissioning](https://komo.do/docs/configuration/permissioning), [live API docs](https://demo.komo.do/docs), [ListServers pagination schema](https://docs.rs/komodo_client/latest/komodo_client/api/read/struct.ListServers.html), [Stack parent fields](https://docs.rs/komodo_client/latest/komodo_client/entities/stack/struct.StackListItemInfo.html), [Deployment parent fields](https://docs.rs/komodo_client/latest/komodo_client/entities/deployment/struct.DeploymentListItemInfo.html), [Swarm membership fields](https://docs.rs/komodo_client/latest/komodo_client/entities/swarm/struct.SwarmListItemInfo.html), [v2.3.2 client API reference](https://docs.rs/komodo_client/2.3.2/komodo_client/), and [release list](https://github.com/moghtech/komodo/releases). References inform the protocol shape; support is not pinned to `2.3.3`.
 - Pulse resource API: `/api/resources/{id}/link` and `/unlink`; resource graph and supplemental record APIs are owned by `internal/unifiedresources`.
+
+## Phase 2D — Komodo live qualification preparation
+
+### Environment result
+
+No Komodo environment variables were configured, `PULSE_DATA_DIR` was unset, and the default protected connection file `/etc/pulse/komodo.enc` was absent. No configuration was decrypted, no credential value was printed or exported, and no network request was attempted. Live compatibility, the installed Core version, effective permissions, and actual resource identifiers/parents remain unverified.
+
+### API compatibility matrix
+
+The following is the contract implemented and covered by local fixtures, checked against Komodo's published client/schema references. It is not a live-server result. The documentation available during this checkpoint identifies `komodo_client` 2.3.2; the adapter continues to query `GetVersion` at runtime and accepts a syntactically valid Core v2 version rather than pinning a patch release.
+
+| Surface | Implemented contract | Fixture result / live status |
+|---|---|---|
+| Transport and auth | HTTPS origin only, default certificate verification, TLS 1.2 minimum, redirects disabled. `POST /read/{method}` with `X-Api-Key` and `X-Api-Secret`; only `GetVersion`, `ListPermissions`, `GetPermission`, `ListServers`, `ListStacks`, `ListDeployments`, and `ListSwarms` can be called. | Fixture checks request method/path/headers and the allowlist; invalid auth produces a generic error without echoing the server response. Live unavailable. |
+| Core version | `GetVersion` must return a semantic version with major `2`; inventory is not requested for a different or malformed major version. | Fixture accepts `2.3.4` and rejects `1.9.0` before listing resources. No installed version observed. |
+| Permission/scope | Direct grants must be exact `Read` with no specific permissions. For a non-empty kind, the client calls effective `GetPermission` for one visible resource; empty kinds require a direct type-wide `Read` grant whose target ID is `all`. | Fixtures cover missing, elevated, specific, and type-wide empty grants. This does not fully attest group-inherited or global user capabilities: Komodo documents that `ListPermissions` omits UserGroup grants, while `GetPermission` includes them for a specific resource. The current client samples one visible item per populated kind. The operator must additionally confirm the selected principal is non-admin, has no create-server/create-build permission, and receives no group grant above read. Live unavailable. |
+| List and pagination | `ListServers`, `ListStacks`, `ListDeployments`, `ListSwarms`; request carries `query`, zero-based `page`, and bounded `limit`. Pagination is capped at 1,000 pages, each response at 8 MiB. Duplicate or missing IDs fail the collection. | Fixtures exercise pagination on all four kinds, cross-page duplicate detection, malformed IDs, transient errors, timeouts, and response redaction. Live unavailable. |
+| Resource fields | List item identity/name are `id`/`name`; state is read from `info.state`. Stack and Deployment parents are `info.server_id` or `info.swarm_id`; Komodo's schema says `swarm_id` takes precedence when both are populated. Swarm membership is `info.server_ids`. | Normalization fixtures verify each parent and membership shape, precedence, stable source identities, redaction, and registry ingestion. Live field presence and values unavailable. |
+| Empty/failure/recovery | A successful, permission-verified empty inventory is distinct from a failed collection. Poll failure retains stale last-known records; success recovers freshness; intentional disablement removes published records. | Client and poller fixtures cover these transitions. No live empty inventory, failure, or recovery was induced. |
+| Identity and dependency | Identity is `(Pulse connection UUID, Komodo kind, Komodo native ID)` and never inferred from names. Cross-provider identity requires an explicit Pulse operator link. Durable directed dependencies remain in the existing org ResourceStore. | Registry, link, and relationship tests cover identity stability, canonical link persistence, dependency persistence, and endpoint rewrite. No live Proxmox/Komodo pair was available. |
+| Authority and AI | The Komodo client exposes read methods only. Polling and canonical monitoring do not call Sindri AI; no write, execute, terminal, mutation, action runner, or remediation capability is registered. | Client allowlist and connection-action-authority tests pass; polling is independent of AI state. Live server-side credentials still require operator permission verification. |
+
+Schema references checked: Komodo [API and clients](https://komo.do/docs/ecosystem/api), [permissioning](https://komo.do/docs/configuration/permissioning), the published [Core API client contract](https://docs.rs/komodo_client/2.3.2/komodo_client/api/index.html), [ListPermissions semantics](https://docs.rs/komodo_client/2.3.2/komodo_client/api/read/struct.ListPermissions.html), [effective GetPermission semantics](https://docs.rs/komodo_client/2.3.2/komodo_client/api/read/struct.GetPermission.html), [Stack parent fields and precedence](https://github.com/moghtech/komodo/blob/main/client/core/rs/src/entities/stack.rs), [Deployment parent fields and precedence](https://github.com/moghtech/komodo/blob/main/client/core/rs/src/entities/deployment.rs), and [Swarm membership field](https://docs.rs/komodo_client/2.3.2/komodo_client/entities/swarm/struct.SwarmListItemInfo.html). Komodo's client documents `ListPermissions` as direct permissions only (excluding UserGroups); `GetPermission` accounts for UserGroup permissions for its specified resource. The current API does not establish that a principal lacks global create rights, so credential qualification must inspect those settings as an operator.
+
+### Reproducible qualification harness and operator procedure
+
+`internal/komodo/live_qualification_test.go` adds an opt-in read-only test. It loads an existing enabled connection from the explicit `PULSE_DATA_DIR` encrypted Pulse store, selects it by its non-secret Pulse connection UUID, validates its stored configuration, then performs two bounded `CollectInventory` observations. It reports only Core version, verified resource-kind count, per-kind counts, parent-field counts, unresolved parent-reference count, and whether the two native-ID sets match. It does not print the endpoint, connection UUID, resource names/IDs, API key, or API secret. With opt-in unset it skips, so ordinary fixture tests never contact a server.
+
+Operator steps once an approved existing Core is available:
+
+1. Use an isolated Pulse organization and an existing Komodo non-admin/service principal. Through Komodo's UI, confirm it is enabled, has only the inventory `Read` grants, has no specific permissions, no admin/create-server/create-build capability, and no UserGroup membership that raises access. Use only its already-approved API key/secret; do not create a privileged credential for this test.
+2. In Pulse Infrastructure settings, save the HTTPS Core origin and existing key/secret to the protected Komodo connection store. Run the connection test and enable polling only after it reports supported Core v2 and verified scope. Record the Pulse connection UUID (not the credential).
+3. On the Pulse host, run from the repository as the normal Pulse operator/test user with access to its protected data directory; supply only the data-directory path, opt-in flag, and connection UUID:
+
+   ```sh
+   PULSE_DATA_DIR=/path/to/pulse-data \
+   PULSE_KOMODO_LIVE_QUALIFICATION=1 \
+   PULSE_KOMODO_QUALIFICATION_CONNECTION_ID=<pulse-connection-uuid> \
+   go test ./internal/komodo -run '^TestLiveCoreV2Qualification$' -count=1 -v
+   ```
+
+   The command reads the encrypted stored credentials in process memory; do not put credentials in command arguments, environment variables, CI logs, or shell history. A changing ID set between the two reads fails the test without printing the IDs; rerun during a stable inventory window.
+4. Review the reported version, all four verified scopes, counts, parent-field counts, unresolved parent references, and stable-set result. A zero count is a valid empty inventory only when all four scope checks pass. If any parent references are unresolved, compare sanitized field presence/values in Komodo's UI against the Pulse record without copying configuration/environment data.
+5. In that isolated Pulse organization, choose one verified Proxmox VM and its matching Komodo Server from inventory based on operator knowledge, explicitly link the pair in Pulse, add a directed dependency between the canonical resource IDs, and verify the link/edge after multiple poll cycles and a Pulse restart. Use an explicitly selected non-production pair; do not infer identity from equal names. Do not intentionally interrupt a production Core to test failure recovery: mock fixtures already cover unsuccessful collection, stale retention, and recovery.
+
+Fixture-only qualification remains reproducible with `go test ./internal/komodo ./internal/monitoring -run 'Test(Client|Normalize|ProxmoxKomodoLink|SameNamedKomodo|ConflictingProxmox|KomodoPoller)' -count=1`. It covers bad authentication, version rejection, read scope, pagination, duplicate IDs, timeout/transient errors, safe error handling, normalized fields, cross-provider linking, empty inventory, stale retention, recovery, disablement, and resource removal.
+
+### Previously failing package reproduction
+
+The seven packages previously identified were rerun under UID 65534 (`nobody`) with Go 1.26.10, a private writable Go module/build cache, and GNU `gawk` 5.2.1 installed. Source was copied to `/tmp` without `.git` to keep the test tree accessible to the unprivileged user; package runtimes overlap in `go test`, and the longest package took 520.561s.
+
+| Package | Result | Finding |
+|---|---|---|
+| `internal/cloudcp/docker` | Pass (0.017s) | Root-only UID-zero fallback failure is absent for a normal unprivileged UID. |
+| `internal/config` | Pass (28.740s) | The undecryptable/migration assertions pass without root's readable legacy key. |
+| `internal/alerts` | Pass (46.321s) | Permission-denied fixture behaves as intended without root read bypass. |
+| `scripts/installtests` | Pass (520.561s) | The unprivileged refusal proof and native tool fixtures pass with GNU `gawk`. |
+| `internal/hostmetrics` | Fail (0.305s): `TestCollectSplitsReclaimableCache` got `UsedBytes=6442437504`, wanted `6442450944`; `TestCollectDerivesMemoryPressureFromAvailableMemory` got `8589921152`, wanted `8589934592`. | The `virtualMemory` test stub does not override `readARCSize`; this host exposes `/proc/spl/kstat/zfs/arcstats`, and the live 13,440-byte ARC value is subtracted from both fixture expectations. Environmental fixture leakage, not a Phase 2 regression. |
+| `internal/sensors` | Fail (0.174s): the three `TestCollectLocal...` assertions received `cpu_thermal-virtual-0` with 52–53°C alongside the mocked `chip` values. | These three tests replace the `sensors` executable but do not replace the default host sysfs roots. Host sensor fallback adds a real device. Environmental fixture leakage, not a Phase 2 regression. |
+| `internal/api` | Initial package run failed only `TestServerInfoEndpointReportsDevelopment`. | The temporary source copy omitted `.git`, so version detection used the non-development fallback. After seeding minimal local Git metadata in the temporary copy, `go test -run '^TestServerInfoEndpointReportsDevelopment$' -count=1 ./internal/api` passed (2.274s). This was a reproduction-harness artifact, not an API regression. The earlier root-only telemetry persistence failure is likewise not present in the unprivileged run. |
+
+No failure was ignored or rewritten. The hostmetrics and sensors fixture-isolation gaps remain outside this Komodo checkpoint; the full seven-package matrix is not green until those fixtures stop observing live host state. The prior root-only failures in Docker ownership, config encryption migration, alerts file permissions, API write-denial, installer root refusal, and missing `gawk` are resolved by running the expected unprivileged/dependency-complete test environment.
+
+### Smallest next integration plan (gated on successful live qualification)
+
+1. **Connection health and alerts:** feed `KomodoConnectionPollStatus` already projected by `internal/api/connections_aggregator.go` into the existing `alerts.ConnectionSnapshot`/`CheckConnection` boundary in `internal/alerts/connection.go`. Decide activation grace, stale thresholds, and org policy mapping; do not add an alert manager.
+2. **Canonical resource health/incidents:** map only validated Komodo state and stale-source evidence into existing unified-resource health and incident synthesis. Keep connection failure distinct from a workload's reported state. Do not add Komodo metric/history series until a separate live metrics contract is approved.
+3. **Notifications:** route the existing canonical connection/resource alerts through `internal/notifications.NotificationManager` and its existing queue/rules. Decide event type/severity and recovery routing; add no delivery engine.
+4. **Monitoring UI:** extend the existing Infrastructure settings connection status and current unified-resource surfaces (`ConnectionEditor` and resource API types/views) with sanitized poll/scope status and validated parent evidence. No topology redesign or Traefik parser is included.
+5. **Patrol context:** only after deterministic resource/relationship contracts are live-qualified, add a read-only canonical resource snapshot to the existing Patrol scope/context builder in `internal/api/router.go` / `internal/ai/patrol_*`. Include freshness/provenance and safe resource fields; exclude Komodo configuration, API credentials, raw responses, and execution tools. Polling, alert evaluation, and notifications remain operational when Sindri AI is unavailable.
+
+No connection-alert, resource-alert, notification, monitoring UI, Patrol, metrics, or live Komodo behavior was expanded in Phase 2D. Review this checkpoint and the qualification procedure before continuing.
