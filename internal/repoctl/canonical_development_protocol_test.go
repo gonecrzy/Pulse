@@ -1697,8 +1697,11 @@ func TestCanonicalGovernanceRunsInCI(t *testing.T) {
 	workflow := readRepoFile(t, ".github/workflows/canonical-governance.yml")
 	assertContainsAll(t, ".github/workflows/canonical-governance.yml", workflow, []string{
 		"name: Canonical Governance",
-		"branches: [main, sindri, feature/sindri-integration]",
+		"workflow_call:",
+		"branches: [sindri]",
 		"pull_request:",
+		"workflow_dispatch:",
+		"permissions:\n  contents: read",
 		"Validate workflow trust policy",
 		"python3 scripts/check_workflow_trust.py .github/workflows",
 		"python3 scripts/tests/test_workflow_trust.py",
@@ -1711,7 +1714,6 @@ func TestCanonicalGovernanceRunsInCI(t *testing.T) {
 		"repository: rcourtman/pulse-enterprise",
 		"repository: rcourtman/pulse-mobile",
 		"workflow_run:",
-		"workflow_call:",
 		"release-dry-run.yml",
 		"create-release.yml",
 		"publish-docker.yml",

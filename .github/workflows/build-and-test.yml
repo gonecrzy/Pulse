@@ -1,22 +1,17 @@
 name: Build and Test
 
 on:
-  push:
-    branches:
-      - main
-      - sindri
-      - feature/sindri-integration
+  workflow_call:
   pull_request:
     branches:
-      - main
       - sindri
-      - feature/sindri-integration
   workflow_dispatch:
 
 permissions:
   contents: read
 
-# Let branch runs finish so main, sindri, and the active integration branch retain validation verdicts.
+# PR runs validate changes before integration. Stable and feature image workflows
+# call this reusable workflow so publishing waits on the same validation jobs.
 # A newer PR commit supersedes its previous validation, so do not queue the
 # replacement behind obsolete checks. Keep this aligned with Core E2E.
 concurrency:
