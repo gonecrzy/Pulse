@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 )
@@ -37,6 +38,10 @@ func TestLiveCoreV2Qualification(t *testing.T) {
 	t.Logf("Komodo Core version reported: %s", version.Version)
 	first, err := client.CollectInventory(ctx)
 	if err != nil {
+		if strings.Contains(err.Error(), "operator verification is required") {
+			t.Log("Inventory counts, parent relationships, and identity stability were not qualified because permission scope verification stopped collection before returning inventory.")
+			t.Fatalf("effective permission verification is incomplete: %v", err)
+		}
 		t.Fatalf("first inventory collection failed safely: %v", err)
 	}
 	second, err := client.CollectInventory(ctx)

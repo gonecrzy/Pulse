@@ -338,6 +338,143 @@ func TestClientChecksPermissionsOnVisibleResources(t *testing.T) {
 	}
 }
 
+func TestClientRecognizesLevelOnlyPermissionButRequiresSpecificPermissionAttestation(t *testing.T) {
+	client, _ := newFixtureClient(t, inventoryFixtureHandler(t, func(w http.ResponseWriter, r *http.Request) bool {
+		if r.URL.Path == "/read/ListServers" {
+			writeFixtureJSON(w, http.StatusOK, fixtureItemsForPath(r.URL.Path, "server-1"))
+			return true
+		}
+		if r.URL.Path == "/read/GetPermission" {
+			writeFixtureJSON(w, http.StatusOK, `"Read"`)
+			return true
+		}
+		return false
+	}))
+	_, err := client.CollectInventory(context.Background())
+	if err == nil || !strings.Contains(strings.ToLower(err.Error()), "specific permissions") || !strings.Contains(strings.ToLower(err.Error()), "operator") {
+		t.Fatalf("CollectInventory error = %v, want an explicit operator gate for unverifiable effective specific permissions", err)
+	}
+	if strings.Contains(err.Error(), "incompatible JSON type") {
+		t.Fatalf("level-only runtime response was not recognized: %v", err)
+	}
+}
+
+func TestClientRejectsMalformedStructuredGetPermissionResponses(t *testing.T) {
+	for name, response := range map[string]string{
+		"missing level":    `{"specific":[]}`,
+		"missing specific": `{"level":"Read"}`,
+		"null specific":    `{"level":"Read","specific":null}`,
+		"wrong level type": `{"level":7,"specific":[]}`,
+		"wrong specific":   `{"level":"Read","specific":"Logs"}`,
+		"unexpected field": `{"level":"Read","specific":[],"qualificationSecret":"must-not-leak"}`,
+		"duplicate field":  `{"level":"Write","level":"Read","specific":[]}`,
+		"null response":    `null`,
+		"array response":   `[]`,
+		"number response":  `42`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			client, _ := newFixtureClient(t, inventoryFixtureHandler(t, func(w http.ResponseWriter, r *http.Request) bool {
+				if r.URL.Path == "/read/ListServers" {
+					writeFixtureJSON(w, http.StatusOK, fixtureItemsForPath(r.URL.Path, "server-1"))
+					return true
+				}
+				if r.URL.Path == "/read/GetPermission" {
+					writeFixtureJSON(w, http.StatusOK, response)
+					return true
+				}
+				return false
+			}))
+			_, err := client.CollectInventory(context.Background())
+			if err == nil {
+				t.Fatal("CollectInventory unexpectedly accepted a malformed GetPermission response")
+			}
+			if strings.Contains(err.Error(), "must-not-leak") {
+				t.Fatalf("error leaked response material: %v", err)
+			}
+		})
+	}
+}
+
+func TestClientChecksEffectivePermissionsForEveryListedResource(t *testing.T) {
+	client, _ := newFixtureClient(t, inventoryFixtureHandler(t, func(w http.ResponseWriter, r *http.Request) bool {
+		switch r.URL.Path {
+		case "/read/ListServers":
+			writeFixtureJSON(w, http.StatusOK, fixtureItemsForPath(r.URL.Path, "server-1", "server-2"))
+			return true
+		case "/read/GetPermission":
+			var request struct {
+				Target struct {
+					ID string `json:"id"`
+				} `json:"target"`
+			}
+			if err := jsonNewDecoder(r).Decode(&request); err != nil {
+				t.Errorf("decode permission target: %v", err)
+				writeFixtureJSON(w, http.StatusBadRequest, `{}`)
+				return true
+			}
+			if request.Target.ID == "server-2" {
+				writeFixtureJSON(w, http.StatusOK, `{"level":"Read","specific":["Terminal"]}`)
+			} else {
+				writeFixtureJSON(w, http.StatusOK, `{"level":"Read","specific":[]}`)
+			}
+			return true
+		}
+		return false
+	}))
+	_, err := client.CollectInventory(context.Background())
+	if err == nil || !strings.Contains(strings.ToLower(err.Error()), "specific permissions") {
+		t.Fatalf("CollectInventory error = %v, want rejection of elevated effective permissions on the second resource", err)
+	}
+}
+
+func TestClientRejectsUnsafeLevelOnlyGetPermissionResponses(t *testing.T) {
+	for _, level := range []string{"None", "Execute", "Write", "Unknown"} {
+		t.Run(level, func(t *testing.T) {
+			client, _ := newFixtureClient(t, inventoryFixtureHandler(t, func(w http.ResponseWriter, r *http.Request) bool {
+				if r.URL.Path == "/read/ListServers" {
+					writeFixtureJSON(w, http.StatusOK, fixtureItemsForPath(r.URL.Path, "server-1"))
+					return true
+				}
+				if r.URL.Path == "/read/GetPermission" {
+					body, _ := json.Marshal(level)
+					writeFixtureJSON(w, http.StatusOK, string(body))
+					return true
+				}
+				return false
+			}))
+			_, err := client.CollectInventory(context.Background())
+			if err == nil || strings.Contains(strings.ToLower(err.Error()), "specific permissions") {
+				t.Fatalf("CollectInventory error = %v, want rejection due to an unsafe or unknown permission level", err)
+			}
+			if strings.Contains(err.Error(), "incompatible JSON type") {
+				t.Fatalf("level-only response was not recognized: %v", err)
+			}
+		})
+	}
+}
+
+func TestClientRejectsUnsafeStructuredGetPermissionLevels(t *testing.T) {
+	for _, level := range []string{"None", "Execute", "Write", "Unknown"} {
+		t.Run(level, func(t *testing.T) {
+			client, _ := newFixtureClient(t, inventoryFixtureHandler(t, func(w http.ResponseWriter, r *http.Request) bool {
+				if r.URL.Path == "/read/ListServers" {
+					writeFixtureJSON(w, http.StatusOK, fixtureItemsForPath(r.URL.Path, "server-1"))
+					return true
+				}
+				if r.URL.Path == "/read/GetPermission" {
+					writeFixtureJSON(w, http.StatusOK, fmt.Sprintf(`{"level":%q,"specific":[]}`, level))
+					return true
+				}
+				return false
+			}))
+			_, err := client.CollectInventory(context.Background())
+			if err == nil || !strings.Contains(strings.ToLower(err.Error()), "scope") {
+				t.Fatalf("CollectInventory error = %v, want rejection of unsafe or unknown level", err)
+			}
+		})
+	}
+}
+
 func fixtureItemsForPath(path string, ids ...string) string {
 	items := make([]string, 0, len(ids))
 	resourceType := strings.TrimPrefix(path, "/read/List")

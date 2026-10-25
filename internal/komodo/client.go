@@ -191,9 +191,89 @@ type permissionGrant struct {
 	Specific []string `json:"specific"`
 }
 type permissionResponse struct {
-	Level    string   `json:"level"`
-	Specific []string `json:"specific"`
+	Level         string   `json:"level"`
+	Specific      []string `json:"specific"`
+	specificKnown bool
 }
+
+// UnmarshalJSON accepts the structured response declared by the Core v2
+// client model and the level-only enum observed from the live v2.3.4 Core.
+// A level-only response cannot attest that effective specific permissions
+// are empty, so CollectInventory must keep that case behind an operator gate.
+func (p *permissionResponse) UnmarshalJSON(data []byte) error {
+	*p = permissionResponse{}
+	trimmed := bytes.TrimSpace(data)
+	if len(trimmed) == 0 {
+		return errors.New("empty permission response")
+	}
+	if trimmed[0] == '"' {
+		if err := json.Unmarshal(trimmed, &p.Level); err != nil {
+			return errors.New("invalid level-only permission response")
+		}
+		return nil
+	}
+	if trimmed[0] != '{' {
+		return errors.New("permission response must be a string or object")
+	}
+
+	fields, err := decodePermissionObject(trimmed)
+	if err != nil {
+		return errors.New("invalid structured permission response")
+	}
+	if len(fields) != 2 {
+		return errors.New("structured permission response must contain level and specific")
+	}
+	level, hasLevel := fields["level"]
+	specific, hasSpecific := fields["specific"]
+	if !hasLevel || !hasSpecific || bytes.Equal(bytes.TrimSpace(level), []byte("null")) || bytes.Equal(bytes.TrimSpace(specific), []byte("null")) {
+		return errors.New("structured permission response must contain non-null level and specific")
+	}
+	if err := json.Unmarshal(level, &p.Level); err != nil {
+		return errors.New("structured permission level must be a string")
+	}
+	if err := json.Unmarshal(specific, &p.Specific); err != nil || p.Specific == nil {
+		return errors.New("structured permission specifics must be an array of strings")
+	}
+	p.specificKnown = true
+	return nil
+}
+
+func decodePermissionObject(data []byte) (map[string]json.RawMessage, error) {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	start, err := decoder.Token()
+	if err != nil || start != json.Delim('{') {
+		return nil, errors.New("invalid permission object")
+	}
+	fields := make(map[string]json.RawMessage, 2)
+	for decoder.More() {
+		keyToken, err := decoder.Token()
+		if err != nil {
+			return nil, errors.New("invalid permission object key")
+		}
+		key, ok := keyToken.(string)
+		if !ok {
+			return nil, errors.New("invalid permission object key")
+		}
+		if _, exists := fields[key]; exists {
+			return nil, errors.New("duplicate permission object key")
+		}
+		var value json.RawMessage
+		if err := decoder.Decode(&value); err != nil {
+			return nil, errors.New("invalid permission object value")
+		}
+		fields[key] = value
+	}
+	end, err := decoder.Token()
+	if err != nil || end != json.Delim('}') {
+		return nil, errors.New("unterminated permission object")
+	}
+	var trailing json.RawMessage
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		return nil, errors.New("trailing permission response data")
+	}
+	return fields, nil
+}
+
 type apiListItem struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
@@ -240,21 +320,23 @@ func (c *Client) CollectInventory(ctx context.Context) (Inventory, error) {
 			}
 			inventory.Scope.Verified = append(inventory.Scope.Verified, kind)
 		} else {
-			var permission permissionResponse
-			err := c.call(ctx, "GetPermission", struct {
-				Target struct {
+			for _, item := range items {
+				var permission permissionResponse
+				err := c.call(ctx, "GetPermission", struct {
+					Target struct {
+						Type string `json:"type"`
+						ID   string `json:"id"`
+					} `json:"target"`
+				}{Target: struct {
 					Type string `json:"type"`
 					ID   string `json:"id"`
-				} `json:"target"`
-			}{Target: struct {
-				Type string `json:"type"`
-				ID   string `json:"id"`
-			}{Type: string(kind), ID: items[0].ID}}, &permission)
-			if err != nil {
-				return Inventory{}, err
-			}
-			if !permissionSatisfiesRead(permission.Level) || len(permission.Specific) > 0 {
-				return Inventory{}, fmt.Errorf("Komodo read scope for %s could not be verified", kind)
+				}{Type: string(kind), ID: item.ID}}, &permission)
+				if err != nil {
+					return Inventory{}, err
+				}
+				if err := validateEffectiveReadPermission(kind, permission); err != nil {
+					return Inventory{}, err
+				}
 			}
 			inventory.Scope.Verified = append(inventory.Scope.Verified, kind)
 		}
@@ -270,6 +352,19 @@ func (c *Client) CollectInventory(ctx context.Context) (Inventory, error) {
 		}
 	}
 	return inventory, nil
+}
+
+func validateEffectiveReadPermission(kind ResourceKind, permission permissionResponse) error {
+	if !permissionSatisfiesRead(permission.Level) {
+		return fmt.Errorf("Komodo read scope for %s could not be verified", kind)
+	}
+	if !permission.specificKnown {
+		return fmt.Errorf("Komodo effective specific permissions for %s could not be verified; operator verification is required: confirm the key is non-admin and every inventoried resource resolves to Read with no effective specific grants through direct or group permissions (including Everyone), resource defaults, or inherited target permissions", kind)
+	}
+	if len(permission.Specific) > 0 {
+		return fmt.Errorf("Komodo effective specific permissions for %s exceed the supported read-only scope", kind)
+	}
+	return nil
 }
 
 func (c *Client) listKind(ctx context.Context, kind ResourceKind) ([]Resource, error) {

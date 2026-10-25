@@ -446,6 +446,44 @@ The authenticated `GetVersion` response reported Core `2.3.4`. The response deco
 | Proxmox identity linking and stored dependencies | Fixture-covered only; no live pair was evaluated. |
 | Monitoring alerts, notifications, UI resource status, Patrol, and image | Not started because live qualification did not pass. |
 
-The versioned Komodo client model for `2.3.4` declares `GetPermissionResponse` as `PermissionLevelAndSpecifics` in [`client/core/rs/src/api/read/permission.rs`](https://github.com/moghtech/komodo/blob/v2.3.4/client/core/rs/src/api/read/permission.rs), while its API comment describes a `PermissionLevel` response. This conflict means Pulse must not silently accept the string and infer that the credential lacks group-derived specific permissions. The operator should verify the `GetPermission` response schema served by this Core release (including whether effective `specific` grants are represented) and provide that non-secret schema or confirm a compatible Core response. No new credentials are required. Once the contract is resolved without weakening least-privilege validation, rerun the harness; only a passing live qualification should unblock Phase 2E integration and image work.
+At this checkpoint the `GetPermission` handler, serializer, and effective-permission resolver had not yet been reviewed. That investigation and the follow-up live result are recorded below; the earlier request to supply the endpoint schema is superseded by that source review.
 
 The harness now logs the verified Core version before inventory collection, and client contract errors identify only the allowlisted method and safe JSON shape. `rtk go test ./internal/komodo -run 'TestClientIdentifiesMalformedReadContractWithoutEchoingResponse' -count=1` passed. No mutation, merge, deployment, integration expansion, or image build occurred.
+
+## Phase 2E GetPermission compatibility review — 2026-10-25
+
+The v2.3.4 tagged source was reviewed at the handler, response serialization, and permission resolver layers:
+
+- [`GetPermission::resolve`](https://github.com/moghtech/komodo/blob/v2.3.4/bin/core/src/api/read/permission.rs) returns `get_user_permission_on_target`, whose response alias is `PermissionLevelAndSpecifics` in [`client/core/rs/src/api/read/permission.rs`](https://github.com/moghtech/komodo/blob/v2.3.4/client/core/rs/src/api/read/permission.rs). The alias has `level` and `specific` fields. The API comment still describes `[PermissionLevel]`, so the tagged API description itself is inconsistent.
+- The [`/read` handler](https://github.com/moghtech/komodo/blob/v2.3.4/bin/core/src/api/read/mod.rs) resolves the request and returns the generated response wrapper. The wrapper's [`From<T: Serialize>` implementation](https://docs.rs/crate/mogh_error/1.0.4/source/src/axum.rs) serializes the resolved value with `serde_json::to_string` as the JSON response body. The tagged implementation therefore describes an object response.
+- The [`permission resolver`](https://github.com/moghtech/komodo/blob/v2.3.4/bin/core/src/permission.rs) combines admin status, resource base permissions, user-wide permissions, all applicable groups, per-resource user/group grants, and inherited target specifics. The group query includes both explicit membership and `everyone: true` groups in [`helpers/query.rs`](https://github.com/moghtech/komodo/blob/v2.3.4/bin/core/src/helpers/query.rs).
+- [`ListPermissions`](https://github.com/moghtech/komodo/blob/v2.3.4/bin/core/src/api/read/permission.rs) returns only records directly assigned to the user. `ListUserGroups` only lists groups whose `users` field contains the user and therefore omits Everyone groups; `ListUserTargetPermissions` is admin-only. These APIs cannot reconstruct the complete effective specific-permission set. `GetPermission` is the only non-admin endpoint in the supported read allowlist that resolves that combined scope.
+
+The live `2.3.4` instance nevertheless returned a top-level JSON string for `GetPermission`. Pulse now recognizes both observed wire shapes while keeping the evidence distinct:
+
+| Wire response | Decoder behavior | Qualification result |
+|---|---|---|
+| `{"level":"Read","specific":[]}` | Accept only with exactly the required non-null fields and an array of strings; duplicate or extra keys are rejected. | Verifies Read with no specific permission for that target. |
+| `"Read"` | Recognize as the observed level-only response. | Does not establish that specific grants are empty; collection fails closed and requests operator verification. |
+| `None`, `Execute`, `Write`, unknown level, malformed object, null/missing specifics, or non-empty specifics | Reject. | Cannot pass read-only scope validation. |
+
+Scope validation now checks each returned resource because Komodo can grant different effective permission levels and specifics per target. Errors and qualification output contain no response body, native IDs, names, or credentials.
+
+### Requalification result
+
+The opt-in harness was rerun using the provided owner-only test credential file and `https://komodo.home.gonecrzy.com`. TLS verification remained enabled and only the existing allowlisted `/read` methods were used.
+
+| Check | Result |
+|---|---|
+| Authentication and version | Passed; authenticated `GetVersion` reported Core `2.3.4`. |
+| Direct permissions | `ListPermissions` decoded and passed Pulse's direct-grant rejection checks. This response does not include group grants. |
+| Effective Server permission level | The live level-only response was recognized as `Read`. |
+| Effective specific permissions | **Unverified.** The response omitted specific-permission data, so Pulse stopped before returning inventory. |
+| Inventory counts, resource states, parent relationships, and identity stability | **Not qualified.** The harness stopped on the first Server effective-scope check; no complete inventory was returned and no raw resource data was logged. |
+| Monitoring integration and Docker image | Not started because effective read-only scope remains unqualified. |
+
+### Operator attestation still required
+
+An authorized Komodo administrator must verify that the API-key principal is non-admin and that, for every Server, Stack, Deployment, and Swarm that this key can expose, the effective permission is `Read` with no specific grants. That verification must include direct user grants, every applicable user group including Everyone groups, resource base permissions, and inherited target permissions. The live endpoint's level-only response cannot provide this attestation, and the existing non-admin read endpoints cannot independently reconstruct it. Do not treat a key described as “read-only” as sufficient evidence. No additional credential or raw API schema is required; rerun live qualification after the effective-permission representation is corrected or the operator verification gate is explicitly resolved in a reviewed change.
+
+The focused fixture suite passes (`go test ./internal/komodo -count=1`: 67 tests), and `go vet ./internal/komodo` passes. The live qualification test exits with the expected safe permission-verification gate. No monitoring, alert, notification, UI, Patrol, metrics, or Docker-image work was started. No Komodo mutation, merge, deployment, or execution authority was introduced.
