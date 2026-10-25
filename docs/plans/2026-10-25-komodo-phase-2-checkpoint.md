@@ -1,6 +1,6 @@
 # Pulse + Sindri — Komodo Phase 2 foundation checkpoint
 
-**Status:** Phase 2C relationship foundation is complete; Phase 2D fixture harness and live procedure are prepared on `feature/komodo-phase2-foundation`. Live qualification is blocked because this workspace has no configured Komodo endpoint/connection. This checkpoint is not merged or deployed. Codex-LB remains optional and deferred. Phase 0 read-only, least-privilege, and action-safety contracts remain in force.
+**Status:** Phase 2C relationship foundation is complete; Phase 2D fixture harness and live procedure are prepared on `feature/komodo-phase2-foundation`. Phase 2E access discovery found no configured Komodo endpoint or protected connection in this Codex workspace, so live qualification, the gated integration work, and a Phase 2E image remain blocked. This checkpoint is not merged or deployed. Codex-LB remains optional and deferred. Phase 0 read-only, least-privilege, and action-safety contracts remain in force.
 
 ## Contract and implementation boundary
 
@@ -358,3 +358,56 @@ No failure was ignored or rewritten. The hostmetrics and sensors fixture-isolati
 5. **Patrol context:** only after deterministic resource/relationship contracts are live-qualified, add a read-only canonical resource snapshot to the existing Patrol scope/context builder in `internal/api/router.go` / `internal/ai/patrol_*`. Include freshness/provenance and safe resource fields; exclude Komodo configuration, API credentials, raw responses, and execution tools. Polling, alert evaluation, and notifications remain operational when Sindri AI is unavailable.
 
 No connection-alert, resource-alert, notification, monitoring UI, Patrol, metrics, or live Komodo behavior was expanded in Phase 2D. Review this checkpoint and the qualification procedure before continuing.
+
+## Phase 2E — live integration attempt and current blocker
+
+### Live access discovery
+
+The current Codex workspace is on `feature/komodo-phase2-foundation` at the Phase 2D commit. No environment variable names for Komodo or `PULSE_DATA_DIR` are set. The default protected connection file `/etc/pulse/komodo.enc` and candidate `/var/lib/pulse/komodo.enc` are absent; no `komodo.enc` was found in `/run/secrets`, `/root/.config/pulse`, `/srv/pulse`, or the repository. `/etc/hosts` has no Komodo alias, and no running Docker container exposes an existing Pulse/Komodo connection. No credential file was opened or decrypted, and no API request or guessed-host network request was made.
+
+Therefore the assertion that Komodo Core is accessible from the Codex environment could not be tied to a specific authorized endpoint or approved read-only credential in this checkout. **No live compatibility result is claimed.** The installed Core version, effective server-side permissions, actual resource fields/parents, pagination behavior, and live resource identity stability remain unverified. Do not continue with Komodo alert/incident integration or label an image as Phase 2E until the operator makes an existing approved connection available through the protected Pulse store and supplies its non-secret connection UUID and data-directory path.
+
+### Existing integration audit
+
+| Surface | Present foundation | Remaining Phase 2E work after live qualification |
+|---|---|---|
+| Polling and registry | The org-scoped Komodo poller publishes safe Server/Stack/Deployment/Swarm records through the supplemental provider boundary. Stable identities, stale/empty/disable semantics, explicit Proxmox links, parent edges, and operator dependency persistence are fixture-covered. | Verify the live contract and real source data. The concrete Jellyfin/Traefik chain cannot be asserted from fixture names. |
+| Connection health and alerts | `buildKomodoConnection` maps poll state into the existing connection row and current Infrastructure UI. | `internal/alerts.ConnectionType` and `internal/api` connection-alert conversion do not yet include Komodo, so Komodo connection failure/recovery is not in the existing alert lifecycle. Add it there after scope and activation policy are validated. |
+| Resource health and notifications | Unified records preserve sanitized reported status; the existing `NotificationManager` supports canonical alert/recovery delivery. | Komodo resource health has no validated canonical incident mapping or producer-to-NotificationManager route. Decide state semantics and recovery routing using live evidence, then reuse these existing systems. |
+| Monitoring UI | Komodo connection create/test/status surfaces are present in Infrastructure settings. | Confirm live status/scope behavior and expose only validated resource health/freshness in the existing unified-resource surface. No topology redesign is needed. |
+| Patrol | The router already injects the generic unified-resource provider; Komodo records can enter that registry. Polling and canonical monitoring do not depend on Sindri AI. | No Komodo-specific Patrol freshness/provenance qualification has been done. Verify safe canonical fields and read-only scope using live records before claiming this complete. |
+| Relationships | Fixture tests cover Proxmox/Komodo explicit identity folding, persistent edges, availability-check associations, and endpoint rewrites. | No live Proxmox VM, Komodo Server, Docker host/container, Traefik route, or availability target pair was available here. Add only operator-confirmed identity/dependency edges; omit `routes_to` unless the operator supplies reliable route evidence. |
+
+### Phase 2E focused validation
+
+The following Go tests ran as UID 65534 (`nobody`) from an isolated source archive, with private writable Go build/module caches:
+
+| Area | Result |
+|---|---|
+| `internal/komodo` | Package tests passed, including auth/version/pagination, normalization, explicit Proxmox linking, and safe-error cases. |
+| `internal/monitoring` | Komodo poller org isolation, empty/failure/stale/recovery/disable/removal test passed. |
+| `internal/unifiedresources` | Operator relationship persistence/isolation/rebuild and availability association, multiple-service, and Komodo-to-Proxmox-link tests passed. |
+| `internal/alerts` | Existing connection lifecycle/degraded/recovery tests passed. These do not yet exercise Komodo because its connection type is not mapped. |
+| `internal/notifications` | Existing recovery and destination-routing contract tests passed; no Komodo-specific producer is wired yet. |
+| `internal/api` | `TestBuildKomodoConnectionMapsPollStatus` and `TestKomodoConnectionRoutesDoNotExposeActionAuthority` passed. The initial archive lacked the git-ignored embedded `internal/api/frontend-modern/dist`; after copying the already-built assets into the isolated source tree, both tests passed. |
+| `internal/ai` | Existing canonical resource-scope resolution test passed. It is generic and does not establish a Komodo-specific Patrol context contract. |
+
+The existing Komodo CredentialSlot frontend test passed (1 file, 1 test). `go vet ./internal/komodo ./internal/monitoring ./internal/api` and the planning-doc status audit passed in the Phase 2D/2E workspace. No full `go test ./...` run or Phase 2E Docker image build was performed. The focused Go run tests the existing fixture foundation only; it is not evidence of live compatibility or completed alert/notification/Patrol integration.
+
+The selected Go test names were `TestKomodoPollerScopesOrganizationsAndDistinguishesEmptyFailureStaleDisableAndRemoval`; `TestSQLiteOperatorRelationshipsPersistAndIsolateOrganizations`, `TestOperatorRelationshipRejectsIdentityAndUnsupportedEdges`, `TestOperatorRelationshipsSurviveRebuildsAndRewriteLinkedEndpoints`, `TestOperatorDependenciesCoexistWithAvailabilityCheckRelationship`, `TestDiscoveredRelationshipFreshnessFollowsProviderStatus`, `TestAvailabilityExplicitLinkRetainsCheckAndProjectsFacetToKnownResource`, `TestAvailabilityKeepsEveryConfiguredCheckWithMultipleServicesOnOneHost`, and `TestAvailabilityLinkToKomodoServerFollowsOperatorFoldIntoProxmoxVM`; alert tests `TestCheckConnection`, `TestConnectionDegraded*`, and `TestClearConnectionDegradedAlert`; notification tests `TestOrdinaryNotificationRecoveryUsesDeliveredReceipt`, `TestQueuedNtfyRecoveryAfterProviderOutageAndRestart`, and `TestBuildNotificationDeliveryJobsRoutesAlertsByDestinationTags`; API tests `TestBuildKomodoConnectionMapsPollStatus` and `TestKomodoConnectionRoutesDoNotExposeActionAuthority`; and AI test `TestResolvePatrolScopeExpandsCanonicalUnifiedIDToSourceResource`. The whole `internal/komodo` package was run. These focused runs were executed as `nobody`; the frontend test ran in the checked-out workspace.
+
+### Image and test-instance safety
+
+No Phase 2E application code or database migration was applied in this blocked checkpoint, and no Phase 2E image was built or pushed. There is no image reference or digest to test. No new runtime environment variables were introduced; the live harness uses only `PULSE_DATA_DIR`, `PULSE_KOMODO_LIVE_QUALIFICATION=1`, and the non-secret connection UUID as documented above. Do not use the Phase 2D image/source as though it contains Phase 2E integration.
+
+Once the live gate and implementation tests pass, build from the existing production `Dockerfile` with the full source SHA in a dedicated test tag. Keep it local or publish it only under a unique non-stable tag; never overwrite `latest` or the stable tag. Use a copied data directory and a separate test container/Compose project, not the live writable Pulse database. Before testing a schema-bearing revision, create and verify a backup of the copied database; test upgrade, restart, and rollback against that copy. Rollback means stopping the new test container and starting the previous SHA against its pristine pre-upgrade data copy; do not assume a database upgraded by a newer image is backward-compatible. If only the migrated copy remains, restore the verified backup. No schema change was introduced here. Preserve the existing encryption key/config pairing in the copy; do not share it in chat or logs. Keep existing runtime environment/configuration unchanged except for the isolated data-directory path and the opt-in qualification variables from the Phase 2D procedure.
+
+### Operator checklist to unblock live qualification
+
+1. Make the authorized Komodo Core HTTPS endpoint reachable from the Codex/Pulse test environment and place its existing approved read-only connection in the protected Pulse data directory. Do not create a new privileged credential or send a secret in chat.
+2. Provide the non-secret `PULSE_DATA_DIR` path and Pulse Komodo connection UUID. In Komodo's UI, confirm the principal is non-admin, has no create/elevated permission, and has no UserGroup grant above inventory read.
+3. Run `TestLiveCoreV2Qualification` from the Phase 2D procedure. Review Core version, all four verified scopes, inventory counts, parent evidence, unresolved selected-parent references, and stable IDs. Capture no credential, raw API response, configuration, or sensitive resource payload in the report.
+4. In an isolated Pulse organization, explicitly link the selected Proxmox VM and Komodo Server based on operator knowledge; validate the persisted link and dependency edge across polling, restart, and provider staleness. Separately identify the Docker host, Traefik host, Jellyfin check, and authoritative route evidence before authoring any additional relationships.
+5. Only after those checks, implement and test the existing alert, incident, notification, UI, and Patrol integration seams; then build and smoke-test the SHA-tagged image against a copied data directory. Record schema/backup/rollback behavior and the local image reference or immutable digest before operator review.
+
+No production deployment, stable-image update, Komodo mutation, action authority, execution capability, or remediation was performed.
