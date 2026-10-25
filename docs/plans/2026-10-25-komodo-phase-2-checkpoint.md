@@ -411,3 +411,13 @@ Once the live gate and implementation tests pass, build from the existing produc
 5. Only after those checks, implement and test the existing alert, incident, notification, UI, and Patrol integration seams; then build and smoke-test the SHA-tagged image against a copied data directory. Record schema/backup/rollback behavior and the local image reference or immutable digest before operator review.
 
 No production deployment, stable-image update, Komodo mutation, action authority, execution capability, or remediation was performed.
+
+## Phase 2E resumed endpoint qualification — 2026-10-25
+
+The operator supplied the Komodo HTTPS endpoint. DNS resolved it to a private address, TLS 1.3 negotiated with the expected wildcard certificate and certificate verification succeeded. An unauthenticated `POST /read/GetVersion` reached the API and returned HTTP 401. This confirms DNS, HTTPS/TLS, and API route reachability only; it does not verify a Komodo Core version or authenticated API compatibility.
+
+No Komodo-related environment variables or `PULSE_DATA_DIR` are configured in this workspace. The default `/etc/pulse/komodo.enc` is absent (the encryption key file is present but was not read); `/var/lib/pulse/komodo.enc` is also absent. No credential was available to the harness. No secret was requested, displayed, exported, or logged.
+
+**Live qualification remains blocked on protected configuration.** In an isolated Pulse test organization, the operator must save the already-approved read-only connection through Infrastructure settings, using the supplied HTTPS endpoint and existing approved credentials. Make only that isolated data directory available to this test environment, retaining its paired `komodo.enc` and `.encryption.key` with restrictive file permissions; do not point the test at the production writable database. Then provide the non-secret data-directory path and Pulse connection UUID. Run the existing harness as the normal unprivileged test user with `PULSE_KOMODO_LIVE_QUALIFICATION=1`, `PULSE_DATA_DIR=<isolated-config-data-directory>`, and `PULSE_KOMODO_QUALIFICATION_CONNECTION_ID=<connection-uuid>` set for `go test ./internal/komodo -run '^TestLiveCoreV2Qualification$' -v`. Do not send the API key or secret through chat, shell arguments, or logs. The harness prints only its bounded qualification summary.
+
+Until that run succeeds and the operator confirms effective non-admin/read-only permissions, do not claim live compatibility, begin the conditional Phase 2E monitoring integration, or build a Phase 2E test image. No Komodo mutation, deployment, or merge occurred.
