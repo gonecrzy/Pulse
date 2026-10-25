@@ -29,10 +29,10 @@ def job_block(workflow, job):
 
 
 def assert_workflow_policy(test, workflow):
-    for event in ("pull_request", "push"):
-        block = re.split(r"(?m)^  \S", workflow.split(f"  {event}:\n", 1)[1], maxsplit=1)[0]
-        test.assertIn("'scripts/collect_e2e_container_logs.py'", block)
-        test.assertIn("'scripts/tests/test_e2e_container_logs.py'", block)
+    block = workflow.split("  pull_request:\n", 1)[1].split("\n  workflow_dispatch:", 1)[0]
+    test.assertIn("'scripts/collect_e2e_container_logs.py'", block)
+    test.assertIn("'scripts/tests/test_e2e_container_logs.py'", block)
+    test.assertNotRegex(workflow, r"(?m)^  push:\s*$")
     selection = job_block(workflow, "tier-selection")
     test.assertLess(selection.index("python3 scripts/tests/test_e2e_container_logs.py"),
                     selection.index("npm ci"))
