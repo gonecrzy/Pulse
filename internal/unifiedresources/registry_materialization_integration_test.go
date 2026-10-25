@@ -47,6 +47,21 @@ func TestRegistryMaterializedMetadataConnectedDemo(t *testing.T) {
 			t.Fatalf("%s: fixture is not a large estate (%d resources)", stage, len(actual))
 		}
 		if !reflect.DeepEqual(actual, expected) {
+			for i := range expected {
+				if i >= len(actual) || reflect.DeepEqual(actual[i], expected[i]) {
+					continue
+				}
+				got, want := reflect.ValueOf(actual[i]), reflect.ValueOf(expected[i])
+				for field := 0; field < got.NumField(); field++ {
+					if got.Type().Field(field).PkgPath != "" {
+						continue
+					}
+					if !reflect.DeepEqual(got.Field(field).Interface(), want.Field(field).Interface()) {
+						t.Logf("%s: resource %s field %s differs: got=%#v want=%#v", stage, expected[i].ID, got.Type().Field(field).Name, got.Field(field).Interface(), want.Field(field).Interface())
+					}
+				}
+				break
+			}
 			t.Fatalf("%s: complete demo resources differ from fresh clone", stage)
 		}
 		a, err := json.Marshal(actual)

@@ -16,7 +16,9 @@ func freshRegistryListForMetadataTest(rr *ResourceRegistry) []Resource {
 	defer rr.mu.RUnlock()
 	out := make([]Resource, 0, len(rr.resources))
 	for _, r := range rr.resources {
-		out = append(out, cloneResource(r))
+		clone := cloneResource(r)
+		rr.refreshRelationshipFreshnessLocked(&clone)
+		out = append(out, clone)
 	}
 	sortResourcesByName(out)
 	return out

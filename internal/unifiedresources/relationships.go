@@ -103,6 +103,13 @@ type ResourceRelationship struct {
 	Type       RelationshipType `json:"type"`
 	Confidence float64          `json:"confidence"` // 1.0 for defined relationships, lower for heuristics
 	EvidenceID string           `json:"evidenceId,omitempty"`
+	// EvidenceSource identifies the provider that observed a discovered edge.
+	// EvidenceFreshness is updated with that provider's registry freshness; an
+	// operator-authored edge is independent of provider polling.
+	EvidenceSource    DataSource `json:"evidenceSource,omitempty"`
+	EvidenceFreshness string     `json:"evidenceFreshness,omitempty"`
+	Reason            string     `json:"reason,omitempty"`
+	CreatedBy         string     `json:"createdBy,omitempty"`
 
 	// Provenance and time boundaries
 	Active     bool           `json:"active"`     // False means historical edge
@@ -159,6 +166,25 @@ func ResourceRelationshipsWithCanonicalParent(resource Resource) []ResourceRelat
 			"source": "parentId",
 		},
 	}
+	var parentEvidenceSources []DataSource
+	for source, sourceParentID := range resource.parentBySource {
+		if CanonicalResourceID(sourceParentID) == parentID {
+			parentEvidenceSources = append(parentEvidenceSources, source)
+		}
+	}
+	if len(parentEvidenceSources) == 0 && len(resource.Sources) == 1 {
+		parentEvidenceSources = append(parentEvidenceSources, resource.Sources[0])
+	}
+	if len(parentEvidenceSources) == 1 {
+		parent.EvidenceSource = parentEvidenceSources[0]
+		if sighting, ok := resource.SourceStatus[parent.EvidenceSource]; ok {
+			if sighting.Status == "stale" {
+				parent.EvidenceFreshness = RelationshipFreshnessStale
+			} else if sighting.Status != "unknown" {
+				parent.EvidenceFreshness = RelationshipFreshnessCurrent
+			}
+		}
+	}
 	normalizeResourceRelationship(&parent)
 	return append(relationships, parent)
 }
@@ -179,6 +205,10 @@ func normalizeResourceRelationship(relationship *ResourceRelationship) {
 	relationship.SourceID = CanonicalResourceID(relationship.SourceID)
 	relationship.TargetID = CanonicalResourceID(relationship.TargetID)
 	relationship.Discoverer = strings.TrimSpace(relationship.Discoverer)
+	relationship.EvidenceSource = DataSource(strings.TrimSpace(string(relationship.EvidenceSource)))
+	relationship.EvidenceFreshness = strings.TrimSpace(relationship.EvidenceFreshness)
+	relationship.Reason = strings.TrimSpace(relationship.Reason)
+	relationship.CreatedBy = strings.TrimSpace(relationship.CreatedBy)
 	relationship.EvidenceID = strings.TrimSpace(relationship.EvidenceID)
 	if strings.TrimSpace(relationship.ID) != "" ||
 		relationship.SourceID == "" ||

@@ -72,7 +72,12 @@ func TestResourceReportMergeSplitsOperatorLinkedPair(t *testing.T) {
 			if tc.linkFromAgent {
 				fromID, targetID = agentID, otherID
 			}
-			postResourceAction(t, h, fromID, "link", map[string]any{"targetId": targetID})
+			linkPayload := map[string]any{"targetId": targetID}
+			if tc.name == "agent-agent" {
+				linkPayload["confirmProviderConflict"] = true
+				linkPayload["reason"] = "operator confirmed these agent records describe the same host"
+			}
+			postResourceAction(t, h, fromID, "link", linkPayload)
 			linked := rebuild()
 			if len(linked) != 1 {
 				t.Fatalf("link left %d monitor resources, want one: %+v", len(linked), linked)

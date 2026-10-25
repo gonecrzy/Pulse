@@ -464,6 +464,23 @@ func (s *SQLiteResourceStore) initSchema() error {
 	);
 	CREATE INDEX IF NOT EXISTS idx_resource_links_primary ON resource_links(primary_id);
 
+	CREATE TABLE IF NOT EXISTS operator_resource_relationships (
+		id TEXT PRIMARY KEY,
+		source_id TEXT NOT NULL,
+		target_id TEXT NOT NULL,
+		relationship_type TEXT NOT NULL,
+		reason TEXT,
+		created_by TEXT,
+		updated_by TEXT,
+		created_at DATETIME NOT NULL,
+		updated_at DATETIME NOT NULL,
+		removed_by TEXT,
+		removed_at DATETIME,
+		UNIQUE(source_id, target_id, relationship_type)
+	);
+	CREATE INDEX IF NOT EXISTS idx_operator_relationships_source ON operator_resource_relationships(source_id, removed_at);
+	CREATE INDEX IF NOT EXISTS idx_operator_relationships_target ON operator_resource_relationships(target_id, removed_at);
+
 	CREATE TABLE IF NOT EXISTS resource_exclusions (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		resource_a TEXT NOT NULL,
@@ -3680,6 +3697,7 @@ func (s *SQLiteResourceStore) ClearResourceOperatorStateWithMaintenanceLifecycle
 type MemoryStore struct {
 	mu                     sync.RWMutex
 	links                  []ResourceLink
+	operatorRelationships  map[string]OperatorResourceRelationship
 	exclusions             []ResourceExclusion
 	changes                []ResourceChange
 	actionAudits           []ActionAuditRecord
@@ -3696,6 +3714,7 @@ type MemoryStore struct {
 
 func NewMemoryStore() *MemoryStore {
 	return &MemoryStore{
+		operatorRelationships:  make(map[string]OperatorResourceRelationship),
 		resourceOperatorState:  make(map[string]ResourceOperatorState),
 		loopReports:            make(map[string]LoopReport),
 		identityPins:           make(map[string]ResourceIdentityPin),

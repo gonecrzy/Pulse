@@ -161,6 +161,25 @@ func TestResourceRelationshipsWithCanonicalParent(t *testing.T) {
 	}
 }
 
+func TestCanonicalParentFreshnessUsesItsProviderAfterIdentityFold(t *testing.T) {
+	parentID := "host:media"
+	resource := Resource{
+		ID: "service:jellyfin", Type: ResourceTypeKomodoDeployment, ParentID: &parentID,
+		Sources: []DataSource{SourceKomodo, SourceProxmox},
+		SourceStatus: map[DataSource]SourceStatus{
+			SourceKomodo: {Status: "stale"}, SourceProxmox: {Status: "online"},
+		},
+		parentBySource: map[DataSource]string{SourceKomodo: parentID},
+	}
+	relationships := ResourceRelationshipsWithCanonicalParent(resource)
+	if len(relationships) != 1 {
+		t.Fatalf("parent relationships = %+v, want one", relationships)
+	}
+	if got := relationships[0]; got.EvidenceSource != SourceKomodo || got.EvidenceFreshness != RelationshipFreshnessStale {
+		t.Fatalf("parent evidence = %+v, want stale Komodo evidence", got)
+	}
+}
+
 func TestNormalizeResourceRelationshipAddsStableAuditIdentity(t *testing.T) {
 	relationship := ResourceRelationship{
 		SourceID:   " network-endpoint:check-1 ",

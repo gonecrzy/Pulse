@@ -270,10 +270,15 @@ export type ResourceRelationshipType =
   | string;
 
 export interface ResourceRelationship {
+  id?: string;
   sourceId: string;
   targetId: string;
   type: ResourceRelationshipType;
   confidence: number;
+  evidenceSource?: string;
+  evidenceFreshness?: 'current' | 'stale' | 'unknown';
+  reason?: string;
+  createdBy?: string;
   active: boolean;
   discoverer: string;
   observedAt: string;

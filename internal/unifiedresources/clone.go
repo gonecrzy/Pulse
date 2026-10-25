@@ -68,6 +68,7 @@ func cloneResourceData(in *Resource) Resource {
 	out.Metrics = cloneResourceMetrics(in.Metrics)
 	out.ParentID = cloneStringPtr(in.ParentID)
 	out.parentBySource = cloneParentBySourceMap(in.parentBySource)
+	out.sourceIDs = cloneProviderSourceIDs(in.sourceIDs)
 	out.linkFolds = cloneManualLinkFolds(in.linkFolds)
 	out.Tags = cloneStringSlice(in.Tags)
 	out.Incidents = cloneResourceIncidentSlice(in.Incidents)
@@ -110,6 +111,17 @@ func cloneParentBySourceMap(in map[DataSource]string) map[DataSource]string {
 	out := make(map[DataSource]string, len(in))
 	for source, parentID := range in {
 		out[source] = parentID
+	}
+	return out
+}
+
+func cloneProviderSourceIDs(in map[DataSource][]string) map[DataSource][]string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[DataSource][]string, len(in))
+	for source, ids := range in {
+		out[source] = append([]string(nil), ids...)
 	}
 	return out
 }

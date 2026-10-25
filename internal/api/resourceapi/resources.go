@@ -521,6 +521,10 @@ func (h *QueryService) HandleResourceRoutes(w http.ResponseWriter, r *http.Reque
 		h.HandleGetChildren(w, r)
 		return
 	}
+	if strings.HasSuffix(r.URL.Path, "/relationships") {
+		h.HandleOperatorRelationships(w, r)
+		return
+	}
 	if strings.HasSuffix(r.URL.Path, "/metrics") {
 		h.HandleGetMetrics(w, r)
 		return
@@ -831,8 +835,9 @@ func (h *QueryService) HandleLink(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var payload struct {
-		TargetID string `json:"targetId"`
-		Reason   string `json:"reason"`
+		TargetID                string `json:"targetId"`
+		Reason                  string `json:"reason"`
+		ConfirmProviderConflict bool   `json:"confirmProviderConflict"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 		http.Error(w, "Invalid JSON", http.StatusBadRequest)
@@ -843,6 +848,34 @@ func (h *QueryService) HandleLink(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	payload.TargetID = unified.CanonicalResourceID(payload.TargetID)
+	if payload.TargetID == path {
+		http.Error(w, "Resources must have different IDs", http.StatusBadRequest)
+		return
+	}
+	registry, err := h.buildRegistry(orgID)
+	if err != nil {
+		http.Error(w, sanitizeError(err, "Internal server error"), http.StatusInternalServerError)
+		return
+	}
+	if err := registry.ValidateIdentityLink(path, payload.TargetID); err != nil {
+		var conflict *unified.IdentityLinkConflictError
+		var unavailable *unified.IdentityLinkUnavailableError
+		if errors.As(err, &conflict) {
+			if !payload.ConfirmProviderConflict || strings.TrimSpace(payload.Reason) == "" {
+				http.Error(w, err.Error(), http.StatusConflict)
+				return
+			}
+			// Same-provider folds are exceptional, but remain possible when an
+			// operator explicitly acknowledges the reported collision and gives
+			// an audit reason. The default request is fail-closed.
+		} else if errors.As(err, &unavailable) {
+			http.Error(w, err.Error(), http.StatusConflict)
+			return
+		} else {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
 
 	link := unified.ResourceLink{
 		ResourceA: path,
@@ -864,6 +897,207 @@ func (h *QueryService) HandleLink(w http.ResponseWriter, r *http.Request) {
 		"status":  "ok",
 		"message": "Resources linked",
 	})
+}
+
+// HandleOperatorRelationships reads and mutates org-scoped operator-authored
+// dependency and route edges. POST adds or updates an edge; DELETE retires it.
+// GET returns active persisted edges whose source is the path resource.
+func (h *QueryService) HandleOperatorRelationships(w http.ResponseWriter, r *http.Request) {
+	orgID := apicontext.OrgID(r.Context())
+	store, err := h.getStore(orgID)
+	if err != nil {
+		http.Error(w, sanitizeError(err, "Internal server error"), http.StatusInternalServerError)
+		return
+	}
+	relationshipStore, ok := store.(unified.OperatorRelationshipStore)
+	if !ok {
+		http.Error(w, "Operator relationship storage unavailable", http.StatusNotImplemented)
+		return
+	}
+	path := strings.TrimPrefix(r.URL.Path, "/api/resources/")
+	path = strings.TrimSuffix(path, "/relationships")
+	path = strings.TrimSuffix(path, "/")
+	sourceID := unified.CanonicalResourceID(path)
+	if sourceID == "" {
+		http.Error(w, "Resource ID required", http.StatusBadRequest)
+		return
+	}
+	registry, err := h.buildRegistry(orgID)
+	if err != nil {
+		http.Error(w, sanitizeError(err, "Internal server error"), http.StatusInternalServerError)
+		return
+	}
+	resolvedSourceID := resolveOperatorRelationshipEndpoint(registry, sourceID)
+
+	switch r.Method {
+	case http.MethodGet:
+		relationships, err := relationshipStore.ListOperatorRelationships()
+		if err != nil {
+			http.Error(w, sanitizeError(err, "Internal server error"), http.StatusInternalServerError)
+			return
+		}
+		out := make([]unified.OperatorResourceRelationship, 0)
+		for _, relationship := range relationships {
+			projectedSourceID := resolveOperatorRelationshipEndpoint(registry, relationship.SourceID)
+			if projectedSourceID != resolvedSourceID {
+				continue
+			}
+			projectedTargetID := resolveOperatorRelationshipEndpoint(registry, relationship.TargetID)
+			if projectedTargetID == projectedSourceID {
+				continue
+			}
+			relationship.SourceID = projectedSourceID
+			relationship.TargetID = projectedTargetID
+			out = append(out, relationship)
+		}
+		sort.Slice(out, func(i, j int) bool {
+			if out[i].TargetID != out[j].TargetID {
+				return out[i].TargetID < out[j].TargetID
+			}
+			return out[i].Type < out[j].Type
+		})
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]any{"relationships": out})
+	case http.MethodPost, http.MethodDelete:
+		var payload struct {
+			TargetID string `json:"targetId"`
+			Type     string `json:"type"`
+			Reason   string `json:"reason"`
+		}
+		decoder := json.NewDecoder(io.LimitReader(r.Body, 16*1024))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&payload); err != nil {
+			http.Error(w, "Invalid relationship JSON", http.StatusBadRequest)
+			return
+		}
+		targetID := unified.CanonicalResourceID(payload.TargetID)
+		relationshipType := unified.RelationshipType(strings.TrimSpace(payload.Type))
+		if targetID == "" || relationshipType == "" {
+			http.Error(w, "targetId and type are required", http.StatusBadRequest)
+			return
+		}
+		if !unified.IsOperatorRelationshipType(relationshipType) {
+			http.Error(w, "Unsupported operator relationship type", http.StatusBadRequest)
+			return
+		}
+		resolvedTargetID := resolveOperatorRelationshipEndpoint(registry, targetID)
+		if r.Method == http.MethodPost && resolvedSourceID == resolvedTargetID {
+			http.Error(w, "A resource cannot have a relationship to itself", http.StatusBadRequest)
+			return
+		}
+		actor := getUserID(r)
+		if r.Method == http.MethodDelete {
+			matches, err := matchingOperatorRelationships(relationshipStore, registry, resolvedSourceID, resolvedTargetID, relationshipType)
+			if err != nil {
+				http.Error(w, sanitizeError(err, "Internal server error"), http.StatusInternalServerError)
+				return
+			}
+			if len(matches) == 0 {
+				http.Error(w, "Relationship not found", http.StatusNotFound)
+				return
+			}
+			if len(matches) > 1 {
+				http.Error(w, "Multiple stored relationships resolve to this edge", http.StatusConflict)
+				return
+			}
+			stored := matches[0]
+			removed, err := relationshipStore.RemoveOperatorRelationship(stored.SourceID, stored.TargetID, relationshipType, actor, time.Now().UTC())
+			if err != nil {
+				http.Error(w, sanitizeError(err, "Internal server error"), http.StatusInternalServerError)
+				return
+			}
+			if !removed {
+				http.Error(w, "Relationship not found", http.StatusNotFound)
+				return
+			}
+			h.invalidateCache(orgID)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "removed"})
+			return
+		}
+		matches, err := matchingOperatorRelationships(relationshipStore, registry, resolvedSourceID, resolvedTargetID, relationshipType)
+		if err != nil {
+			http.Error(w, sanitizeError(err, "Internal server error"), http.StatusInternalServerError)
+			return
+		}
+		if len(matches) > 1 {
+			http.Error(w, "Multiple stored relationships resolve to this edge", http.StatusConflict)
+			return
+		}
+		storedSourceID, storedTargetID := sourceID, targetID
+		if len(matches) == 1 {
+			// Keep the original stable identity for an edge whose endpoint was
+			// folded under a different canonical resource.
+			storedSourceID, storedTargetID = matches[0].SourceID, matches[0].TargetID
+		}
+		now := time.Now().UTC()
+		relationship := unified.OperatorResourceRelationship{
+			SourceID:  storedSourceID,
+			TargetID:  storedTargetID,
+			Type:      relationshipType,
+			Reason:    payload.Reason,
+			CreatedBy: actor,
+			UpdatedBy: actor,
+			CreatedAt: now,
+			UpdatedAt: now,
+		}
+		if err := relationshipStore.PutOperatorRelationship(relationship); err != nil {
+			http.Error(w, "Invalid operator relationship", http.StatusBadRequest)
+			return
+		}
+		stored := relationship
+		stored.ID = unified.OperatorRelationshipID(storedSourceID, storedTargetID, relationshipType)
+		if relationships, err := relationshipStore.ListOperatorRelationships(); err == nil {
+			for _, candidate := range relationships {
+				if candidate.ID == stored.ID {
+					stored = candidate
+					break
+				}
+			}
+		}
+		h.invalidateCache(orgID)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(map[string]any{"relationship": stored})
+	default:
+		w.Header().Set("Allow", "GET, POST, DELETE")
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func resolveOperatorRelationshipEndpoint(registry *unified.ResourceRegistry, resourceID string) string {
+	resourceID = unified.CanonicalResourceID(resourceID)
+	if resourceID == "" || registry == nil {
+		return resourceID
+	}
+	if resolvedID, ok := registry.ResolveReferenceID(resourceID); ok && resolvedID != "" {
+		return unified.CanonicalResourceID(resolvedID)
+	}
+	return resourceID
+}
+
+func matchingOperatorRelationships(
+	store unified.OperatorRelationshipStore,
+	registry *unified.ResourceRegistry,
+	sourceID, targetID string,
+	relationshipType unified.RelationshipType,
+) ([]unified.OperatorResourceRelationship, error) {
+	relationships, err := store.ListOperatorRelationships()
+	if err != nil {
+		return nil, err
+	}
+	matches := make([]unified.OperatorResourceRelationship, 0, 1)
+	for _, relationship := range relationships {
+		if relationship.Type != relationshipType ||
+			resolveOperatorRelationshipEndpoint(registry, relationship.SourceID) != sourceID ||
+			resolveOperatorRelationshipEndpoint(registry, relationship.TargetID) != targetID {
+			continue
+		}
+		matches = append(matches, relationship)
+	}
+	return matches, nil
 }
 
 // HandleUnlink handles POST /api/resources/{id}/unlink.
@@ -1117,13 +1351,16 @@ func (h *QueryService) buildRegistry(orgID string) (*unified.ResourceRegistry, e
 		seedSources := unifiedSeedSources(seed.resources)
 		for _, source := range supplementalSources {
 			provider := supplementalProviders[source]
+			// Komodo source-native IDs are intentionally not exposed in resource
+			// JSON. Replaying the supplemental records rehydrates the registry's
+			// private provider-identity map from a serialized unified snapshot.
 			// Availability records are safe authoritative replacements and
 			// must replay even when an older unified seed contains standalone
 			// endpoints. Pre-fix seeds could otherwise hide attached targets
 			// while falsely looking source-complete.
 			if provider == nil ||
 				!sourceOwnedBySupplementalProvider(source, ownedSources) ||
-				(source != unified.SourceAvailability && unifiedSeedIncludesSource(seedSources, source)) {
+				(source != unified.SourceAvailability && source != unified.SourceKomodo && unifiedSeedIncludesSource(seedSources, source)) {
 				continue
 			}
 			records := supplementalRecordsForOrg(provider, orgID)

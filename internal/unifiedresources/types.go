@@ -56,6 +56,11 @@ type Resource struct {
 	ParentName     string  `json:"parentName,omitempty"`
 	ChildCount     int     `json:"childCount,omitempty"`
 	parentBySource map[DataSource]string
+	// sourceIDs carries provider-native identity keys across detached in-memory
+	// registry snapshots. It is intentionally not exposed in resource JSON;
+	// adapters must rehydrate it from the provider when rebuilding after a
+	// process restart.
+	sourceIDs map[DataSource][]string
 	// linkFolds lists the operator links folded into this resource
 	// (recordManualLinkFold); report-merge excludes their pairs.
 	linkFolds []ManualLinkFold

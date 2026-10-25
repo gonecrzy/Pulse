@@ -89,22 +89,24 @@ type IngestRecord struct {
 
 // ResourceRegistry merges resources from multiple sources.
 type ResourceRegistry struct {
-	mu           sync.RWMutex
-	resources    map[string]*Resource
-	bySource     map[DataSource]map[string]string
-	matcher      *IdentityMatcher
-	store        ResourceStore
-	links        []ResourceLink
-	exclusions   map[string]time.Time // exclusionKey -> when the operator last split the pair
-	linksByID    map[string][]ResourceLink
-	splitAgents  map[string]nodeAgentLinkSide // node source ID -> the linked agent the operator split it from
-	identityPins *identityPinIndex
-	pbsBackups   []models.PBSBackup
+	mu                    sync.RWMutex
+	resources             map[string]*Resource
+	bySource              map[DataSource]map[string]string
+	matcher               *IdentityMatcher
+	store                 ResourceStore
+	links                 []ResourceLink
+	operatorRelationships []OperatorResourceRelationship
+	exclusions            map[string]time.Time // exclusionKey -> when the operator last split the pair
+	linksByID             map[string][]ResourceLink
+	splitAgents           map[string]nodeAgentLinkSide // node source ID -> the linked agent the operator split it from
+	identityPins          *identityPinIndex
+	pbsBackups            []models.PBSBackup
 	// overridesUnreadable records that the store could not be read for the
 	// operator's links or exclusions when this registry loaded them, so
 	// links, linksByID and exclusions lack the decisions that read held
 	// (carryOverridesFrom).
-	overridesUnreadable bool
+	overridesUnreadable             bool
+	operatorRelationshipsUnreadable bool
 	// linkFoldIndex maps each canonical ID a manual link folded into another
 	// resource to the rows that took it in (Resource.linkFolds). Folded
 	// resources are still observed, so identity succession treats them as
@@ -307,6 +309,7 @@ func (rr *ResourceRegistry) loadOverrides() {
 		log.Printf("unifiedresources: failed to load manual exclusions from store: %v", err)
 		rr.overridesUnreadable = true
 	}
+	rr.loadOperatorRelationships()
 }
 
 // carryOverridesFrom keeps in-memory operator decisions across a rebuild,
@@ -324,16 +327,21 @@ func (rr *ResourceRegistry) loadOverrides() {
 // stale resource data is worse than stale decisions. A registry whose reads
 // succeeded keeps what it read.
 func (rr *ResourceRegistry) carryOverridesFrom(previous *ResourceRegistry) {
-	if previous == nil || previous == rr || (rr.store != nil && !rr.overridesUnreadable) {
+	if previous == nil || previous == rr || (rr.store != nil && !rr.overridesUnreadable && !rr.operatorRelationshipsUnreadable) {
 		return
 	}
 	previous.mu.RLock()
 	defer previous.mu.RUnlock()
-	rr.links = slices.Clone(previous.links)
-	rr.linksByID = indexLinksByID(rr.links)
-	rr.exclusions = maps.Clone(previous.exclusions)
-	if rr.exclusions == nil {
-		rr.exclusions = make(map[string]time.Time)
+	if rr.store == nil || rr.overridesUnreadable {
+		rr.links = slices.Clone(previous.links)
+		rr.linksByID = indexLinksByID(rr.links)
+		rr.exclusions = maps.Clone(previous.exclusions)
+		if rr.exclusions == nil {
+			rr.exclusions = make(map[string]time.Time)
+		}
+	}
+	if rr.store == nil || rr.operatorRelationshipsUnreadable {
+		rr.operatorRelationships = slices.Clone(previous.operatorRelationships)
 	}
 }
 
@@ -1117,6 +1125,17 @@ func (rr *ResourceRegistry) seedSourceMappingsFromResourceLocked(resource *Resou
 			}
 			continue
 		}
+		if sourceIDs := resource.sourceIDs[source]; len(sourceIDs) > 0 {
+			if _, ok := rr.bySource[source]; !ok {
+				rr.bySource[source] = make(map[string]string)
+			}
+			for _, sourceID := range sourceIDs {
+				if sourceID = normalizeSourceID(sourceID); sourceID != "" {
+					rr.bySource[source][sourceID] = resource.ID
+				}
+			}
+			continue
+		}
 		sourceID := rr.seedSourceIDForResourceLocked(resource, source)
 		sourceID = normalizeSourceID(sourceID)
 		if sourceID == "" {
@@ -1578,7 +1597,10 @@ func (rr *ResourceRegistry) listMaterialized(withTargets bool) ([]Resource, map[
 		}
 		out := make([]Resource, 0, len(rr.resources))
 		for _, r := range rr.resources {
-			out = append(out, cloneMaterializedResource(r))
+			clone := cloneMaterializedResource(r)
+			rr.operatorRelationshipsForResourceLocked(&clone)
+			rr.refreshRelationshipFreshnessLocked(&clone)
+			out = append(out, clone)
 			if withTargets {
 				if target := rr.metricsTargetFromSourceTargets(r, sourceTargets[r.ID]); target != nil {
 					targets[r.ID] = *target
@@ -1614,7 +1636,10 @@ func (rr *ResourceRegistry) ListByType(t ResourceType) []Resource {
 		if CanonicalResourceType(r.Type) != t {
 			continue
 		}
-		out = append(out, cloneResource(r))
+		clone := cloneResource(r)
+		rr.operatorRelationshipsForResourceLocked(&clone)
+		rr.refreshRelationshipFreshnessLocked(&clone)
+		out = append(out, clone)
 	}
 	sort.Slice(out, func(i, j int) bool {
 		return out[i].ID < out[j].ID
@@ -1632,6 +1657,8 @@ func (rr *ResourceRegistry) Get(id string) (*Resource, bool) {
 		return nil, false
 	}
 	clone := cloneResource(r)
+	rr.operatorRelationshipsForResourceLocked(&clone)
+	rr.refreshRelationshipFreshnessLocked(&clone)
 	return &clone, true
 }
 
@@ -1658,6 +1685,8 @@ func (rr *ResourceRegistry) GetByReference(ref string) (*Resource, string, bool)
 		return nil, "", false
 	}
 	clone := cloneResource(rr.resources[resolvedID])
+	rr.operatorRelationshipsForResourceLocked(&clone)
+	rr.refreshRelationshipFreshnessLocked(&clone)
 	return &clone, resolvedID, true
 }
 
@@ -2017,6 +2046,9 @@ func (rr *ResourceRegistry) markStaleLocked(now time.Time, thresholds map[DataSo
 		}
 		if staleFound {
 			applyStaleStatus(resource, now)
+		}
+		if rr.refreshRelationshipFreshnessLocked(resource) {
+			changed = true
 		}
 		changed = changed || resource.Status != previousStatus
 	}
@@ -3103,6 +3135,7 @@ func (rr *ResourceRegistry) ingestRecord(source DataSource, sourceID string, res
 		defer func() { rr.noteReporterEraLocked(source, sourceID, identity, ingestedID) }()
 	}
 	resource.Sources = []DataSource{source}
+	resource.sourceIDs = map[DataSource][]string{source: {sourceID}}
 	sighting := resource.SourceStatus[source]
 	sighting.Status = sourceSightingStatus(resource.LastSeen)
 	sighting.LastSeen = resource.LastSeen
@@ -4093,6 +4126,10 @@ func (rr *ResourceRegistry) mergeInto(existing *Resource, incoming Resource, sou
 	if existing == nil {
 		return
 	}
+	if existing.sourceIDs == nil {
+		existing.sourceIDs = make(map[DataSource][]string)
+	}
+	existing.sourceIDs[source] = uniqueStrings(append(existing.sourceIDs[source], sourceID))
 	// A source reported this row, so it is an observation again.
 	existing.continuityOnly = false
 
@@ -5167,6 +5204,14 @@ func (rr *ResourceRegistry) mergeResourceData(primary *Resource, other *Resource
 		return
 	}
 	primary.Relationships = mergeResourceRelationships(primary.Relationships, other.Relationships)
+	if len(other.sourceIDs) > 0 {
+		if primary.sourceIDs == nil {
+			primary.sourceIDs = make(map[DataSource][]string, len(other.sourceIDs))
+		}
+		for source, sourceIDs := range other.sourceIDs {
+			primary.sourceIDs[source] = uniqueStrings(append(primary.sourceIDs[source], sourceIDs...))
+		}
+	}
 	if other.parentBySource != nil {
 		if primary.parentBySource == nil {
 			primary.parentBySource = make(map[DataSource]string, len(other.parentBySource))
