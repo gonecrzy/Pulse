@@ -92,6 +92,7 @@ const (
 	RelStoresOn    RelationshipType = "stores_on"
 	RelProtectedBy RelationshipType = "protected_by"
 	RelMemberOf    RelationshipType = "member_of"
+	RelRoutesTo    RelationshipType = "routes_to"
 )
 
 // ResourceRelationship represents a typed relationship edge between two unified resources.

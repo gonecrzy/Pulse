@@ -8,7 +8,9 @@ import (
 func TestRelationshipTypeLabel(t *testing.T) {
 	cases := map[RelationshipType]string{
 		RelRunsOn:                       "Runs on",
+		RelHostedBy:                     "Hosted by",
 		RelDependsOn:                    "Depends on",
+		RelRoutesTo:                     "Routes to",
 		RelMountedTo:                    "Mounted to",
 		RelExposedBy:                    "Exposed by",
 		RelOwnedBy:                      "Owned by",
@@ -198,6 +200,7 @@ func TestOperationalTrustRelationshipVocabularyIsTyped(t *testing.T) {
 		RelProtectedBy,
 		RelChecks,
 		RelMemberOf,
+		RelRoutesTo,
 		RelExposedBy,
 	} {
 		if relationshipType == "" {

@@ -153,3 +153,70 @@ func TestKomodoRelationshipsFollowAnOperatorConfirmedProxmoxIdentityLink(t *test
 		t.Fatalf("linked server lost or misdirected Swarm membership: %+v", vm.Relationships)
 	}
 }
+
+func TestKomodoCanonicalPrimaryRetainsProxmoxMetricTarget(t *testing.T) {
+	const connectionID = "87ef53c3-9a5a-4d7b-a159-997ccca19811"
+	const pveSourceID = "pve:cluster-a:vmid:104"
+	const serverNativeID = "server-jellyfin"
+	komodoSourceID := SourceID(connectionID, KindServer, serverNativeID)
+	pveID := unifiedresources.SourceSpecificID(unifiedresources.ResourceTypeVM, unifiedresources.SourceProxmox, pveSourceID)
+	komodoID := unifiedresources.SourceSpecificID(unifiedresources.ResourceTypeKomodoServer, unifiedresources.SourceKomodo, komodoSourceID)
+	link := unifiedresources.ResourceLink{
+		ResourceA: pveID,
+		ResourceB: komodoID,
+		PrimaryID: komodoID,
+		Reason:    "operator-confirmed same machine",
+		CreatedAt: time.Unix(1, 0).UTC(),
+	}
+	now := time.Unix(300, 0).UTC()
+	komodoRecords := NormalizeInventory(connectionID, Inventory{
+		Servers: []Resource{{ID: serverNativeID, Name: "Jellyfin-DMZ", Kind: KindServer, State: "Ok"}},
+	}, now)
+	pveRecords := []unifiedresources.IngestRecord{{
+		SourceID: pveSourceID,
+		Resource: unifiedresources.Resource{
+			Type: unifiedresources.ResourceTypeVM, Name: "Jellyfin-DMZ", Status: unifiedresources.StatusOnline,
+			LastSeen: now, Proxmox: &unifiedresources.ProxmoxData{VMID: 104, Instance: "cluster-a"},
+		},
+	}}
+	for _, tc := range []struct {
+		name  string
+		order []unifiedresources.DataSource
+	}{
+		{name: "Komodo first", order: []unifiedresources.DataSource{unifiedresources.SourceKomodo, unifiedresources.SourceProxmox}},
+		{name: "Proxmox first", order: []unifiedresources.DataSource{unifiedresources.SourceProxmox, unifiedresources.SourceKomodo}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			registry := unifiedresources.NewRegistryWithManualLinks([]unifiedresources.ResourceLink{link})
+			adapter := unifiedresources.NewMonitorAdapter(registry)
+			for _, source := range tc.order {
+				if source == unifiedresources.SourceKomodo {
+					adapter.PopulateSupplementalRecords(source, komodoRecords)
+				} else {
+					adapter.PopulateSupplementalRecords(source, pveRecords)
+				}
+			}
+
+			resources := adapter.GetAll()
+			if len(resources) != 1 || resources[0].ID != komodoID || resources[0].Type != unifiedresources.ResourceTypeKomodoServer {
+				t.Fatalf("canonical resource = %+v, want the selected Komodo identity and type", resources)
+			}
+			if len(resources[0].Sources) != 2 || !containsDataSource(resources[0].Sources, unifiedresources.SourceKomodo) || !containsDataSource(resources[0].Sources, unifiedresources.SourceProxmox) {
+				t.Fatalf("canonical sources = %v, want Komodo and Proxmox", resources[0].Sources)
+			}
+			target := adapter.MetricsTargetForResource(komodoID)
+			if target == nil || target.ResourceType != "vm" || target.ResourceID != pveSourceID {
+				t.Fatalf("metrics target = %+v, want existing Proxmox VM history key vm/%s", target, pveSourceID)
+			}
+		})
+	}
+}
+
+func containsDataSource(sources []unifiedresources.DataSource, target unifiedresources.DataSource) bool {
+	for _, source := range sources {
+		if source == target {
+			return true
+		}
+	}
+	return false
+}

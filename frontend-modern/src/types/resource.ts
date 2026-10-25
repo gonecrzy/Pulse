@@ -256,12 +256,17 @@ export interface ResourceFacetCounts {
 
 export type ResourceRelationshipType =
   | 'runs_on'
+  | 'hosted_by'
   | 'depends_on'
+  | 'routes_to'
   | 'mounted_to'
   | 'exposed_by'
   | 'owned_by'
   | 'attached_to'
   | 'checks'
+  | 'member_of'
+  | 'stores_on'
+  | 'protected_by'
   | string;
 
 export interface ResourceRelationship {

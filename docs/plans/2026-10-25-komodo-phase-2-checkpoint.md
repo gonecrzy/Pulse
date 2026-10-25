@@ -18,7 +18,7 @@ The org-scoped poller uses Pulse's supplemental-record provider boundary. Succes
 - TrueNAS provides the closest supplemental-provider model: `internal/api/truenas_handlers.go` owns connection setup while `internal/monitoring/truenas_poller.go` owns org-scoped polling, cached status, failure retention, and normalized records. Komodo follows those boundaries without changing TrueNAS.
 - VMware's existing poller and `internal/api/connections_aggregator.go` show how provider health is projected into shared connection status. Komodo status is added to that aggregator; canonical connection-alert conversion remains a separate follow-up.
 - `internal/unifiedresources/monitor_adapter.go` already accepts supplemental records and `SnapshotOwnedSources` ownership declarations. The Komodo poller publishes through that API into the existing registry; it adds no scheduler or resource registry.
-- `internal/unifiedresources/metrics_targets.go` is the canonical history-target map. Since it has no Komodo mapping, normalized Komodo resources enter the inventory with no implied historical series.
+- `internal/unifiedresources/metrics_targets.go` is the canonical history-target map. Komodo has no native history mapping; an explicitly linked guest can reuse its existing Proxmox history target when that source identity is unambiguous.
 - `internal/api/router.go` owns poller startup and shutdown, while existing infrastructure settings and `ConnectionEditor` components own connection configuration. The Komodo UI uses those surfaces and the common `ConnectionType` API.
 
 ## Resource mapping matrix
@@ -27,7 +27,7 @@ All Komodo source IDs are opaque and stable within the Pulse connection: `komodo
 
 | Komodo kind | Pulse resource type | Parent / relationship mapping | Metrics and history key | Facet need |
 |---|---|---|---|---|
-| Server | `komodo-server` | Each listed Swarm `server_ids` entry produces Server `member_of` Swarm. No singular parent is inferred. | None assigned. `BuildMetricsTarget` returns nil; no Komodo metric writer or history family exists. | No new facet for current inventory fields. |
+| Server | `komodo-server` | Each listed Swarm `server_ids` entry produces Server `member_of` Swarm. No singular parent is inferred. | No Komodo-native history series. If explicitly linked to one Proxmox guest, the existing Proxmox VM/LXC history target is retained even when the Komodo Server is canonical. If multiple Proxmox history IDs conflict and Komodo is primary, the target is omitted as ambiguous. | No new facet for current inventory fields. |
 | Swarm | `komodo-swarm` | No singular parent. Membership is represented by `member_of` edges from known Servers. | None assigned; no historical series. | No new facet for current inventory fields. |
 | Stack | `komodo-stack` | `hosted_by` the same-connection Swarm when `swarm_id` is present; otherwise the same-connection Server from `server_id`; otherwise no parent. | None assigned; no historical series. | No new facet for current inventory fields. |
 | Deployment | `komodo-deployment` | `hosted_by` the same-connection Swarm when `swarm_id` is present; otherwise the same-connection Server from `server_id`; otherwise no parent. | None assigned; no historical series. | No new facet for current inventory fields. |
@@ -45,16 +45,48 @@ Pulse already has a central relationship graph and an operator-confirmed identit
 - `ResourceIdentity` and `bySource` preserve provider identities under the central registry. Komodo records carry empty inferred identity, so equal names do not cause identity matches. The new integration test also puts a same-named Proxmox resource and Komodo Server through the registry and asserts that they remain separate until linked.
 - The existing operator path is `POST /api/resources/{canonical-id}/link` with `targetId` and optional reason; `/unlink` splits a pair. The API delegates to the org-scoped `ResourceStore`. Its SQLite store persists `resource_links`, and registry generations reapply those decisions when snapshots rebuild. This is an identity merge, not a dependency edge. Operators should only link when they have verified that both source records identify the same machine.
 - Provider parent relationships use `ParentSourceID` and source-specific parent resolution; the registry materializes canonical parent IDs and can expose multiple `ResourceRelationship` edges. Edges carry type, confidence, evidence, discoverer, active state, timestamps, and safe metadata. This checkpoint updates central merge handling so operator identity folds rewrite relationship endpoints and deduplicate edges rather than lose them or leave edges pointing at a folded ID.
-- Docker network attachment edges are derived again from Docker-native inventory. Komodo edges are likewise rebuilt from each successful inventory. Generic dependency or route edges have no independent durable operator store, and there is no `routes_to` edge type or Traefik configuration parser.
+- Docker network attachment edges are derived again from Docker-native inventory. Komodo edges are likewise rebuilt from each successful inventory. Generic dependency or route edges have no independent durable operator store; `routes_to` is now a typed value, but has no producer or Traefik configuration parser.
 - `ResourceRelationshipsWithCanonicalParent` feeds resource API/detail projections. The generic Infrastructure resource detail drawer already has a “Relationship map”. Alert incident synthesis traverses active canonical relationships to build causal/correlated context; relationships do not independently close or suppress alerts. AI chat and handoff code can include generic relationship context, but Komodo-specific Patrol context still needs qualification and explicit product decisions. Polling does not depend on either.
 
 Future cross-provider routing or dependency work should extend this central graph and add explicit edge origin, verification, and persistence where operator-authored edges are required. Reuse the existing operator link for verified resource identity. Do not convert name similarity into identity or treat a dependency edge as an identity merge.
+
+## Phase 2B identity and relationship validation
+
+This follow-up validates the report above against the existing Proxmox, Docker, availability, and unified-resource paths. It makes one focused correction: when the operator selects a Komodo Server ID as the canonical ID for a Proxmox guest, the merged resource now keeps the Proxmox-owned metrics/history target. The root resource type and canonical ID still follow the operator's selected primary; its `Sources` and source-target mappings retain both provider identities.
+
+### Identity and relationship findings
+
+- **`same_as` is identity, not topology.** The existing `ResourceLink` / `resource_links` store is the durable operator decision. The chosen `PrimaryID` is the canonical resource ID while both linked members are present. Registry folding keeps both `SourceTargets`, rewrites parent and graph endpoints, and deduplicates edges. Names alone never create an identity link.
+- **Explicit links are transitive.** Existing `ResourceLink` components are equivalence sets, not one-to-one provider pairings. The regression fixture links one Komodo Server to two Proxmox VM IDs and confirms the current deterministic fold into the earliest selected primary. This preserves the explicit operator decisions, but it can combine two native identities from the same provider; whether the link API should reject or surface that collision remains open.
+- **Missing providers fail closed.** A stale source that still has a last-known record remains in the fold and keeps the primary ID. If a linked source is absent from a complete inventory, its remaining partner stays available under its own observed ID; the stored decision remains in the org's resource store and folds the records again when that source returns. The implementation does not synthesize a missing resource or guess that an ID has not been reused. Consequently, the canonical ID may temporarily change if the selected primary's record is removed, then returns to the selected primary ID on recovery.
+- **Metric ownership follows the metric-producing source.** When the Komodo Server is canonical and a Proxmox guest facet is present, the resource still targets `vm/<Proxmox source ID>`; a Proxmox LXC facet targets `system-container/<source ID>`. Komodo-only Servers and linked Proxmox nodes without a guest facet do not invent a target. If the Proxmox record is absent, the Proxmox target is absent until that source returns.
+- **Conflicting metric targets fail closed.** When the selected canonical ID is one of multiple Proxmox identities, metrics target selection now chooses the Proxmox candidate that generated that canonical ID. If Komodo is primary and multiple Proxmox history IDs are in the same explicit link component, no Proxmox history target is returned instead of choosing one by map iteration order.
+- **Parent and child edges stay in the central graph.** Komodo Stack/Deployment parents resolve to the linked Proxmox VM when their parent is the linked Server. A Server's Swarm `member_of` edge is rewritten to start at the canonical VM and retain the canonical Swarm target. Docker container parent edges and network attachment edges are already materialized by the Docker adapter in this registry; a Docker host can be explicitly identity-linked to a Proxmox VM or Komodo Server and child endpoints follow the fold.
+- **Availability association stays additive.** An explicit check configured against the Komodo Server ID resolves through the operator link after the infrastructure records are present. The check remains its own availability endpoint, projects its availability facet to the canonical VM, and emits a `checks` edge to that VM. Full snapshot rebuilds intentionally process availability records after infrastructure sources. An incremental check that arrives before its referenced resource is discovered remains unresolved until a later check poll; it never falls back to name matching.
+- **Consumers use existing projections.** The resource API emits canonical relationships; the Infrastructure resource drawer renders its Relationship map; alert incident synthesis traverses active typed edges; and AI/correlation/context code consumes generic edges. Storage topology is a domain-specific projection over storage resources, not another general resource graph. `routes_to` is now part of the shared relationship vocabulary and frontend type, but no parser, route producer, route UI, or route-based alert behavior is implemented here.
+
+### Relationship semantics and persistence decision
+
+| Meaning | Registry representation | Persistence and refresh |
+|---|---|---|
+| `same_as` | Existing operator `ResourceLink`, which folds source identities into one canonical row. It is deliberately not a self-edge in `ResourceRelationship`. | Existing org-scoped `resource_links` table in the SQLite `ResourceStore`; stable until operator unlink/split. |
+| `runs_on` / `hosted_by` | Directed `ResourceRelationship` or the same meaning projected from source-specific `ParentSourceID`. | Source-owned edges are emitted from normalized inventory and refreshed with the owning provider's complete snapshot. A failed collection keeps last-known records and edges with stale source status; a successful removal/empty snapshot removes the provider's omitted resources and edges. |
+| `routes_to` | New typed `RelRoutesTo` value on the existing edge model. | No producer or operator route API yet. Traefik parsing and route editing remain deferred. |
+| `depends_on` | Existing typed `RelDependsOn` value on the existing edge model. | No durable operator dependency API yet. Do not store these decisions in `resource_links`. |
+
+When operator-authored `depends_on` or `routes_to` is approved for implementation, persist those edges through the existing per-organization `ResourceStore` and SQLite database, in a table separate from `resource_links`. Store immutable edge ID, source and target canonical IDs, type, actor, reason, creation/update times, and an explicit removal state. Reconcile endpoints through the registry's identity-reference resolution at read/materialization time. Provider polling must never delete operator-owned rows. Keep automatic edges in provider snapshots with a declared discoverer/owner, and replace only that provider's edges after a successful complete collection; collection failures retain last-known edges and stale status. Do not create a second database or relationship engine. Decide unresolved-endpoint presentation and audit/retention policy before adding the API.
+
+For the requested example, the graph would fold each Proxmox/Komodo host pair only through its explicit `same_as` link, represent the Jellyfin and Traefik containers with `runs_on` edges to their canonical hosts, and eventually represent the proxy-to-backend path as `routes_to(Traefik, Jellyfin)`. The route's concrete target identity and refresh/verification policy remain open; this is a relationship model, not automatic Traefik parsing.
+
+### Live Core compatibility status and operator action
+
+No live Komodo endpoint or Komodo-named environment variable/approved credential was available in this workspace. No network call or live compatibility claim was made. Before live qualification, an operator must supply or select an authorized Komodo Core endpoint and existing read-only API key/secret, then verify: (1) `GetVersion` reports the installed Core v2 release; (2) the configured principal has only inventory `Read` scope for Server, Stack, Deployment, and Swarm and no specific Logs/Inspect/Terminal/Processes/Attach grants; (3) the listed native IDs are stable; and (4) Stack/Deployment `server_id`/`swarm_id` and Swarm `server_ids` match that release's returned items. Record the actual version and safe fixture shape, never the credentials or raw configuration. Do not create a privileged credential for this check.
 
 ## Remaining integration points
 
 | Area | Current foundation | Remaining work |
 |---|---|---|
-| Historical metrics | Generic targets exist for existing supported types; Komodo resource types are intentionally unmapped. | Pick a Komodo metric family/key, add a bounded metric writer and history API target, retention and migration behavior, charts, and tests. Decide whether each resource kind has useful metrics before adding a facet. |
+| Historical metrics | Komodo has no native history family. A single linked Proxmox guest retains its existing VM/LXC target; ambiguous multiple Proxmox targets fail closed. | Pick any future Komodo-native metric family/key, add a bounded writer and history API target, retention and migration behavior, charts, and tests. Decide whether each resource kind has useful metrics before adding a facet. |
 | Connection alerts | Komodo poll health appears in the connection aggregator and redacted status response. | `internal/api/connections_alerts.go` still maps only PVE/PBS/PMG/VMware/TrueNAS into `alerts.ConnectionSnapshot`; add Komodo connection state/category mapping and canonical alert lifecycle tests if these failures should raise connection alerts. |
 | Notification routing | Pulse's existing notification engine handles canonical alert notifications. | Decide whether Komodo connection/resource alert classes need routing preferences. Relationship-based destination selection is not implemented; add it only through the existing alert/notification flow after edge persistence and policy semantics are defined. |
 | Monitoring UI | Existing infrastructure settings workspace can add/test/edit/enable/disable/delete Komodo connections. The generic resource drawer can display relationships. | Add resource-kind presentation and meaningful detail/history views if operators need them; expose no Komodo action controls. Decide how stale/disabled/empty status appears in the resource inventory and connection view. |
@@ -113,11 +145,38 @@ Future cross-provider routing or dependency work should extend this central grap
 6. **Connection alert policy:** decide which Komodo failures and disabled states should produce canonical connection alerts and whether a successful empty inventory is healthy for all four resource kinds.
 7. **Operational settings:** resource-type selection and per-connection poll interval are not implemented; current polling interval is fixed and bounded. Actor/source credential provenance and endpoint verification fingerprints also remain future work.
 
+## Phase 2B implementation delta
+
+| File | Change |
+|---|---|
+| `internal/unifiedresources/metrics_targets.go` | Preserve Proxmox-owned VM/LXC history targets when an operator selects a linked Komodo Server as canonical; for multiple Proxmox IDs in one link component, use the canonical candidate or fail closed if ownership is ambiguous. |
+| `internal/unifiedresources/metrics_targets_test.go` | Cover linked Komodo Server targets for Proxmox VM, LXC, non-guest, and ambiguous same-source cases. |
+| `internal/unifiedresources/relationships.go` | Add the typed `routes_to` relationship vocabulary while keeping `same_as` represented by identity links. |
+| `internal/unifiedresources/relationship_presentation.go` | Add the `Routes to` presentation label. |
+| `internal/unifiedresources/relationship_presentation_test.go` | Cover `routes_to`, `hosted_by`, and graph vocabulary registration. |
+| `internal/unifiedresources/store.go` | Clarify `ResourceLink` as durable operator-confirmed same-as identity state, separate from dependency/topology edges. |
+| `internal/unifiedresources/availability_link_test.go` | Prove an availability check linked to a folded Komodo Server projects to the canonical Proxmox VM and keeps its `checks` edge. |
+| `internal/komodo/normalize_test.go` | Prove the Komodo-primary canonical choice still retains the Proxmox VM history target and both provider sources. |
+| `internal/komodo/cross_provider_test.go` | Add SQLite restart, exact source identity, parent/membership rewrite, availability association, source polling order, stale/empty-snapshot removal/recovery, ambiguous same-name and transitive-link conflict coverage, history-target selection, and org isolation. |
+| `frontend-modern/src/types/resource.ts` | Type the shared `hosted_by`, `routes_to`, `member_of`, `stores_on`, and `protected_by` values for the existing relationship projection. |
+| `docs/plans/2026-10-23-sindri-integration-roadmap.md` | Add Phase 2B gates and the relationship persistence direction; preserve metrics/alerts/notifications/Patrol as later work. |
+| `docs/plans/2026-10-25-komodo-phase-2-checkpoint.md` | Add the Phase 2B audit, missing-source semantics, relationship persistence decision, live-test operator steps, and delta report. |
+
+### Phase 2B decisions still open
+
+1. **Canonical continuity while a selected primary is absent:** links reapply when both provider identities return. While the selected primary is absent entirely, the survivor remains visible under its own ID rather than inheriting a synthetic ID/type. Decide whether a durable canonical anchor and its source-history coordinates are required before enabling operator links on ephemeral provider identities.
+2. **Stale edge interpretation:** source poll failure retains last-known edges and the provider resource's stale `SourceStatus`; the edge's `Active` flag alone does not encode observation freshness, and current alert synthesis traverses active edges. Define edge freshness semantics before routing/dependency edges influence causal or notification decisions.
+3. **Operator dependency edge ownership:** approve actor/reason fields, edge removal/audit/retention policy, unresolved endpoint projection, and store-table migration before exposing `depends_on`/`routes_to` mutations. Reuse the existing org `ResourceStore`; do not reuse `resource_links` or add a separate database.
+4. **Route semantics:** define the direction, target identity, and refresh behavior for reverse-proxy routes; `routes_to` currently has no producer and does not change alert/AI traversal policy.
+5. **Proxmox non-guest ownership:** the Komodo-primary metrics fix intentionally maps linked Proxmox guest facets only. Decide whether Komodo Server links to a Proxmox node/agent should expose a node or agent history target and how to represent a resource with multiple metric owners.
+6. **Incremental availability ordering:** full registry rebuilds process availability after infrastructure sources. A check processed before its referenced provider appears stays unresolved until its next poll; decide whether incremental provider publication should trigger a re-correlation pass.
+7. **Conflicting explicit identity links:** `ResourceLink` components are transitive. Linking one Komodo Server to two Proxmox VM IDs currently folds both IDs into one identity component, with the earliest selected primary as canonical. Decide whether the identity-link API should reject same-provider collisions or treat operator-authorized transitive components as authoritative and surface the conflict. A Komodo-primary component with multiple Proxmox history IDs now has no metrics target until that ownership is unambiguous.
+
 ## Validation and review status
 
 Passed checks:
 
-- `rtk go test ./internal/unifiedresources -count=1` — 3,028 tests, including registry ingestion and operator-confirmed cross-provider identity-link relationship preservation.
+- `rtk go test ./internal/unifiedresources -count=1` — 3,036 tests in the Phase 2B validation run, including registry ingestion and operator-confirmed cross-provider identity-link relationship preservation.
 - `rtk go test ./internal/komodo -count=1` — client fixtures for authentication, Core v2 validation, scope, pagination, duplicates, timeouts, transient failures, specific permission rejection, and redaction.
 - `rtk go test ./internal/config -run '^TestKomodo' -count=1` — encrypted connection config validation, masking, and credential rotation.
 - `rtk go test ./internal/monitoring -run '^TestKomodoPoller' -count=1` — org isolation and successful-empty, failed, stale, disabled, removal, and supplemental snapshot cases.
@@ -130,6 +189,21 @@ Passed checks:
 - `rtk git diff --check` — passed.
 
 Live Core compatibility, production settings, deployment, and action authority are outside this checkpoint.
+
+### Phase 2B validation results
+
+- `rtk go test ./internal/komodo -count=1` — 30 tests passed, including canonical choice/source preservation and cross-provider SQLite restart, polling order, relationship rewrites, stale/empty-snapshot removal and recovery, same-name ambiguity, transitive explicit-link conflict behavior, and organization isolation.
+- `rtk go test ./internal/unifiedresources -count=1` — 3,036 tests passed; the availability-link regression confirms an explicit Komodo association follows the operator fold to the Proxmox VM. Metrics tests cover canonical Proxmox history ownership and fail-closed handling for ambiguous Proxmox targets.
+- `rtk go test ./internal/api/resourceapi -count=1` — 205 tests passed.
+- `rtk go test ./internal/monitoring -count=1` — 4,094 tests passed, including the existing Proxmox, TrueNAS, and supplemental Komodo polling paths.
+- `rtk go vet ./internal/unifiedresources ./internal/komodo ./internal/api/resourceapi` — passed with no issues.
+- `rtk npm run type-check` and `rtk npm run lint` in `frontend-modern` — passed; lint includes the planning-doc status audit.
+- `rtk python3 scripts/check_workflow_trust.py .github/workflows`, `rtk python3 scripts/repo-boundary-regression.py`, and `rtk bash scripts/audit-private-boundary.sh --enforce` — passed; no new private-boundary findings.
+- `rtk git diff --check` — passed.
+
+The broader `rtk go test ./...` attempt returned exit 1 after reporting 4,335 passing tests across 51 packages. RTK's captured output was capped at 1 MiB and ended before the failure diagnostic, so that run is inconclusive; the affected packages are run separately above.
+
+No live Komodo Core was available, so these results establish fixture and registry compatibility only; they do not claim compatibility with an operator's installed Core release.
 
 ## References
 

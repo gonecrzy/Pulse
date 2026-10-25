@@ -210,6 +210,69 @@ func TestBuildMetricsTarget_DockerAppContainerUsesRawContainerID(t *testing.T) {
 	}
 }
 
+func TestBuildMetricsTargetKomodoServerPreservesLinkedProxmoxGuestFamily(t *testing.T) {
+	tests := []struct {
+		name       string
+		proxmox    *ProxmoxData
+		wantType   string
+		wantTarget bool
+	}{
+		{name: "VM", proxmox: &ProxmoxData{VMID: 104}, wantType: "vm", wantTarget: true},
+		{name: "LXC", proxmox: &ProxmoxData{VMID: 105, ContainerType: "lxc"}, wantType: "system-container", wantTarget: true},
+		{name: "not a Proxmox guest", proxmox: &ProxmoxData{NodeName: "pve-1"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := BuildMetricsTarget(Resource{Type: ResourceTypeKomodoServer, Proxmox: tt.proxmox}, []SourceTarget{{
+				Source: SourceProxmox, SourceID: "pve:cluster-a:vmid:104",
+			}})
+			if !tt.wantTarget {
+				if got != nil {
+					t.Fatalf("BuildMetricsTarget() = %+v, want nil without a Proxmox guest facet", got)
+				}
+				return
+			}
+			if got == nil || got.ResourceType != tt.wantType || got.ResourceID != "pve:cluster-a:vmid:104" {
+				t.Fatalf("BuildMetricsTarget() = %+v, want %s/pve:cluster-a:vmid:104", got, tt.wantType)
+			}
+		})
+	}
+}
+
+func TestBuildMetricsTargetDoesNotGuessBetweenSameSourceIdentities(t *testing.T) {
+	const pve104 = "pve:cluster-a:vmid:104"
+	const pve105 = "pve:cluster-a:vmid:105"
+	pve104Canonical := SourceSpecificID(ResourceTypeVM, SourceProxmox, pve104)
+	pve105Canonical := SourceSpecificID(ResourceTypeVM, SourceProxmox, pve105)
+	targets := []SourceTarget{
+		{Source: SourceProxmox, SourceID: pve104, CandidateID: pve104Canonical},
+		{Source: SourceProxmox, SourceID: pve105, CandidateID: pve105Canonical},
+	}
+
+	t.Run("selected canonical source wins", func(t *testing.T) {
+		got := BuildMetricsTarget(Resource{ID: pve104Canonical, Type: ResourceTypeVM}, targets)
+		if got == nil || got.ResourceType != "vm" || got.ResourceID != pve104 {
+			t.Fatalf("BuildMetricsTarget() = %+v, want canonical Proxmox target vm/%s", got, pve104)
+		}
+	})
+
+	t.Run("different provider canonical with ambiguous Proxmox history fails closed", func(t *testing.T) {
+		komodoID := SourceSpecificID(ResourceTypeKomodoServer, SourceKomodo, "connection/server/server-1")
+		pveCandidates := []SourceTarget{
+			{Source: SourceProxmox, SourceID: pve104, CandidateID: pve104Canonical},
+			{Source: SourceProxmox, SourceID: pve105, CandidateID: pve105Canonical},
+			{Source: SourceKomodo, SourceID: "connection/server/server-1", CandidateID: komodoID},
+		}
+		got := BuildMetricsTarget(Resource{
+			ID: komodoID, Type: ResourceTypeKomodoServer,
+			Proxmox: &ProxmoxData{VMID: 104},
+		}, pveCandidates)
+		if got != nil {
+			t.Fatalf("BuildMetricsTarget() = %+v, want nil when multiple Proxmox history owners conflict with the Komodo canonical identity", got)
+		}
+	})
+}
+
 func TestBuildMetricsTarget_UsesCanonicalTargetsForVMwareWorkloadAndStorage(t *testing.T) {
 	tests := []struct {
 		name          string

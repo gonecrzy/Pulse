@@ -148,7 +148,10 @@ type PendingActionAuditReader interface {
 	GetPendingActionAudits(limit int) ([]ActionAuditRecord, error)
 }
 
-// ResourceLink represents a manual merge.
+// ResourceLink represents an operator-confirmed same_as identity decision.
+// It is persisted separately from ResourceRelationship because it folds the
+// named source identities into one canonical resource; it is not a dependency
+// or topology edge.
 type ResourceLink struct {
 	ResourceA string
 	ResourceB string

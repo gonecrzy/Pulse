@@ -10,12 +10,38 @@ func BuildMetricsTarget(resource Resource, sourceTargets []SourceTarget) *Metric
 	}
 
 	bySource := make(map[DataSource]SourceTarget, len(sourceTargets))
+	proxmoxTargets := make(map[string]SourceTarget)
 	for _, target := range sourceTargets {
 		target.SourceID = strings.TrimSpace(target.SourceID)
 		if target.SourceID == "" {
 			continue
 		}
 		bySource[target.Source] = target
+		if target.Source == SourceProxmox {
+			proxmoxTargets[target.SourceID] = target
+		}
+	}
+	if len(proxmoxTargets) > 1 {
+		// Proxmox guest history is keyed by the source VM/LXC ID. If an
+		// operator's transitive links put multiple Proxmox IDs in one identity
+		// component, retain only the ID that generated the selected canonical
+		// ID. A different provider's canonical ID cannot disambiguate that
+		// history owner, so do not guess. Other providers keep their existing
+		// source selection behavior and metric-key contracts.
+		canonicalID := CanonicalResourceID(resource.ID)
+		var canonicalTarget SourceTarget
+		matches := 0
+		for _, target := range proxmoxTargets {
+			if CanonicalResourceID(target.CandidateID) == canonicalID {
+				canonicalTarget = target
+				matches++
+			}
+		}
+		if matches == 1 {
+			bySource[SourceProxmox] = canonicalTarget
+		} else {
+			delete(bySource, SourceProxmox)
+		}
 	}
 
 	switch CanonicalResourceType(resource.Type) {
@@ -66,6 +92,19 @@ func BuildMetricsTarget(resource Resource, sourceTargets []SourceTarget) *Metric
 	case ResourceTypeSystemContainer:
 		if st, ok := bySource[SourceProxmox]; ok {
 			return &MetricsTarget{ResourceType: "system-container", ResourceID: st.SourceID}
+		}
+	case ResourceTypeKomodoServer:
+		// An operator may choose the Komodo Server ID as the canonical ID
+		// when linking it to a Proxmox guest. Keep querying the history family
+		// owned by the Proxmox source even though the visible resource type is
+		// Komodo-specific. Komodo inventories do not identify Proxmox node or
+		// guest metric families on their own, so only use a retained guest facet.
+		if st, ok := bySource[SourceProxmox]; ok && resource.Proxmox != nil && resource.Proxmox.VMID > 0 {
+			resourceType := "vm"
+			if strings.TrimSpace(resource.Proxmox.ContainerType) != "" {
+				resourceType = "system-container"
+			}
+			return &MetricsTarget{ResourceType: resourceType, ResourceID: st.SourceID}
 		}
 	case ResourceTypeAppContainer:
 		if st, ok := bySource[SourceDocker]; ok {

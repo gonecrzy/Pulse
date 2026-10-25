@@ -950,6 +950,59 @@ func TestAvailabilityLinkToALinkFoldedResourceFollowsItsPrimary(t *testing.T) {
 	}
 }
 
+func TestAvailabilityLinkToKomodoServerFollowsOperatorFoldIntoProxmoxVM(t *testing.T) {
+	now := time.Now().UTC()
+	pveSourceID := "pve:cluster-a:vmid:104"
+	komodoSourceID := "komodo:ODdlZjUzYzMtOWE1YS00ZDdiLWExNTktOTk3Y2NjYTE5ODEx:server:c2VydmVyLWplbGx5Zmlu"
+	komodoSwarmSourceID := "komodo:ODdlZjUzYzMtOWE1YS00ZDdiLWExNTktOTk3Y2NjYTE5ODEx:swarm:c3dhcm0tcHJvZHVjdGlvbg"
+	komodoStackSourceID := "komodo:ODdlZjUzYzMtOWE1YS00ZDdiLWExNTktOTk3Y2NjYTE5ODEx:stack:c3RhY2stamVsbHlmaW4"
+	pveID := SourceSpecificID(ResourceTypeVM, SourceProxmox, pveSourceID)
+	komodoID := SourceSpecificID(ResourceTypeKomodoServer, SourceKomodo, komodoSourceID)
+	swarmID := SourceSpecificID(ResourceTypeKomodoSwarm, SourceKomodo, komodoSwarmSourceID)
+	store, err := NewSQLiteResourceStore(t.TempDir(), "org-komodo-availability-test")
+	if err != nil {
+		t.Fatalf("NewSQLiteResourceStore() error = %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	if err := store.AddLink(ResourceLink{ResourceA: pveID, ResourceB: komodoID, PrimaryID: pveID}); err != nil {
+		t.Fatalf("AddLink() error = %v", err)
+	}
+	registry := NewRegistry(store)
+	registry.IngestRecords(SourceKomodo, []IngestRecord{
+		{SourceID: komodoSourceID, Resource: Resource{
+			Type: ResourceTypeKomodoServer, Name: "Jellyfin-DMZ", Status: StatusOnline, LastSeen: now,
+			Relationships: []ResourceRelationship{{SourceID: komodoID, TargetID: swarmID, Type: RelMemberOf, Active: true, Discoverer: "komodo"}},
+		}},
+		{SourceID: komodoSwarmSourceID, Resource: Resource{Type: ResourceTypeKomodoSwarm, Name: "production", Status: StatusOnline, LastSeen: now}},
+		{SourceID: komodoStackSourceID, ParentSourceID: komodoSourceID, Resource: Resource{Type: ResourceTypeKomodoStack, Name: "jellyfin", Status: StatusOnline, LastSeen: now}},
+	})
+	registry.IngestRecords(SourceProxmox, []IngestRecord{{
+		SourceID: pveSourceID,
+		Resource: Resource{Type: ResourceTypeVM, Name: "Jellyfin-DMZ", Status: StatusOnline, LastSeen: now, Proxmox: &ProxmoxData{VMID: 104, Instance: "cluster-a"}},
+	}})
+	if resolved, ok := registry.ResolveReferenceID(komodoID); !ok || resolved != pveID {
+		t.Fatalf("ResolveReferenceID(%q) = %q, %t, want the PVE primary %q", komodoID, resolved, ok, pveID)
+	}
+
+	check := availabilityProbeRecord("probe-jellyfin", "192.0.2.104", &AvailabilityData{
+		LinkedResourceID: komodoID,
+		Address:          "192.0.2.104",
+		Protocol:         "tcp",
+		Enabled:          true,
+		Available:        true,
+	})
+	registry.IngestRecords(SourceAvailability, []IngestRecord{check})
+	vm, ok := registry.Get(pveID)
+	if !ok || len(AvailabilityChecksForResource(*vm)) != 1 {
+		var checks []AvailabilityData
+		if ok {
+			checks = AvailabilityChecksForResource(*vm)
+		}
+		t.Fatalf("availability projection on linked VM = %+v, want the explicit Komodo member link to resolve to PVE", checks)
+	}
+	assertAvailabilityCheckAttachedTo(t, "Komodo to Proxmox manual fold", registry, "probe-jellyfin", pveID)
+}
+
 // An old enrollment of a guest linked into its current agent, and that agent
 // linked into its VM: every ID folded along the chain resolves to the final
 // primary, in the monitor and in a registry seeded from it.
