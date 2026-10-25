@@ -4,55 +4,26 @@ import (
 	"context"
 	"os"
 	"sort"
-	"strings"
 	"testing"
 	"time"
-
-	"github.com/rcourtman/pulse-go-rewrite/internal/config"
 )
 
 // TestLiveCoreV2Qualification is deliberately opt-in. It reads an existing
 // encrypted Komodo connection from an explicitly selected Pulse data
-// directory and performs only the inventory client's allowlisted read calls.
-// It never prints the endpoint, connection ID, API key, API secret, names, or
+// directory when available, otherwise it may read an owner-only test
+// credential file. It performs only the inventory client's allowlisted read
+// calls and never prints the endpoint, connection ID, key, secret, names, or
 // native resource IDs.
 func TestLiveCoreV2Qualification(t *testing.T) {
 	if os.Getenv("PULSE_KOMODO_LIVE_QUALIFICATION") != "1" {
 		t.Skip("set PULSE_KOMODO_LIVE_QUALIFICATION=1 to opt in to live read-only qualification")
 	}
-	dataDir := strings.TrimSpace(os.Getenv("PULSE_DATA_DIR"))
-	connectionID := strings.TrimSpace(os.Getenv("PULSE_KOMODO_QUALIFICATION_CONNECTION_ID"))
-	if dataDir == "" || connectionID == "" {
-		t.Fatal("live qualification requires an explicit PULSE_DATA_DIR and connection ID")
-	}
-
-	persistence := config.NewConfigPersistence(dataDir)
-	instances, err := persistence.LoadKomodoConfig()
+	selected, err := loadLiveQualificationConfig()
 	if err != nil {
-		t.Fatal("could not load protected Komodo connection configuration")
-	}
-	var selected *config.KomodoInstance
-	for index := range instances {
-		if instances[index].ID == connectionID {
-			selected = &instances[index]
-			break
-		}
-	}
-	if selected == nil {
-		t.Fatal("selected Komodo connection was not found in the protected configuration")
-	}
-	if !selected.Enabled {
-		t.Fatal("selected Komodo connection is disabled")
-	}
-	if err := selected.Validate(); err != nil {
-		t.Fatal("selected Komodo connection configuration is invalid")
+		t.Fatal(err)
 	}
 
-	client, err := NewClient(ClientConfig{
-		Endpoint:  selected.Endpoint,
-		APIKey:    selected.APIKey,
-		APISecret: selected.APISecret,
-	})
+	client, err := NewClient(selected.Client)
 	if err != nil {
 		t.Fatal("could not create the bounded Komodo read client")
 	}
@@ -68,16 +39,18 @@ func TestLiveCoreV2Qualification(t *testing.T) {
 		t.Fatalf("second inventory collection failed safely: %v", err)
 	}
 
-	firstIDs := inventoryIdentitySet(connectionID, first)
-	secondIDs := inventoryIdentitySet(connectionID, second)
+	firstIDs := inventoryIdentitySet(selected.IdentityID, first)
+	secondIDs := inventoryIdentitySet(selected.IdentityID, second)
 	identitySetsStable := equalStringSets(firstIDs, secondIDs)
 	parentEvidence := summarizeParentEvidence(first)
+	stateEvidence := summarizeStateEvidence(first)
 
-	t.Logf("Komodo live qualification: Core=%s scope_verified=%d/%d counts(server=%d stack=%d deployment=%d swarm=%d) identity_sets_stable=%t parent_fields(stack_server=%d stack_swarm=%d deployment_server=%d deployment_swarm=%d swarm_members=%d unresolved_parent_refs=%d)",
+	t.Logf("Komodo live qualification: Core=%s scope_verified=%d/%d counts(server=%d stack=%d deployment=%d swarm=%d) identities=%d identity_sets_stable=%t resources_with_state(server=%d stack=%d deployment=%d swarm=%d) parent_fields(stack_server=%d stack_swarm=%d deployment_server=%d deployment_swarm=%d swarm_members=%d unresolved_parent_refs=%d)",
 		first.Version,
 		len(first.Scope.Verified), len(resourceKinds),
 		len(first.Servers), len(first.Stacks), len(first.Deployments), len(first.Swarms),
-		identitySetsStable,
+		len(firstIDs), identitySetsStable,
+		stateEvidence.servers, stateEvidence.stacks, stateEvidence.deployments, stateEvidence.swarms,
 		parentEvidence.stackServer, parentEvidence.stackSwarm,
 		parentEvidence.deploymentServer, parentEvidence.deploymentSwarm,
 		parentEvidence.swarmMembers, parentEvidence.unresolved,
@@ -133,6 +106,40 @@ func equalStringSets(left, right []string) bool {
 		}
 	}
 	return true
+}
+
+type stateEvidenceSummary struct {
+	servers, stacks, deployments, swarms int
+}
+
+func summarizeStateEvidence(inventory Inventory) stateEvidenceSummary {
+	countReported := func(items []Resource) int {
+		count := 0
+		for _, item := range items {
+			if item.State != "" {
+				count++
+			}
+		}
+		return count
+	}
+	return stateEvidenceSummary{
+		servers:     countReported(inventory.Servers),
+		stacks:      countReported(inventory.Stacks),
+		deployments: countReported(inventory.Deployments),
+		swarms:      countReported(inventory.Swarms),
+	}
+}
+
+func TestSummarizeStateEvidenceReportsOnlyPresenceCounts(t *testing.T) {
+	got := summarizeStateEvidence(Inventory{
+		Servers:     []Resource{{State: "running"}, {State: ""}},
+		Stacks:      []Resource{{State: "configured-secret-must-not-be-logged"}},
+		Deployments: []Resource{{State: "active"}, {State: "stopped"}},
+		Swarms:      []Resource{{State: ""}},
+	})
+	if got.servers != 1 || got.stacks != 1 || got.deployments != 2 || got.swarms != 0 {
+		t.Fatal("state evidence did not count non-empty states by kind")
+	}
 }
 
 type parentEvidenceSummary struct {
