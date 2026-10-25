@@ -82,7 +82,7 @@ class PublicDocsWorkflowTest(unittest.TestCase):
     def setUp(self):
         self.source = WORKFLOW.read_text(encoding="utf-8")
 
-    def test_both_events_cover_all_suite_and_helper_changes(self):
+    def test_pr_trigger_covers_all_suite_and_helper_changes(self):
         triggers = self.source.split("\non:\n", 1)[1].split("\npermissions:", 1)[0]
         required = {
             "*.md", "docs/**", "frontend-modern/public/docs/**",
@@ -91,14 +91,13 @@ class PublicDocsWorkflowTest(unittest.TestCase):
             "scripts/readme_entrypoints_test.py", "scripts/tests/**",
             "scripts/test-vm-disk.sh", ".github/workflows/public-docs.yml",
         }
-        for event in ("pull_request", "push"):
-            with self.subTest(event=event):
-                block = triggers.split(f"  {event}:\n", 1)[1]
-                block = re.split(r"\n  [a-z_]+:\n", block, maxsplit=1)[0]
-                paths = re.findall(r'^      - "([^"]+)"$', block, re.MULTILINE)
-                self.assertTrue(required.issubset(paths), required.difference(paths))
-                self.assertEqual(len(paths), len(set(paths)))
-        self.assertIn("  push:\n    branches:\n      - main\n", triggers)
+        block = triggers.split("  pull_request:\n", 1)[1]
+        block = re.split(r"\n  [a-z_]+:\n", block, maxsplit=1)[0]
+        paths = re.findall(r'^      - "([^"]+)"$', block, re.MULTILINE)
+        self.assertTrue(required.issubset(paths), required.difference(paths))
+        self.assertEqual(len(paths), len(set(paths)))
+        self.assertRegex(triggers, r"(?m)^  pull_request:\n    branches:\n      - sindri\n")
+        self.assertNotRegex(triggers, r"(?m)^  push:\s*$")
 
     def test_shards_discover_current_suites_without_dependency_setup(self):
         self.assertTrue(set(REQUIRED_SUITES).issubset(documentation_suites()))

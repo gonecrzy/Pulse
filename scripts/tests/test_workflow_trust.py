@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import importlib.util
+import re
 import sys
 import tempfile
 import unittest
@@ -136,7 +137,140 @@ class WorkflowTrustTest(unittest.TestCase):
             for path in workflow_directory.glob("*.yml")
             if "workflow_call:" in path.read_text(encoding="utf-8")
         }
-        self.assertEqual({"build-and-test.yml"}, reusable)
+        self.assertEqual(
+            {
+                "build-and-test.yml",
+                "canonical-governance.yml",
+                "repo-boundary-audit.yml",
+            },
+            reusable,
+        )
+
+        build_and_test = (workflow_directory / "build-and-test.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn(
+            "on:\n  workflow_call:\n  pull_request:\n    branches:\n      - sindri\n  workflow_dispatch:",
+            build_and_test,
+        )
+        self.assertNotRegex(build_and_test, r"(?m)^  push:")
+
+        komodo_image = (workflow_directory / "komodo-phase2f-image.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("uses: ./.github/workflows/build-and-test.yml", komodo_image)
+
+    def test_reusable_validation_is_local_read_only_and_gates_stable_publication(self) -> None:
+        workflow_directory = REPO_ROOT / ".github" / "workflows"
+        reusable_names = {
+            "build-and-test.yml",
+            "canonical-governance.yml",
+            "repo-boundary-audit.yml",
+        }
+        for name in reusable_names:
+            with self.subTest(workflow=name):
+                source = (workflow_directory / name).read_text(encoding="utf-8")
+                self.assertIn("  workflow_call:", source)
+                self.assertIn("permissions:\n  contents: read", source)
+                self.assertNotIn("packages: write", source)
+                self.assertNotIn("secrets:", source)
+
+        workflow_call_files = {
+            path.name
+            for path in workflow_directory.glob("*.yml")
+            if "  workflow_call:" in path.read_text(encoding="utf-8")
+        }
+        self.assertEqual(reusable_names, workflow_call_files)
+
+        local_callers = {
+            path.name
+            for path in workflow_directory.glob("*.yml")
+            if "uses: ./.github/workflows/" in path.read_text(encoding="utf-8")
+        }
+        self.assertEqual(
+            {"sindri-build.yml", "komodo-phase2f-image.yml"}, local_callers
+        )
+
+        stable = (workflow_directory / "sindri-build.yml").read_text(encoding="utf-8")
+        self.assertEqual(
+            {
+                "./.github/workflows/build-and-test.yml",
+                "./.github/workflows/canonical-governance.yml",
+                "./.github/workflows/repo-boundary-audit.yml",
+            },
+            {
+                line.strip().split("uses: ", 1)[1]
+                for line in stable.splitlines()
+                if "uses: ./.github/workflows/" in line
+            },
+        )
+        reusable_jobs = (
+            "repository-tests",
+            "repository-governance",
+            "repository-boundary-audit",
+        )
+        job_starts = {
+            match.group(1): match.start()
+            for match in re.finditer(r"(?m)^  ([a-z][a-z0-9_-]*):\s*$", stable)
+        }
+        for index, job in enumerate(reusable_jobs):
+            with self.subTest(job=job):
+                self.assertIn(f"  {job}:\n", stable)
+                start = job_starts[job]
+                next_jobs = [position for position in job_starts.values() if position > start]
+                following = min(next_jobs, default=len(stable))
+                block = stable[start:following]
+                self.assertIn("refs/heads/sindri", block)
+                self.assertIn("permissions:\n      contents: read", block)
+
+        self.assertIn("needs:\n      - repository-tests\n      - repository-governance\n      - repository-boundary-audit", stable)
+        self.assertIn("branches:\n      - sindri", stable)
+        self.assertNotIn("feature/sindri-integration", stable)
+        self.assertNotIn("      - main", stable)
+        self.assertNotIn("[main,", stable)
+        self.assertIn("packages: write", stable)
+        self.assertIn("name: Publish exact-SHA image to GHCR", stable)
+        publish_start = job_starts["publish"]
+        following = min(
+            (position for position in job_starts.values() if position > publish_start),
+            default=len(stable),
+        )
+        self.assertIn("packages: write", stable[publish_start:following])
+        self.assertNotIn("packages: write", stable[:publish_start])
+        self.assertIn("ghcr.io/gonecrzy/pulse:${{ github.sha }}", stable)
+        self.assertNotIn("ghcr.io/gonecrzy/pulse:latest", stable)
+        self.assertNotIn("ghcr.io/gonecrzy/pulse:sindri", stable)
+
+    def test_branch_filters_and_schedule_policy_match_sindri_integration(self) -> None:
+        workflow_directory = REPO_ROOT / ".github" / "workflows"
+        for path in workflow_directory.glob("*.yml"):
+            source = path.read_text(encoding="utf-8")
+            with self.subTest(workflow=path.name):
+                self.assertNotIn("feature/sindri-integration", source)
+                self.assertNotRegex(source, r"(?m)^\s*branches:\s*\[[^\]]*\bmain\b")
+                self.assertNotRegex(source, r"(?m)^\s+- main\s*$")
+
+        dependency_watch = (workflow_directory / "dependency-advisory-watch.yml").read_text()
+        self.assertIn("workflow_dispatch:", dependency_watch)
+        self.assertNotIn("schedule:", dependency_watch)
+
+        security = (workflow_directory / "security-scan.yml").read_text()
+        self.assertIn("cron: '17 5 * * 1'", security)
+        self.assertIn("workflow_dispatch:", security)
+        self.assertEqual(
+            2,
+            security.count("github.event_name != 'schedule' || github.ref == 'refs/heads/sindri'"),
+        )
+
+        for name in ("build-and-test.yml", "canonical-governance.yml", "repo-boundary-audit.yml"):
+            source = (workflow_directory / name).read_text()
+            with self.subTest(reusable=name):
+                self.assertIn("  pull_request:", source)
+                self.assertIn("branches: [sindri]" if "branches: [sindri]" in source else "      - sindri", source)
+
+        self.assertIn("workflow_dispatch:", (workflow_directory / "patrol-qualification-regression.yml").read_text())
+        self.assertIn("workflow_dispatch:", (workflow_directory / "test-e2e.yml").read_text())
+        self.assertIn("workflow_dispatch:", (workflow_directory / "unified-agent-native.yml").read_text())
 
     def test_accepts_immutable_dependencies_and_explicit_checkout_credentials(self) -> None:
         findings = self.audit(

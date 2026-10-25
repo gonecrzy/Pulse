@@ -27,7 +27,7 @@ func validateNativeServerUpgradeTriggers(content []byte) error {
 	if err := yaml.Unmarshal(content, &workflow); err != nil {
 		return err
 	}
-	for _, event := range []string{"push", "pull_request"} {
+	for _, event := range []string{"pull_request"} {
 		paths := workflow.On[event].Paths
 		for _, pattern := range paths {
 			if strings.HasPrefix(pattern, "!") {
@@ -55,9 +55,9 @@ func TestNativeInstallerWorkflowAdmitsServerUpgradeSource(t *testing.T) {
 	if err := validateNativeServerUpgradeTriggers(content); err != nil {
 		t.Fatal(err)
 	}
-	// Decode and change one event at a time. A matching input in the other
-	// event, or an unrelated job string, cannot conceal a missing admission.
-	for _, event := range []string{"push", "pull_request"} {
+	// Decode and change the PR event itself; an unrelated job string cannot
+	// conceal a missing admission.
+	for _, event := range []string{"pull_request"} {
 		for _, required := range nativeServerUpgradeInputs {
 			for _, exclusion := range []bool{false, true} {
 				t.Run(fmt.Sprintf("%s/%s/excluded=%t", event, required, exclusion), func(t *testing.T) {

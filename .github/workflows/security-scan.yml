@@ -15,6 +15,7 @@ concurrency:
 jobs:
   govulncheck:
     name: Go Vulnerability Scan (${{ matrix.directory }})
+    if: ${{ github.event_name != 'schedule' || github.ref == 'refs/heads/sindri' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     strategy:
@@ -44,6 +45,7 @@ jobs:
 
   npm-audit:
     name: npm Dependency Audit (${{ matrix.name }})
+    if: ${{ github.event_name != 'schedule' || github.ref == 'refs/heads/sindri' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     strategy:

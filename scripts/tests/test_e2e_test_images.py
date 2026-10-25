@@ -349,10 +349,10 @@ class E2EImageWorkflowTest(unittest.TestCase):
 
     def test_proof_and_helper_trigger_and_precede_fanout(self):
         source = WORKFLOW.read_text()
-        for event in ("pull_request", "push"):
-            block = re.split(r"(?m)^  \S", source.split(f"  {event}:\n", 1)[1], maxsplit=1)[0]
-            for file in ("scripts/e2e_test_images.py", "scripts/tests/test_e2e_test_images.py"):
-                self.assertIn(f"'{file}'", block)
+        pull_request = source.split("  pull_request:\n", 1)[1].split("\n  workflow_dispatch:", 1)[0]
+        for file in ("scripts/e2e_test_images.py", "scripts/tests/test_e2e_test_images.py"):
+            self.assertIn(f"'{file}'", pull_request)
+        self.assertNotRegex(source, r"(?m)^  push:\s*$")
         selection = job_block(source, "tier-selection")
         self.assertLess(selection.index("python3 scripts/tests/test_e2e_test_images.py"), selection.index("npm ci"))
 
