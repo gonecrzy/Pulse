@@ -90,6 +90,9 @@ func TestNormalizeInventorySetsParentsAndSwarmMembershipWithoutRawPayload(t *tes
 	if stack.ParentSourceID != SourceID("connection-1", KindServer, "server-1") || len(stack.Resource.Relationships) != 1 || stack.Resource.Relationships[0].Type != unifiedresources.RelHostedBy {
 		t.Fatalf("stack parent mapping = %#v, want server parent and hosted_by edge", stack)
 	}
+	if stack.Resource.Relationships[0].EvidenceSource != unifiedresources.SourceKomodo {
+		t.Fatalf("Stack edge evidence source = %q, want Komodo", stack.Resource.Relationships[0].EvidenceSource)
+	}
 	deployment := byKind["komodo-deployment"]
 	if deployment.ParentSourceID != SourceID("connection-1", KindSwarm, "swarm-1") || len(deployment.Resource.Relationships) != 1 {
 		t.Fatalf("deployment parent mapping = %#v, want swarm precedence", deployment)
@@ -103,6 +106,39 @@ func TestNormalizeInventorySetsParentsAndSwarmMembershipWithoutRawPayload(t *tes
 	}
 	if server.Capabilities != nil || server.ActionReadiness != nil || server.AISafeSummary != "" {
 		t.Fatalf("Komodo server gained action or AI context fields: %#v", server)
+	}
+}
+
+func TestNormalizeInventoryDoesNotEmitHostedByEdgeForMissingParent(t *testing.T) {
+	const connectionID = "connection-missing-parent"
+	const observedAt = 200
+	stackSourceID := SourceID(connectionID, KindStack, "stack-orphan")
+	records := NormalizeInventory(connectionID, Inventory{
+		Stacks: []Resource{{ID: "stack-orphan", Name: "orphan", Kind: KindStack, State: "Running", ServerID: "server-removed"}},
+	}, time.Unix(observedAt, 0).UTC())
+	if len(records) != 1 || records[0].SourceID != stackSourceID {
+		t.Fatalf("normalized records = %+v, want the Stack record", records)
+	}
+	if records[0].ParentSourceID != SourceID(connectionID, KindServer, "server-removed") {
+		t.Fatalf("pending parent source ID = %q, want the provider reference retained for later reconciliation", records[0].ParentSourceID)
+	}
+	for _, relationship := range records[0].Resource.Relationships {
+		if relationship.Active && relationship.Type == unifiedresources.RelHostedBy {
+			t.Fatalf("orphan Stack emitted an active hosted_by edge to a missing Server: %+v", relationship)
+		}
+	}
+
+	registry := unifiedresources.NewRegistry(nil)
+	registry.IngestRecords(unifiedresources.SourceKomodo, records)
+	resource, ok := registry.Get(unifiedresources.SourceSpecificID(unifiedresources.ResourceTypeKomodoStack, unifiedresources.SourceKomodo, stackSourceID))
+	if !ok {
+		t.Fatal("Stack was not retained in the canonical registry")
+	}
+	if resource.ParentID != nil {
+		t.Fatalf("orphan Stack parent ID = %v, want unresolved", resource.ParentID)
+	}
+	if relationships := registry.ListResourceRelationships(); len(relationships) != 0 {
+		t.Fatalf("canonical relationships = %+v, want no dangling hosted_by edge", relationships)
 	}
 }
 

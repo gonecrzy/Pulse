@@ -10,6 +10,7 @@ import (
 
 	"github.com/rcourtman/pulse-go-rewrite/internal/actionlifecycle"
 	"github.com/rcourtman/pulse-go-rewrite/internal/agentexec"
+	komodocore "github.com/rcourtman/pulse-go-rewrite/internal/komodo"
 	"github.com/rcourtman/pulse-go-rewrite/internal/models"
 	"github.com/rcourtman/pulse-go-rewrite/internal/truenas"
 	"github.com/rcourtman/pulse-go-rewrite/internal/unifiedresources"
@@ -604,6 +605,147 @@ func TestTopologyIncludesBoundedCanonicalRelationshipContext(t *testing.T) {
 	if len(summary.Relationships) != 0 {
 		t.Fatalf("summary-only topology unexpectedly included relationship details: %+v", summary.Relationships)
 	}
+}
+
+func TestExecuteGetTopologyReturnsScopedCanonicalIncidentNeighborhood(t *testing.T) {
+	now := time.Now().UTC()
+	const (
+		connectionID = "connection-synthetic"
+		pveSourceID  = "pve:cluster-test:vmid:50110"
+		serverID     = "server-www-dmz"
+		stackID      = "stack-kristi-www"
+		probeID      = "kristi-www-site"
+	)
+	pveID := unifiedresources.SourceSpecificID(unifiedresources.ResourceTypeVM, unifiedresources.SourceProxmox, pveSourceID)
+	serverSourceID := komodocore.SourceID(connectionID, komodocore.KindServer, serverID)
+	serverCanonicalID := unifiedresources.SourceSpecificID(unifiedresources.ResourceTypeKomodoServer, unifiedresources.SourceKomodo, serverSourceID)
+	stackSourceID := komodocore.SourceID(connectionID, komodocore.KindStack, stackID)
+	stackCanonicalID := unifiedresources.SourceSpecificID(unifiedresources.ResourceTypeKomodoStack, unifiedresources.SourceKomodo, stackSourceID)
+	probeCanonicalID := unifiedresources.SourceSpecificID(unifiedresources.ResourceTypeNetworkEndpoint, unifiedresources.SourceAvailability, probeID)
+	store := unifiedresources.NewMemoryStore()
+	if err := store.AddLink(unifiedresources.ResourceLink{ResourceA: pveID, ResourceB: serverCanonicalID, PrimaryID: pveID}); err != nil {
+		t.Fatal(err)
+	}
+	registry := unifiedresources.NewRegistry(store)
+	registry.IngestRecords(unifiedresources.SourceProxmox, []unifiedresources.IngestRecord{{
+		SourceID: pveSourceID,
+		Resource: unifiedresources.Resource{Type: unifiedresources.ResourceTypeVM, Name: "www-DMZ", Status: unifiedresources.StatusOnline, LastSeen: now},
+	}})
+	registry.IngestRecords(unifiedresources.SourceKomodo, []unifiedresources.IngestRecord{
+		{SourceID: serverSourceID, Resource: unifiedresources.Resource{Type: unifiedresources.ResourceTypeKomodoServer, Name: "www-DMZ", Status: unifiedresources.StatusOnline, LastSeen: now}},
+		{SourceID: stackSourceID, ParentSourceID: serverSourceID, Resource: unifiedresources.Resource{Type: unifiedresources.ResourceTypeKomodoStack, Name: "kristi-www", Status: unifiedresources.StatusOnline, LastSeen: now}},
+	})
+	registry.IngestRecords(unifiedresources.SourceAvailability, []unifiedresources.IngestRecord{{
+		SourceID: probeID,
+		Resource: unifiedresources.Resource{Type: unifiedresources.ResourceTypeNetworkEndpoint, Name: "kristi-www-site", Status: unifiedresources.StatusOffline, LastSeen: now, Availability: &unifiedresources.AvailabilityData{
+			TargetID: probeID, LinkedResourceID: stackCanonicalID, Protocol: "https", Address: "192.0.2.110", Enabled: true, Available: false, LastChecked: &now,
+		}},
+	}})
+
+	executor := NewPulseToolExecutor(ExecutorConfig{
+		ReadState:               registry,
+		UnifiedResourceProvider: unifiedresources.NewUnifiedAIAdapter(registry),
+	})
+	result, err := executor.executeGetTopology(context.Background(), map[string]interface{}{"resource_id": probeCanonicalID})
+	if err != nil {
+		t.Fatalf("execute topology: %v", err)
+	}
+	var topology TopologyResponse
+	if err := json.Unmarshal([]byte(result.Content[0].Text), &topology); err != nil {
+		t.Fatalf("decode topology: %v", err)
+	}
+	if len(topology.CanonicalResources) != 3 {
+		t.Fatalf("canonical neighborhood has %d resources, want check, Stack, and merged host: %+v", len(topology.CanonicalResources), topology.CanonicalResources)
+	}
+	byID := make(map[string]CanonicalTopologyResource, len(topology.CanonicalResources))
+	for _, resource := range topology.CanonicalResources {
+		byID[resource.ID] = resource
+	}
+	host, ok := byID[pveID]
+	if !ok || host.Type != string(unifiedresources.ResourceTypeVM) || host.Status != string(unifiedresources.StatusOnline) || !containsSource(host.Sources, unifiedresources.SourceProxmox) || !containsSource(host.Sources, unifiedresources.SourceKomodo) {
+		t.Fatalf("merged host topology resource = %+v, want both provider observations", host)
+	}
+	if host.SourceStatus[unifiedresources.SourceProxmox].Status != "online" || host.SourceStatus[unifiedresources.SourceKomodo].Status != "online" {
+		t.Fatalf("host source freshness = %+v, want current observations from both providers", host.SourceStatus)
+	}
+	check, checkFound := byID[probeCanonicalID]
+	if !checkFound || check.Status != string(unifiedresources.StatusOffline) || check.Availability == nil || check.Availability.Outcome != "unreachable" || check.Availability.LinkedResourceID != stackCanonicalID || check.Availability.LinkedResourceName != "kristi-www" {
+		t.Fatalf("availability check topology resource = %+v, want its Stack association", check)
+	}
+	if len(topology.Relationships) != 2 {
+		t.Fatalf("scoped relationships = %+v, want availability-to-Stack and Stack-to-host edges", topology.Relationships)
+	}
+	for _, relationship := range topology.Relationships {
+		if relationship.EvidenceSource == "" || relationship.EvidenceFreshness != unifiedresources.RelationshipFreshnessCurrent {
+			t.Fatalf("topology relationship omitted evidence provenance or freshness: %+v", relationship)
+		}
+	}
+
+	getResult, err := executor.executeGetResource(context.Background(), map[string]interface{}{
+		"resource_type": "network-endpoint", "resource_id": probeCanonicalID,
+	})
+	if err != nil {
+		t.Fatalf("get availability resource: %v", err)
+	}
+	var endpoint CanonicalTopologyResource
+	if err := json.Unmarshal([]byte(getResult.Content[0].Text), &endpoint); err != nil {
+		t.Fatalf("decode availability resource: %v", err)
+	}
+	if endpoint.ID != probeCanonicalID || endpoint.Availability == nil || endpoint.Availability.LinkedResourceID != stackCanonicalID {
+		t.Fatalf("availability resource query = %+v, want independent check linked to Stack", endpoint)
+	}
+
+	searchResult, err := executor.executeSearchResources(context.Background(), map[string]interface{}{
+		"query": "kristi-www-site", "type": "network-endpoint",
+	})
+	if err != nil {
+		t.Fatalf("search availability resources: %v", err)
+	}
+	var search ResourceSearchResponse
+	if err := json.Unmarshal([]byte(searchResult.Content[0].Text), &search); err != nil {
+		t.Fatalf("decode availability search: %v", err)
+	}
+	if len(search.Matches) != 1 || search.Matches[0].ID != probeCanonicalID || search.Matches[0].Type != "network-endpoint" {
+		t.Fatalf("availability search matches = %+v, want canonical endpoint %q", search.Matches, probeCanonicalID)
+	}
+
+	linkedHost, err := executor.executeGetResource(context.Background(), map[string]interface{}{
+		"resource_type": "komodo-server", "resource_id": serverCanonicalID,
+	})
+	if err != nil {
+		t.Fatalf("get merged Komodo Server reference: %v", err)
+	}
+	var linkedHostResource CanonicalTopologyResource
+	if err := json.Unmarshal([]byte(linkedHost.Content[0].Text), &linkedHostResource); err != nil {
+		t.Fatalf("decode merged Komodo Server reference: %v", err)
+	}
+	if linkedHostResource.ID != pveID || linkedHostResource.Type != string(unifiedresources.ResourceTypeVM) {
+		t.Fatalf("Komodo Server member reference = %+v, want canonical Proxmox VM identity %q", linkedHostResource, pveID)
+	}
+	linkedTopology, err := executor.executeGetTopology(context.Background(), map[string]interface{}{"resource_id": serverCanonicalID})
+	if err != nil {
+		t.Fatalf("topology from merged Komodo member reference: %v", err)
+	}
+	var linkedNeighborhood TopologyResponse
+	if err := json.Unmarshal([]byte(linkedTopology.Content[0].Text), &linkedNeighborhood); err != nil {
+		t.Fatalf("decode merged Komodo member topology: %v", err)
+	}
+	foundCanonicalHost := false
+	for _, resource := range linkedNeighborhood.CanonicalResources {
+		foundCanonicalHost = foundCanonicalHost || resource.ID == pveID
+	}
+	if !foundCanonicalHost {
+		t.Fatalf("merged Komodo member topology = %+v, want canonical host %q", linkedNeighborhood.CanonicalResources, pveID)
+	}
+}
+
+func containsSource(sources []unifiedresources.DataSource, expected unifiedresources.DataSource) bool {
+	for _, source := range sources {
+		if source == expected {
+			return true
+		}
+	}
+	return false
 }
 
 func TestExecuteGetTopologySummaryOnly(t *testing.T) {

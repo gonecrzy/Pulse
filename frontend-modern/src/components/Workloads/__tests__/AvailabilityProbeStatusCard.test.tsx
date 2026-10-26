@@ -63,6 +63,27 @@ describe('AvailabilityProbeStatusCard', () => {
     expect(screen.queryByText('Responding normally')).not.toBeInTheDocument();
   });
 
+  it('shows the resolved canonical resource monitored by an attached check', () => {
+    render(() => (
+      <AvailabilityProbeStatusCard
+        availability={{
+          targetId: 'kristi-www-site',
+          address: 'www.example.test',
+          protocol: 'https',
+          enabled: true,
+          available: true,
+          correlationState: 'attached',
+          resolvedResourceId: 'komodo-stack-1234567890abcdef',
+          linkedResourceName: 'kristi-www',
+        }}
+      />
+    ));
+
+    expect(screen.getByText('Linked resource')).toBeInTheDocument();
+    expect(screen.getByText('kristi-www')).toBeInTheDocument();
+    expect(screen.getByTitle('komodo-stack-1234567890abcdef')).toBeInTheDocument();
+  });
+
   it('shows certificate trust, expiry, hostname, issuer, and fingerprint', () => {
     render(() => (
       <AvailabilityProbeStatusCard

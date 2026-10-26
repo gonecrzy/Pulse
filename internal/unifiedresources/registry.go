@@ -3330,6 +3330,9 @@ func (rr *ResourceRegistry) ingestAvailabilityCheckLocked(
 
 	if targetResourceID := resolution.ResourceID; targetResourceID != "" {
 		if target := rr.resources[targetResourceID]; target != nil {
+			if resource.Availability != nil {
+				resource.Availability.LinkedResourceName = target.Name
+			}
 			resource.Relationships = upsertAvailabilityCheckRelationship(
 				resource.Relationships,
 				checkResourceID,
@@ -3981,6 +3984,8 @@ func applyAvailabilityResolution(
 	if availability == nil {
 		return
 	}
+	availability.ResolvedResourceID = CanonicalResourceID(resolution.ResourceID)
+	availability.LinkedResourceName = ""
 	availability.CorrelationState = resolution.State
 	availability.CorrelationRule = resolution.Rule
 	availability.CorrelationReason = resolution.Reason
@@ -4066,14 +4071,15 @@ func upsertAvailabilityCheckRelationship(
 		confidence = 1
 	}
 	relation := ResourceRelationship{
-		SourceID:   checkResourceID,
-		TargetID:   targetResourceID,
-		Type:       RelChecks,
-		Confidence: confidence,
-		Active:     true,
-		Discoverer: "availability_attachment",
-		ObservedAt: observedAt,
-		LastSeenAt: observedAt,
+		SourceID:       checkResourceID,
+		TargetID:       targetResourceID,
+		Type:           RelChecks,
+		Confidence:     confidence,
+		EvidenceSource: SourceAvailability,
+		Active:         true,
+		Discoverer:     "availability_attachment",
+		ObservedAt:     observedAt,
+		LastSeenAt:     observedAt,
 		Metadata: map[string]any{
 			"targetId":        availability.TargetID,
 			"protocol":        availability.Protocol,

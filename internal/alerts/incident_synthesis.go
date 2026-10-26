@@ -242,12 +242,13 @@ func strongestIncidentCause(
 		return incidentCauseLink{}, false
 	}
 	type frontierItem struct {
-		resourceID string
-		depth      int
-		confidence float64
-		relation   unifiedresources.RelationshipType
+		resourceID      string
+		depth           int
+		confidence      float64
+		relation        unifiedresources.RelationshipType
+		evidenceCurrent bool
 	}
-	frontier := []frontierItem{{resourceID: resourceID, confidence: 1}}
+	frontier := []frontierItem{{resourceID: resourceID, confidence: 1, evidenceCurrent: true}}
 	visited := map[string]struct{}{resourceID: {}}
 	var best incidentCauseLink
 	found := false
@@ -273,12 +274,13 @@ func strongestIncidentCause(
 			if relationship.Confidence > 0 && relationship.Confidence < confidence {
 				confidence = relationship.Confidence
 			}
+			evidenceCurrent := current.evidenceCurrent && relationship.EvidenceFreshness == unifiedresources.RelationshipFreshnessCurrent
 			depth := current.depth + 1
 			for _, primary := range byResource[targetID] {
 				if !incidentCauseAllowed(symptom, primary, relationship.Type) {
 					continue
 				}
-				supported := confidence >= 0.8 && incidentCauseTimingSupported(symptom.alert, primary.alert)
+				supported := evidenceCurrent && confidence >= 0.8 && incidentCauseTimingSupported(symptom.alert, primary.alert)
 				link := incidentCauseLink{
 					primaryKey: primary.storageKey,
 					depth:      depth,
@@ -293,7 +295,13 @@ func strongestIncidentCause(
 			}
 			if _, seen := visited[targetID]; !seen {
 				visited[targetID] = struct{}{}
-				frontier = append(frontier, frontierItem{resourceID: targetID, depth: depth, confidence: confidence, relation: relationship.Type})
+				frontier = append(frontier, frontierItem{
+					resourceID:      targetID,
+					depth:           depth,
+					confidence:      confidence,
+					relation:        relationship.Type,
+					evidenceCurrent: evidenceCurrent,
+				})
 			}
 		}
 	}

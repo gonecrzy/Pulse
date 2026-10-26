@@ -57,6 +57,15 @@ func (a *UnifiedAIAdapter) GetByType(t ResourceType) []Resource {
 	return out
 }
 
+// GetByReference resolves canonical IDs and provider aliases through the same
+// registry identity map used by resource APIs.
+func (a *UnifiedAIAdapter) GetByReference(reference string) (*Resource, string, bool) {
+	if a == nil || a.registry == nil {
+		return nil, "", false
+	}
+	return a.registry.GetByReference(reference)
+}
+
 func (a *UnifiedAIAdapter) GetStats() ResourceStats {
 	if a == nil || a.registry == nil {
 		return ResourceStats{

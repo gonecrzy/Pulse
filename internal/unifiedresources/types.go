@@ -1774,6 +1774,8 @@ const (
 type AvailabilityData struct {
 	TargetID               string                             `json:"targetId,omitempty"`
 	LinkedResourceID       string                             `json:"linkedResourceId,omitempty"`
+	ResolvedResourceID     string                             `json:"resolvedResourceId,omitempty"`
+	LinkedResourceName     string                             `json:"linkedResourceName,omitempty"`
 	Name                   string                             `json:"name,omitempty"`
 	TargetKind             string                             `json:"targetKind,omitempty"`
 	Address                string                             `json:"address,omitempty"`

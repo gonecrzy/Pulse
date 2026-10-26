@@ -29,7 +29,8 @@ func TestInfrastructureIncidentSynthesisGroupsSupportedDeliverySymptoms(t *testi
 			},
 			Relationships: []unifiedresources.ResourceRelationship{{
 				SourceID: endpointID, TargetID: hostID, Type: unifiedresources.RelChecks,
-				Confidence: 1, Active: true,
+				Confidence: 1, Active: true, EvidenceSource: unifiedresources.SourceAvailability,
+				EvidenceFreshness: unifiedresources.RelationshipFreshnessCurrent,
 			}},
 		},
 	}
@@ -84,7 +85,8 @@ func TestInfrastructureIncidentSynthesisPreservesContradictionAsObservationSet(t
 			Status: unifiedresources.StatusOffline,
 			Relationships: []unifiedresources.ResourceRelationship{{
 				SourceID: endpointID, TargetID: hostID, Type: unifiedresources.RelChecks,
-				Confidence: 1, Active: true,
+				Confidence: 1, Active: true, EvidenceSource: unifiedresources.SourceAvailability,
+				EvidenceFreshness: unifiedresources.RelationshipFreshnessCurrent,
 			}},
 		},
 	}
@@ -112,7 +114,10 @@ func TestInfrastructureIncidentSynthesisRequiresOrderedBoundedTiming(t *testing.
 		hostID: {ID: hostID, Type: unifiedresources.ResourceTypeAgent, Status: unifiedresources.StatusOffline},
 		endpointID: {
 			ID: endpointID, Type: unifiedresources.ResourceTypeNetworkEndpoint, Status: unifiedresources.StatusOffline,
-			Relationships: []unifiedresources.ResourceRelationship{{SourceID: endpointID, TargetID: hostID, Type: unifiedresources.RelChecks, Confidence: 1, Active: true}},
+			Relationships: []unifiedresources.ResourceRelationship{{
+				SourceID: endpointID, TargetID: hostID, Type: unifiedresources.RelChecks, Confidence: 1, Active: true,
+				EvidenceSource: unifiedresources.SourceAvailability, EvidenceFreshness: unifiedresources.RelationshipFreshnessCurrent,
+			}},
 		},
 	}
 	root := &Alert{ID: "host-offline", Type: "offline", Level: AlertLevelCritical, ResourceID: hostID, StartTime: startedAt}
@@ -146,7 +151,10 @@ func TestInfrastructureIncidentSynthesisPreservesExistingSharedSystemCorrelation
 		hostID: {ID: hostID, Type: unifiedresources.ResourceTypeAgent, Status: unifiedresources.StatusOffline},
 		endpointID: {
 			ID: endpointID, Type: unifiedresources.ResourceTypeNetworkEndpoint, Status: unifiedresources.StatusOffline,
-			Relationships: []unifiedresources.ResourceRelationship{{SourceID: endpointID, TargetID: hostID, Type: unifiedresources.RelChecks, Confidence: 1, Active: true}},
+			Relationships: []unifiedresources.ResourceRelationship{{
+				SourceID: endpointID, TargetID: hostID, Type: unifiedresources.RelChecks, Confidence: 1, Active: true,
+				EvidenceSource: unifiedresources.SourceAvailability, EvidenceFreshness: unifiedresources.RelationshipFreshnessCurrent,
+			}},
 		},
 	}
 
@@ -254,6 +262,7 @@ func TestSupportedSymptomNotifiesWhenPrimaryRecoversButSymptomPersists(t *testin
 		Availability: &unifiedresources.AvailabilityData{AggregateState: "unavailable", TransportOutcome: "unreachable"},
 		Relationships: []unifiedresources.ResourceRelationship{{
 			SourceID: endpointID, TargetID: hostID, Type: unifiedresources.RelChecks, Confidence: 1, Active: true,
+			EvidenceSource: unifiedresources.SourceAvailability, EvidenceFreshness: unifiedresources.RelationshipFreshnessCurrent,
 		}},
 		Incidents: []unifiedresources.ResourceIncident{{
 			Provider: "availability", NativeID: "checkout", Code: "availability_unreachable", Severity: storagehealth.RiskCritical,
@@ -288,6 +297,48 @@ func TestSupportedSymptomNotifiesWhenPrimaryRecoversButSymptomPersists(t *testin
 	}
 }
 
+func TestStaleProviderRelationshipDoesNotSuppressAvailabilityAlert(t *testing.T) {
+	manager := newTestManager(t)
+	configureUnifiedEvalManager(t, manager, unifiedEvalBaseConfig())
+	startedAt := time.Date(2026, 9, 29, 18, 0, 0, 0, time.UTC)
+	const hostID = "komodo-server:edge-1"
+	const endpointID = "availability:checkout"
+	host := unifiedresources.Resource{
+		ID: hostID, Type: unifiedresources.ResourceTypeKomodoServer, Name: "Edge server", Status: unifiedresources.StatusOffline,
+		Incidents: []unifiedresources.ResourceIncident{{
+			Provider: "komodo", NativeID: "edge-1", Code: "komodo_resource_unhealthy", Severity: storagehealth.RiskCritical,
+			Source: "komodo-poller", Summary: "Komodo server is unreachable", StartedAt: startedAt,
+			ConfirmationsRequired: 1, RecoveryConfirmationsRequired: 1,
+		}},
+	}
+	endpoint := unifiedresources.Resource{
+		ID: endpointID, Type: unifiedresources.ResourceTypeNetworkEndpoint, Name: "Checkout", Status: unifiedresources.StatusOffline,
+		Availability: &unifiedresources.AvailabilityData{AggregateState: "unavailable", TransportOutcome: "unreachable"},
+		Relationships: []unifiedresources.ResourceRelationship{{
+			SourceID: endpointID, TargetID: hostID, Type: unifiedresources.RelChecks, Confidence: 1, Active: true,
+			EvidenceSource: unifiedresources.SourceKomodo, EvidenceFreshness: unifiedresources.RelationshipFreshnessStale,
+		}},
+		Incidents: []unifiedresources.ResourceIncident{{
+			Provider: "availability", NativeID: "checkout", Code: "availability_unreachable", Severity: storagehealth.RiskCritical,
+			Source: "availability.probe", Summary: "Checkout is unreachable", StartedAt: startedAt.Add(time.Second),
+			ConfirmationsRequired: 1, RecoveryConfirmationsRequired: 1,
+		}},
+	}
+	var delivered []string
+	manager.SetAlertCallback(func(alert *Alert) { delivered = append(delivered, alert.ResourceID) })
+
+	manager.SyncUnifiedResourceIncidents([]unifiedresources.Resource{host, endpoint})
+
+	if len(delivered) != 2 || delivered[0] == delivered[1] {
+		t.Fatalf("stale-edge deliveries = %v, want independent host and availability notifications", delivered)
+	}
+	for _, alert := range manager.GetActiveAlerts() {
+		if alert.ResourceID == endpointID && isSupportedInfrastructureSymptom(&alert) {
+			t.Fatalf("availability alert correlation = %+v; stale provider evidence must not support notification suppression", alert.Correlation)
+		}
+	}
+}
+
 func TestPreviouslyNotifiedSymptomDoesNotDuplicateWhenPrimaryRecovers(t *testing.T) {
 	manager := newTestManager(t)
 	configureUnifiedEvalManager(t, manager, unifiedEvalBaseConfig())
@@ -302,6 +353,7 @@ func TestPreviouslyNotifiedSymptomDoesNotDuplicateWhenPrimaryRecovers(t *testing
 		Availability: &unifiedresources.AvailabilityData{AggregateState: "unavailable", TransportOutcome: "unreachable"},
 		Relationships: []unifiedresources.ResourceRelationship{{
 			SourceID: endpointID, TargetID: hostID, Type: unifiedresources.RelChecks, Confidence: 1, Active: true,
+			EvidenceSource: unifiedresources.SourceAvailability, EvidenceFreshness: unifiedresources.RelationshipFreshnessCurrent,
 		}},
 		Incidents: []unifiedresources.ResourceIncident{{
 			Provider: "availability", NativeID: "checkout", Code: "availability_unreachable", Severity: storagehealth.RiskCritical,

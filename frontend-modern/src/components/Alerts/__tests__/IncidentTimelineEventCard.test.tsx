@@ -77,6 +77,28 @@ describe('IncidentTimelineEventCard', () => {
     expect(screen.getByText('operator')).toBeInTheDocument();
   });
 
+  it('shows related canonical resources as context in incident evidence', () => {
+    render(() => (
+      <IncidentTimelineEventCard
+        variant="surface"
+        event={makeEvent({
+          evidence: {
+            id: 'canonical-record-related',
+            resourceId: 'network-endpoint-1234567890abcdef',
+            kind: 'alert_fired',
+            observedAt: '2026-03-18T12:10:00Z',
+            sourceType: 'platform_event',
+            confidence: 'high',
+            relatedResources: ['komodo-stack-1234567890abcdef', 'vm-1234567890abcdef'],
+          },
+        })}
+      />
+    ));
+    expect(screen.getByText('Related resources')).toBeInTheDocument();
+    expect(screen.getByText('komodo-stack-1234567890abcdef')).toBeInTheDocument();
+    expect(screen.getByText('vm-1234567890abcdef')).toBeInTheDocument();
+  });
+
   it('does not fabricate a date for missing evidence time', () => {
     render(() => (
       <IncidentTimelineEventCard

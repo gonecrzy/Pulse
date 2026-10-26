@@ -87,6 +87,122 @@ func TestProxmoxKomodoLinkPersistsAcrossStoreRestartAndKeepsAssociations(t *test
 	}
 }
 
+func TestWWWDMZStackAvailabilityChainPersistsAcrossRestart(t *testing.T) {
+	const (
+		orgID        = "org-www-dmz-topology-test"
+		connectionID = "87ef53c3-9a5a-4d7b-a159-997ccca19811"
+		pveSourceID  = "pve:cluster-a:vmid:50110"
+		serverID     = "server-www-dmz"
+		stackID      = "stack-kristi-www"
+		probeID      = "kristi-www-site"
+	)
+	now := time.Now().UTC()
+	pveID := unifiedresources.SourceSpecificID(unifiedresources.ResourceTypeVM, unifiedresources.SourceProxmox, pveSourceID)
+	serverSourceID := SourceID(connectionID, KindServer, serverID)
+	serverCanonicalID := unifiedresources.SourceSpecificID(unifiedresources.ResourceTypeKomodoServer, unifiedresources.SourceKomodo, serverSourceID)
+	stackSourceID := SourceID(connectionID, KindStack, stackID)
+	stackCanonicalID := unifiedresources.SourceSpecificID(unifiedresources.ResourceTypeKomodoStack, unifiedresources.SourceKomodo, stackSourceID)
+	checkCanonicalID := unifiedresources.SourceSpecificID(unifiedresources.ResourceTypeNetworkEndpoint, unifiedresources.SourceAvailability, probeID)
+
+	pveRecords := []unifiedresources.IngestRecord{{
+		SourceID: pveSourceID,
+		Resource: unifiedresources.Resource{
+			Type: unifiedresources.ResourceTypeVM, Name: "www-DMZ", Status: unifiedresources.StatusOnline,
+			LastSeen: now, Proxmox: &unifiedresources.ProxmoxData{VMID: 50110, Instance: "cluster-a"},
+		},
+	}}
+	komodoRecords := NormalizeInventory(connectionID, Inventory{
+		Servers: []Resource{{ID: serverID, Name: "www-DMZ", Kind: KindServer, State: "Ok"}},
+		Stacks:  []Resource{{ID: stackID, Name: "kristi-www", Kind: KindStack, State: "Running", ServerID: serverID}},
+	}, now)
+	availabilityRecords := []unifiedresources.IngestRecord{{
+		SourceID: probeID,
+		Resource: unifiedresources.Resource{
+			Type: unifiedresources.ResourceTypeNetworkEndpoint, Name: probeID, Status: unifiedresources.StatusOnline,
+			LastSeen: now, Sources: []unifiedresources.DataSource{unifiedresources.SourceAvailability},
+			Availability: &unifiedresources.AvailabilityData{
+				TargetID: probeID, LinkedResourceID: stackCanonicalID, Address: "192.0.2.110", Protocol: "https", Enabled: true, Available: true,
+			},
+		},
+	}}
+
+	dataDir := t.TempDir()
+	store, err := unifiedresources.NewSQLiteResourceStore(dataDir, orgID)
+	if err != nil {
+		t.Fatalf("open resource store: %v", err)
+	}
+	if err := store.AddLink(unifiedresources.ResourceLink{
+		ResourceA: pveID, ResourceB: serverCanonicalID, PrimaryID: pveID,
+		Reason: "operator-confirmed same VM", CreatedAt: now,
+	}); err != nil {
+		t.Fatalf("persist operator identity link: %v", err)
+	}
+
+	assertChain := func(registry *unifiedresources.ResourceRegistry) {
+		t.Helper()
+		resources := registry.List()
+		if len(resources) != 3 {
+			t.Fatalf("canonical inventory has %d resources, want one host, one Stack, and one check: %+v", len(resources), resources)
+		}
+		host, ok := registry.Get(pveID)
+		if !ok || host.ID != pveID || host.Type != unifiedresources.ResourceTypeVM {
+			t.Fatalf("canonical host = %+v, want the Proxmox VM identity %q", host, pveID)
+		}
+		if !hasSource(host.Sources, unifiedresources.SourceProxmox) || !hasSource(host.Sources, unifiedresources.SourceKomodo) {
+			t.Fatalf("canonical host sources = %v, want Proxmox and Komodo", host.Sources)
+		}
+		if target := registry.MetricsTarget(pveID); target == nil || target.ResourceType != "vm" || target.ResourceID != pveSourceID {
+			t.Fatalf("metrics target = %+v, want vm/%s", target, pveSourceID)
+		}
+		if host.Proxmox == nil || host.Proxmox.VMID != 50110 {
+			t.Fatalf("Proxmox identity facet = %+v, want VMID 50110", host.Proxmox)
+		}
+		stack, ok := registry.Get(stackCanonicalID)
+		if !ok || stack.ParentID == nil || *stack.ParentID != pveID {
+			t.Fatalf("Stack = %+v, want hosted_by canonical host %q", stack, pveID)
+		}
+		stackEdges := unifiedresources.ResourceRelationshipsWithCanonicalParent(*stack)
+		if len(stackEdges) != 1 || stackEdges[0].Type != unifiedresources.RelHostedBy || stackEdges[0].TargetID != pveID || stackEdges[0].EvidenceSource != unifiedresources.SourceKomodo {
+			t.Fatalf("Stack relationships = %+v, want Komodo hosted_by canonical host", stackEdges)
+		}
+		check, ok := registry.Get(checkCanonicalID)
+		if !ok || check.Type != unifiedresources.ResourceTypeNetworkEndpoint || check.ID != checkCanonicalID {
+			t.Fatalf("availability check = %+v, want its independent endpoint identity %q", check, checkCanonicalID)
+		}
+		if check.Availability == nil || check.Availability.ResolvedResourceID != stackCanonicalID || check.Availability.LinkedResourceName != "kristi-www" {
+			t.Fatalf("resolved check association = %+v, want canonical Stack identity and label", check.Availability)
+		}
+		checkEdges := unifiedresources.ResourceRelationshipsWithCanonicalParent(*check)
+		if len(checkEdges) != 1 || checkEdges[0].Type != unifiedresources.RelChecks || checkEdges[0].TargetID != stackCanonicalID {
+			t.Fatalf("availability relationships = %+v, want checks edge to Stack %q", checkEdges, stackCanonicalID)
+		}
+		checks := unifiedresources.AvailabilityChecksForResource(*stack)
+		if len(checks) != 1 || checks[0].TargetID != probeID || checks[0].LinkedResourceID != stackCanonicalID {
+			t.Fatalf("Stack availability checks = %+v, want %q attached without replacing Stack identity", checks, probeID)
+		}
+	}
+
+	registry := unifiedresources.NewRegistry(store)
+	registry.IngestRecords(unifiedresources.SourceKomodo, komodoRecords)
+	registry.IngestRecords(unifiedresources.SourceProxmox, pveRecords)
+	registry.IngestRecords(unifiedresources.SourceAvailability, availabilityRecords)
+	assertChain(registry)
+	if err := store.Close(); err != nil {
+		t.Fatalf("close resource store: %v", err)
+	}
+
+	reopened, err := unifiedresources.NewSQLiteResourceStore(dataDir, orgID)
+	if err != nil {
+		t.Fatalf("reopen resource store: %v", err)
+	}
+	t.Cleanup(func() { _ = reopened.Close() })
+	rebuilt := unifiedresources.NewRegistry(reopened)
+	rebuilt.IngestRecords(unifiedresources.SourceProxmox, pveRecords)
+	rebuilt.IngestRecords(unifiedresources.SourceKomodo, komodoRecords)
+	rebuilt.IngestRecords(unifiedresources.SourceAvailability, availabilityRecords)
+	assertChain(rebuilt)
+}
+
 func TestProxmoxKomodoLinkStalenessRemovalAndRecovery(t *testing.T) {
 	const (
 		connectionID = "87ef53c3-9a5a-4d7b-a159-997ccca19811"

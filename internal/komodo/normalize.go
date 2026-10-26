@@ -92,18 +92,28 @@ func NormalizeInventory(connectionID string, inventory Inventory, observedAt tim
 		parentSourceID := ""
 		if parentID != "" && parentKind != "" {
 			parentSourceID = SourceID(connectionID, parentKind, parentID)
-			parentType := ResourceType(parentKind)
-			parentCanonicalID := unifiedresources.SourceSpecificID(parentType, unifiedresources.SourceKomodo, parentSourceID)
-			resource.Relationships = append(resource.Relationships, unifiedresources.ResourceRelationship{
-				SourceID:   unifiedresources.SourceSpecificID(resourceType, unifiedresources.SourceKomodo, sourceID),
-				TargetID:   parentCanonicalID,
-				Type:       unifiedresources.RelHostedBy,
-				Confidence: 1,
-				Active:     true,
-				Discoverer: "komodo_adapter",
-				ObservedAt: observedAt,
-				LastSeenAt: observedAt,
-			})
+			parentPresent := false
+			switch parentKind {
+			case KindServer:
+				parentPresent = strings.TrimSpace(serverIDs[parentID]) != ""
+			case KindSwarm:
+				parentPresent = strings.TrimSpace(swarmIDs[parentID]) != ""
+			}
+			if parentPresent && parentSourceID != "" {
+				parentType := ResourceType(parentKind)
+				parentCanonicalID := unifiedresources.SourceSpecificID(parentType, unifiedresources.SourceKomodo, parentSourceID)
+				resource.Relationships = append(resource.Relationships, unifiedresources.ResourceRelationship{
+					SourceID:       unifiedresources.SourceSpecificID(resourceType, unifiedresources.SourceKomodo, sourceID),
+					TargetID:       parentCanonicalID,
+					Type:           unifiedresources.RelHostedBy,
+					Confidence:     1,
+					EvidenceSource: unifiedresources.SourceKomodo,
+					Active:         true,
+					Discoverer:     "komodo_adapter",
+					ObservedAt:     observedAt,
+					LastSeenAt:     observedAt,
+				})
+			}
 		}
 		records = append(records, unifiedresources.IngestRecord{
 			SourceID:       sourceID,

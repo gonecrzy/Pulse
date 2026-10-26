@@ -116,6 +116,19 @@ func TestFormatResourceRelationshipContext(t *testing.T) {
 	}
 }
 
+func TestFormatResourceRelationshipContextIncludesEvidenceSourceAndFreshness(t *testing.T) {
+	context := FormatResourceRelationshipContext(&Resource{Relationships: []ResourceRelationship{{
+		SourceID: "komodo-stack:web", TargetID: "komodo-server:edge", Type: RelHostedBy,
+		Active: true, Discoverer: "komodo_adapter", EvidenceSource: SourceKomodo,
+		EvidenceFreshness: RelationshipFreshnessStale,
+	}}}, 5)
+	for _, want := range []string{"evidence provider komodo", "evidence freshness stale"} {
+		if !contains(context, want) {
+			t.Fatalf("relationship context = %q, want %q", context, want)
+		}
+	}
+}
+
 func TestResourceRelationshipsWithCanonicalParent(t *testing.T) {
 	parentID := "k8s-cluster-1"
 	now := time.Date(2026, 3, 18, 17, 0, 0, 0, time.UTC)

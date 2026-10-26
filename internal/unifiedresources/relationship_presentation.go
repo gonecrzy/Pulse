@@ -100,6 +100,12 @@ func FormatResourceRelationshipContext(resource *Resource, limit int) string {
 		if presentation.Provenance != "" {
 			parts = append(parts, fmt.Sprintf("discoverer %s", presentation.Provenance))
 		}
+		if rel.EvidenceSource != "" {
+			parts = append(parts, fmt.Sprintf("evidence provider %s", rel.EvidenceSource))
+		}
+		if rel.EvidenceFreshness != "" {
+			parts = append(parts, fmt.Sprintf("evidence freshness %s", rel.EvidenceFreshness))
+		}
 		if presentation.Confidence != "" {
 			parts = append(parts, fmt.Sprintf("confidence %s", presentation.Confidence))
 		}

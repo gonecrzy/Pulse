@@ -1545,6 +1545,8 @@ export interface ResourceVMwareTag {
 export interface ResourceAvailabilityMeta {
   targetId?: string;
   linkedResourceId?: string;
+  resolvedResourceId?: string;
+  linkedResourceName?: string;
   name?: string;
   targetKind?: 'machine' | 'service' | 'device' | string;
   address?: string;

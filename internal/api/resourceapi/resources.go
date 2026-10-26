@@ -367,6 +367,7 @@ func (h *QueryService) HandleGetResource(w http.ResponseWriter, r *http.Request)
 	resourceCopy = resourceCopies[0]
 	attachDiscoveryTarget(&resourceCopy)
 	attachMetricsTarget(&resourceCopy, registry)
+	resourceCopy.Relationships = canonicalResourceRelationshipContext(registry, resourceCopy)
 	unified.RefreshCanonicalMetadata(&resourceCopy)
 	resourceCopy.Type = resourceContractType(resourceCopy)
 
@@ -417,6 +418,57 @@ func presentationResourcesFromRegistry(registry *unified.ResourceRegistry) []uni
 		return nil
 	}
 	return registry.ListForPresentation()
+}
+
+// canonicalResourceRelationshipContext projects active canonical edges from
+// both directions so details and facets share the registry's graph view.
+func canonicalResourceRelationshipContext(registry *unified.ResourceRegistry, resource unified.Resource) []unified.ResourceRelationship {
+	resourceID := unified.CanonicalResourceID(resource.ID)
+	if resourceID == "" {
+		return []unified.ResourceRelationship{}
+	}
+	seen := make(map[string]struct{})
+	relationships := make([]unified.ResourceRelationship, 0)
+	appendRelationship := func(relationship unified.ResourceRelationship) {
+		sourceID := unified.CanonicalResourceID(relationship.SourceID)
+		targetID := unified.CanonicalResourceID(relationship.TargetID)
+		if sourceID != resourceID && targetID != resourceID {
+			return
+		}
+		key := relationship.ID
+		if key == "" {
+			key = string(relationship.Type) + "\x00" + sourceID + "\x00" + targetID
+		}
+		if _, exists := seen[key]; exists {
+			return
+		}
+		seen[key] = struct{}{}
+		relationship.SourceID = sourceID
+		relationship.TargetID = targetID
+		relationships = append(relationships, relationship)
+	}
+	if registry != nil {
+		for _, relationship := range registry.ListResourceRelationships() {
+			appendRelationship(relationship)
+		}
+	}
+	// Keep this resource's relationship tombstones available for diagnostics;
+	// active relationships come from the canonical registry-wide projection.
+	for _, relationship := range unified.ResourceRelationshipsWithCanonicalParent(resource) {
+		if !relationship.Active {
+			appendRelationship(relationship)
+		}
+	}
+	sort.Slice(relationships, func(i, j int) bool {
+		if relationships[i].SourceID != relationships[j].SourceID {
+			return relationships[i].SourceID < relationships[j].SourceID
+		}
+		if relationships[i].TargetID != relationships[j].TargetID {
+			return relationships[i].TargetID < relationships[j].TargetID
+		}
+		return relationships[i].Type < relationships[j].Type
+	})
+	return relationships
 }
 
 func presentationResourceByID(registry *unified.ResourceRegistry, resourceID string) (*unified.Resource, bool) {
@@ -621,7 +673,7 @@ func (h *QueryService) HandleGetResourceFacets(w http.ResponseWriter, r *http.Re
 	json.NewEncoder(w).Encode(resourceFacetBundleResponse{
 		ResourceID:    resourceID,
 		Capabilities:  append([]unified.ResourceCapability(nil), resource.Capabilities...),
-		Relationships: unified.ResourceRelationshipsWithCanonicalParent(*resource),
+		Relationships: canonicalResourceRelationshipContext(registry, *resource),
 		RecentChanges: recentChanges,
 		Counts: resourceFacetCountsResponse{
 			RecentChanges:              changeCount,

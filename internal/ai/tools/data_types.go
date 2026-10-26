@@ -8,6 +8,14 @@ import (
 	"github.com/rcourtman/pulse-go-rewrite/pkg/agents/filesystem"
 )
 
+// CanonicalSourceObservation exposes provider freshness without forwarding
+// free-form source error text into AI tool results.
+type CanonicalSourceObservation struct {
+	Status                        string    `json:"status"`
+	LastSeen                      time.Time `json:"last_seen"`
+	ExpectedUpdateIntervalSeconds int64     `json:"expected_update_interval_seconds,omitempty"`
+}
+
 // GovernedResourceMetadata carries canonical policy metadata for AI-facing
 // tool payloads so downstream consumers can honor redaction/routing rules
 // without rebuilding platform-specific inference.
@@ -236,17 +244,19 @@ func (r ResourceSearchResponse) NormalizeCollections() ResourceSearchResponse {
 // ResourceMatch is a compact match result for pulse_search_resources
 type ResourceMatch struct {
 	GovernedResourceMetadata
-	Type                      string `json:"type"` // "agent", "node", "vm", "system-container", "app-container", "docker-host", "storage"
-	ID                        string `json:"id,omitempty"`
-	Name                      string `json:"name"`
-	Status                    string `json:"status,omitempty"`
-	Node                      string `json:"node,omitempty"`                         // Hypervisor node this resource is on
-	NodeCommandAgentConnected *bool  `json:"node_command_agent_connected,omitempty"` // Live command connection on the parent node, independent of telemetry collection
-	Host                      string `json:"host,omitempty"`                         // Docker host for docker containers
-	Platform                  string `json:"platform,omitempty"`
-	VMID                      int    `json:"vmid,omitempty"`
-	Image                     string `json:"image,omitempty"`
-	CommandAgentConnected     *bool  `json:"command_agent_connected,omitempty"` // Live command connection for this resource, independent of telemetry collection
+	Type                      string                                                     `json:"type"` // "agent", "node", "vm", "system-container", "app-container", "docker-host", "storage"
+	ID                        string                                                     `json:"id,omitempty"`
+	Name                      string                                                     `json:"name"`
+	Status                    string                                                     `json:"status,omitempty"`
+	Node                      string                                                     `json:"node,omitempty"`                         // Hypervisor node this resource is on
+	NodeCommandAgentConnected *bool                                                      `json:"node_command_agent_connected,omitempty"` // Live command connection on the parent node, independent of telemetry collection
+	Host                      string                                                     `json:"host,omitempty"`                         // Docker host for docker containers
+	Platform                  string                                                     `json:"platform,omitempty"`
+	VMID                      int                                                        `json:"vmid,omitempty"`
+	Image                     string                                                     `json:"image,omitempty"`
+	CommandAgentConnected     *bool                                                      `json:"command_agent_connected,omitempty"` // Live command connection for this resource, independent of telemetry collection
+	Sources                   []unifiedresources.DataSource                              `json:"sources,omitempty"`
+	SourceStatus              map[unifiedresources.DataSource]CanonicalSourceObservation `json:"source_status,omitempty"`
 }
 
 // SystemSummary is a summarized infrastructure system for list responses.
@@ -419,12 +429,44 @@ type PaginationInfo struct {
 // TopologyResponse provides a fully hierarchical view of infrastructure
 // This is the recommended tool for understanding infrastructure relationships
 type TopologyResponse struct {
-	Proxmox                ProxmoxTopology                         `json:"proxmox"`
-	Docker                 DockerTopology                          `json:"docker"`
-	Kubernetes             KubernetesTopology                      `json:"kubernetes"`
-	Relationships          []unifiedresources.ResourceRelationship `json:"relationships"`
-	RelationshipsTruncated bool                                    `json:"relationships_truncated,omitempty"`
-	Summary                TopologySummary                         `json:"summary"`
+	Proxmox                     ProxmoxTopology                         `json:"proxmox"`
+	Docker                      DockerTopology                          `json:"docker"`
+	Kubernetes                  KubernetesTopology                      `json:"kubernetes"`
+	CanonicalResources          []CanonicalTopologyResource             `json:"canonical_resources"`
+	CanonicalResourcesTruncated bool                                    `json:"canonical_resources_truncated,omitempty"`
+	Relationships               []unifiedresources.ResourceRelationship `json:"relationships"`
+	RelationshipsTruncated      bool                                    `json:"relationships_truncated,omitempty"`
+	Summary                     TopologySummary                         `json:"summary"`
+}
+
+// CanonicalTopologyResource is a compact read-only projection of one node in
+// the canonical relationship graph. SourceStatus reports provider observation
+// freshness; Status is the registry's resource health aggregation.
+type CanonicalTopologyResource struct {
+	ID           string                                                     `json:"id"`
+	Type         string                                                     `json:"type"`
+	Name         string                                                     `json:"name"`
+	Status       string                                                     `json:"status"`
+	ParentID     string                                                     `json:"parent_id,omitempty"`
+	ParentName   string                                                     `json:"parent_name,omitempty"`
+	Sources      []unifiedresources.DataSource                              `json:"sources"`
+	SourceStatus map[unifiedresources.DataSource]CanonicalSourceObservation `json:"source_status,omitempty"`
+	Availability *TopologyAvailabilityObservation                           `json:"availability,omitempty"`
+}
+
+// TopologyAvailabilityObservation keeps the endpoint result and its explicit
+// canonical association visible without treating the check as the target's
+// identity or as proof of infrastructure failure.
+type TopologyAvailabilityObservation struct {
+	TargetID             string     `json:"target_id,omitempty"`
+	ConfiguredResourceID string     `json:"configured_resource_id,omitempty"`
+	LinkedResourceID     string     `json:"linked_resource_id,omitempty"`
+	LinkedResourceName   string     `json:"linked_resource_name,omitempty"`
+	Outcome              string     `json:"outcome,omitempty"`
+	AggregateState       string     `json:"aggregate_state,omitempty"`
+	LastChecked          *time.Time `json:"last_checked,omitempty"`
+	Disagreement         bool       `json:"disagreement,omitempty"`
+	CorrelationState     string     `json:"correlation_state,omitempty"`
 }
 
 func EmptyTopologyResponse() TopologyResponse {
@@ -437,6 +479,9 @@ func (r TopologyResponse) NormalizeCollections() TopologyResponse {
 	r.Kubernetes = r.Kubernetes.NormalizeCollections()
 	if r.Relationships == nil {
 		r.Relationships = []unifiedresources.ResourceRelationship{}
+	}
+	if r.CanonicalResources == nil {
+		r.CanonicalResources = []CanonicalTopologyResource{}
 	}
 	return r
 }

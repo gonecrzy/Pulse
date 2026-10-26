@@ -2024,17 +2024,17 @@ func (e *PulseToolExecutor) registerQueryTools() {
 					},
 					"resource_type": {
 						Type:        "string",
-						Description: "Resource type. For get/search, prefer canonical values: 'agent', 'vm', 'system-container', 'app-container', 'storage', 'physical-disk', and 'docker-host'. For get, 'node' resolves to 'agent'. For search, 'node' filters Proxmox nodes. Compatibility aliases 'system' and 'storage-pool' are still accepted. For config: 'vm', 'system-container', or TrueNAS 'app-container'. Docker and Podman app-container configuration reads are not supported. Their collected health, mounts, ports, and networks are available through get.",
-						Enum:        []string{"agent", "system", "vm", "system-container", "app-container", "node", "docker-host", "storage", "storage-pool", "physical-disk"},
+						Description: "Resource type. For get/search, canonical types also include Komodo servers, Stacks, deployments, Swarms, and network-endpoint availability checks. For get, 'node' resolves to 'agent'. For search, 'node' filters Proxmox nodes. Compatibility aliases 'system' and 'storage-pool' are still accepted. For config: 'vm', 'system-container', or TrueNAS 'app-container'. Docker and Podman app-container configuration reads are not supported. Their collected health, mounts, ports, and networks are available through get.",
+						Enum:        []string{"agent", "system", "vm", "system-container", "app-container", "node", "docker-host", "storage", "storage-pool", "physical-disk", "komodo-server", "komodo-stack", "komodo-deployment", "komodo-swarm", "network-endpoint"},
 					},
 					"resource_id": {
 						Type:        "string",
-						Description: "Canonical resource identifier (for action: get, config, or resource-scoped health). Provider-native IDs and names are accepted as lookup aliases, but canonical unified resources are returned with their canonical ID.",
+						Description: "Canonical resource identifier (for action: get, config, or resource-scoped health). For topology, scopes the relationship graph around this canonical resource. Provider-native IDs and names are accepted as lookup aliases for get; canonical unified resources are returned with their canonical ID.",
 					},
 					"type": {
 						Type:        "string",
-						Description: "Filter by type. For action=list, use plural families such as 'agents', 'systems', 'nodes', 'vms', 'system-containers', 'app-containers', 'docker-hosts', 'storages', 'storage-pools', and 'physical-disks'. For action=search, singular canonical kinds such as 'agent' and 'storage' are also accepted.",
-						Enum:        []string{"agent", "agents", "systems", "nodes", "vms", "system-containers", "app-containers", "docker-hosts", "storage", "storages", "storage-pools", "physical-disks", "kubernetes", "k8s-clusters", "k8s-nodes", "k8s-pods", "k8s-deployments"},
+						Description: "Filter by type. For action=list, use plural families such as 'agents', 'systems', 'nodes', 'vms', 'system-containers', 'app-containers', 'docker-hosts', 'storages', 'storage-pools', and 'physical-disks'. For action=search, singular canonical kinds such as 'agent', 'storage', Komodo resource types, and 'network-endpoint' are accepted.",
+						Enum:        []string{"agent", "agents", "systems", "nodes", "vms", "system-containers", "app-containers", "docker-hosts", "storage", "storages", "storage-pools", "physical-disks", "kubernetes", "k8s-clusters", "k8s-nodes", "k8s-pods", "k8s-deployments", "komodo-server", "komodo-stack", "komodo-deployment", "komodo-swarm", "network-endpoint"},
 					},
 					"status": {
 						Type:        "string",
@@ -2056,6 +2056,14 @@ func (e *PulseToolExecutor) registerQueryTools() {
 					"summary_only": {
 						Type:        "boolean",
 						Description: "Return only summary counts for topology (for action: topology)",
+					},
+					"depth": {
+						Type:        "integer",
+						Description: "Maximum relationship hops around resource_id for scoped topology (default: 2, maximum: 5)",
+					},
+					"max_canonical_resources": {
+						Type:        "integer",
+						Description: "Maximum canonical resources in topology relationship context (default: 50)",
 					},
 					"max_proxmox_nodes": {
 						Type:        "integer",
@@ -4179,6 +4187,306 @@ type TopologyBuildOptions struct {
 	ControlEnabled              bool
 }
 
+type topologyRelationshipReadState interface {
+	ListResourceRelationships() []unifiedresources.ResourceRelationship
+}
+
+type topologyAllResourceProvider interface {
+	GetAll() []unifiedresources.Resource
+}
+
+type canonicalResourceReferenceProvider interface {
+	GetByReference(reference string) (*unifiedresources.Resource, string, bool)
+}
+
+func resourceHasSource(resource unifiedresources.Resource, expected unifiedresources.DataSource) bool {
+	for _, source := range resource.Sources {
+		if source == expected {
+			return true
+		}
+	}
+	return false
+}
+
+func canonicalResourcesForTopology(provider UnifiedResourceProvider) []unifiedresources.Resource {
+	if provider == nil {
+		return nil
+	}
+	var resources []unifiedresources.Resource
+	if all, ok := provider.(topologyAllResourceProvider); ok {
+		resources = all.GetAll()
+	} else {
+		// Keep compatibility with query providers that expose only GetByType.
+		for _, resourceType := range []unifiedresources.ResourceType{
+			unifiedresources.ResourceTypeAgent,
+			unifiedresources.ResourceTypeVM,
+			unifiedresources.ResourceTypeSystemContainer,
+			unifiedresources.ResourceTypeAppContainer,
+			unifiedresources.ResourceTypeStorage,
+			unifiedresources.ResourceTypePhysicalDisk,
+			unifiedresources.ResourceTypeNetworkEndpoint,
+			unifiedresources.ResourceTypeKomodoServer,
+			unifiedresources.ResourceTypeKomodoStack,
+			unifiedresources.ResourceTypeKomodoDeployment,
+			unifiedresources.ResourceTypeKomodoSwarm,
+		} {
+			resources = append(resources, provider.GetByType(resourceType)...)
+		}
+	}
+
+	sort.Slice(resources, func(i, j int) bool {
+		if resources[i].ID != resources[j].ID {
+			return resources[i].ID < resources[j].ID
+		}
+		if resources[i].Type != resources[j].Type {
+			return resources[i].Type < resources[j].Type
+		}
+		return resources[i].Name < resources[j].Name
+	})
+	byID := make(map[string]unifiedresources.Resource, len(resources))
+	for _, resource := range resources {
+		id := unifiedresources.CanonicalResourceID(resource.ID)
+		if id == "" {
+			continue
+		}
+		resource.ID = id
+		if _, exists := byID[id]; !exists {
+			byID[id] = resource
+		}
+	}
+	resources = resources[:0]
+	for _, resource := range byID {
+		resources = append(resources, resource)
+	}
+	sort.Slice(resources, func(i, j int) bool { return resources[i].ID < resources[j].ID })
+	return resources
+}
+
+func canonicalRelationshipsForTopology(rs unifiedresources.ReadState, resources []unifiedresources.Resource) []unifiedresources.ResourceRelationship {
+	if reader, ok := rs.(topologyRelationshipReadState); ok {
+		return reader.ListResourceRelationships()
+	}
+	seen := make(map[string]struct{})
+	relationships := make([]unifiedresources.ResourceRelationship, 0)
+	for _, resource := range resources {
+		for _, relationship := range unifiedresources.ResourceRelationshipsWithCanonicalParent(resource) {
+			if !relationship.Active {
+				continue
+			}
+			key := relationship.ID
+			if key == "" {
+				key = string(relationship.Type) + "\x00" + unifiedresources.CanonicalResourceID(relationship.SourceID) + "\x00" + unifiedresources.CanonicalResourceID(relationship.TargetID)
+			}
+			if _, exists := seen[key]; exists {
+				continue
+			}
+			seen[key] = struct{}{}
+			relationship.SourceID = unifiedresources.CanonicalResourceID(relationship.SourceID)
+			relationship.TargetID = unifiedresources.CanonicalResourceID(relationship.TargetID)
+			relationships = append(relationships, relationship)
+		}
+	}
+	sort.Slice(relationships, func(i, j int) bool {
+		if relationships[i].SourceID != relationships[j].SourceID {
+			return relationships[i].SourceID < relationships[j].SourceID
+		}
+		if relationships[i].TargetID != relationships[j].TargetID {
+			return relationships[i].TargetID < relationships[j].TargetID
+		}
+		return relationships[i].Type < relationships[j].Type
+	})
+	return relationships
+}
+
+func canonicalTopologyResource(resource unifiedresources.Resource) CanonicalTopologyResource {
+	projection := CanonicalTopologyResource{
+		ID:      unifiedresources.CanonicalResourceID(resource.ID),
+		Type:    string(unifiedresources.CanonicalResourceType(resource.Type)),
+		Name:    resource.Name,
+		Status:  string(resource.Status),
+		Sources: append([]unifiedresources.DataSource(nil), resource.Sources...),
+	}
+	if resource.ParentID != nil {
+		projection.ParentID = unifiedresources.CanonicalResourceID(*resource.ParentID)
+	}
+	projection.ParentName = resource.ParentName
+	if len(resource.SourceStatus) > 0 {
+		projection.SourceStatus = canonicalSourceObservations(resource.SourceStatus)
+	}
+	if availability := resource.Availability; availability != nil {
+		projection.Availability = &TopologyAvailabilityObservation{
+			TargetID:             availability.TargetID,
+			ConfiguredResourceID: unifiedresources.CanonicalResourceID(availability.LinkedResourceID),
+			LinkedResourceID:     unifiedresources.CanonicalResourceID(availability.ResolvedResourceID),
+			LinkedResourceName:   availability.LinkedResourceName,
+			Outcome:              availability.ProbeOutcome,
+			AggregateState:       availability.AggregateState,
+			LastChecked:          availability.LastChecked,
+			Disagreement:         availability.Disagreement,
+			CorrelationState:     string(availability.CorrelationState),
+		}
+		if projection.Availability.Outcome == "" {
+			if availability.Available {
+				projection.Availability.Outcome = "reachable"
+			} else {
+				projection.Availability.Outcome = "unreachable"
+			}
+		}
+	}
+	return projection
+}
+
+func canonicalSourceObservations(sourceStatus map[unifiedresources.DataSource]unifiedresources.SourceStatus) map[unifiedresources.DataSource]CanonicalSourceObservation {
+	if len(sourceStatus) == 0 {
+		return nil
+	}
+	observations := make(map[unifiedresources.DataSource]CanonicalSourceObservation, len(sourceStatus))
+	for source, status := range sourceStatus {
+		observations[source] = CanonicalSourceObservation{
+			Status:                        status.Status,
+			LastSeen:                      status.LastSeen,
+			ExpectedUpdateIntervalSeconds: status.ExpectedUpdateIntervalSeconds,
+		}
+	}
+	return observations
+}
+
+func attachCanonicalTopologyContext(
+	response *TopologyResponse,
+	rs unifiedresources.ReadState,
+	provider UnifiedResourceProvider,
+	resourceID string,
+	depth int,
+	maxResources int,
+) error {
+	if response == nil || provider == nil {
+		return nil
+	}
+	resources := canonicalResourcesForTopology(provider)
+	byID := make(map[string]unifiedresources.Resource, len(resources))
+	for _, resource := range resources {
+		byID[resource.ID] = resource
+	}
+	if maxResources <= 0 {
+		maxResources = 50
+	}
+	if depth <= 0 {
+		depth = 2
+	}
+	if depth > 5 {
+		depth = 5
+	}
+	allRelationships := canonicalRelationshipsForTopology(rs, resources)
+	resourceID = unifiedresources.CanonicalResourceID(resourceID)
+	if resourceID == "" {
+		ids := make(map[string]struct{})
+		for _, relationship := range response.Relationships {
+			ids[relationship.SourceID] = struct{}{}
+			ids[relationship.TargetID] = struct{}{}
+		}
+		orderedIDs := make([]string, 0, len(ids))
+		for id := range ids {
+			if _, ok := byID[id]; ok {
+				orderedIDs = append(orderedIDs, id)
+			}
+		}
+		sort.Strings(orderedIDs)
+		if len(orderedIDs) > maxResources {
+			response.CanonicalResourcesTruncated = true
+			orderedIDs = orderedIDs[:maxResources]
+		}
+		for _, id := range orderedIDs {
+			response.CanonicalResources = append(response.CanonicalResources, canonicalTopologyResource(byID[id]))
+		}
+		return nil
+	}
+
+	rootID := ""
+	if _, exists := byID[resourceID]; exists {
+		rootID = resourceID
+	} else if resolver, ok := provider.(canonicalResourceReferenceProvider); ok {
+		if _, resolvedID, found := resolver.GetByReference(resourceID); found {
+			resolvedID = unifiedresources.CanonicalResourceID(resolvedID)
+			if _, exists := byID[resolvedID]; exists {
+				rootID = resolvedID
+			}
+		}
+	}
+	if rootID == "" {
+		return fmt.Errorf("canonical resource %q not found; use action=search to resolve a canonical ID first", resourceID)
+	}
+
+	type graphNode struct {
+		id    string
+		depth int
+	}
+	visited := map[string]bool{rootID: true}
+	queue := []graphNode{{id: rootID}}
+	edgeSeen := make(map[string]struct{})
+	selectedEdges := make([]unifiedresources.ResourceRelationship, 0)
+	for len(queue) > 0 {
+		current := queue[0]
+		queue = queue[1:]
+		if current.depth >= depth {
+			continue
+		}
+		for _, relationship := range allRelationships {
+			neighbor := ""
+			if relationship.SourceID == current.id {
+				neighbor = relationship.TargetID
+			} else if relationship.TargetID == current.id {
+				neighbor = relationship.SourceID
+			}
+			if neighbor == "" {
+				continue
+			}
+			if _, ok := byID[neighbor]; !ok {
+				continue
+			}
+			key := relationship.ID
+			if key == "" {
+				key = string(relationship.Type) + "\x00" + relationship.SourceID + "\x00" + relationship.TargetID
+			}
+			if _, exists := edgeSeen[key]; !exists {
+				edgeSeen[key] = struct{}{}
+				selectedEdges = append(selectedEdges, relationship)
+			}
+			if visited[neighbor] {
+				continue
+			}
+			if len(visited) >= maxResources {
+				response.CanonicalResourcesTruncated = true
+				continue
+			}
+			visited[neighbor] = true
+			queue = append(queue, graphNode{id: neighbor, depth: current.depth + 1})
+		}
+	}
+	ids := make([]string, 0, len(visited))
+	for id := range visited {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	for _, id := range ids {
+		response.CanonicalResources = append(response.CanonicalResources, canonicalTopologyResource(byID[id]))
+	}
+	if len(selectedEdges) > maxResources {
+		response.RelationshipsTruncated = true
+		selectedEdges = selectedEdges[:maxResources]
+	}
+	sort.Slice(selectedEdges, func(i, j int) bool {
+		if selectedEdges[i].SourceID != selectedEdges[j].SourceID {
+			return selectedEdges[i].SourceID < selectedEdges[j].SourceID
+		}
+		if selectedEdges[i].TargetID != selectedEdges[j].TargetID {
+			return selectedEdges[i].TargetID < selectedEdges[j].TargetID
+		}
+		return selectedEdges[i].Type < selectedEdges[j].Type
+	})
+	response.Relationships = selectedEdges
+	return nil
+}
+
 func BuildTopologyResponseFromReadState(rs unifiedresources.ReadState, options TopologyBuildOptions) TopologyResponse {
 	response := EmptyTopologyResponse()
 	if rs == nil {
@@ -4659,6 +4967,9 @@ func (e *PulseToolExecutor) executeGetTopology(_ context.Context, args map[strin
 	if topologyLimit <= 0 {
 		topologyLimitProvided = false
 	}
+	resourceID, _ := args["resource_id"].(string)
+	depth := intArg(args, "depth", 2)
+	maxCanonicalResources := intArg(args, "max_canonical_resources", 50)
 
 	if !summaryProvided {
 		summaryOnly = false
@@ -4743,6 +5054,9 @@ func (e *PulseToolExecutor) executeGetTopology(_ context.Context, args map[strin
 		ConnectedAgentHostnames:     connectedAgentHostnames,
 		ControlEnabled:              controlEnabled,
 	})
+	if err := attachCanonicalTopologyContext(&response, rs, e.unifiedResourceProvider, resourceID, depth, maxCanonicalResources); err != nil {
+		return NewErrorResult(err), nil
+	}
 
 	return NewJSONResult(response), nil
 }
@@ -4817,6 +5131,35 @@ func (e *PulseToolExecutor) executeGetResource(_ context.Context, args map[strin
 			}
 		}
 		return NewErrorResult(fmt.Errorf("physical disk %q not found in canonical inventory", resourceID)), nil
+	}
+
+	switch unifiedresources.ResourceType(resourceType) {
+	case unifiedresources.ResourceTypeKomodoServer,
+		unifiedresources.ResourceTypeKomodoStack,
+		unifiedresources.ResourceTypeKomodoDeployment,
+		unifiedresources.ResourceTypeKomodoSwarm,
+		unifiedresources.ResourceTypeNetworkEndpoint:
+		if e.unifiedResourceProvider == nil {
+			return NewErrorResult(fmt.Errorf("canonical %s inventory is unavailable", resourceType)), nil
+		}
+		if resolver, ok := e.unifiedResourceProvider.(canonicalResourceReferenceProvider); ok {
+			if resource, _, found := resolver.GetByReference(resourceID); found && resource != nil {
+				if resource.Type == unifiedresources.ResourceType(resourceType) ||
+					(resourceType != string(unifiedresources.ResourceTypeNetworkEndpoint) && resourceHasSource(*resource, unifiedresources.SourceKomodo)) {
+					return NewJSONResult(canonicalTopologyResource(*resource)), nil
+				}
+			}
+		}
+		for _, resource := range e.unifiedResourceProvider.GetByType(unifiedresources.ResourceType(resourceType)) {
+			aliases := []string{resource.Name}
+			if resource.Availability != nil {
+				aliases = append(aliases, resource.Availability.TargetID)
+			}
+			if matchesCanonicalResourceReference(resource, resourceID, aliases...) {
+				return NewJSONResult(canonicalTopologyResource(resource)), nil
+			}
+		}
+		return notFoundResourceResult(resourceType, resourceID), nil
 	}
 
 	rs, err := e.readStateForControl()
@@ -5547,18 +5890,23 @@ func (e *PulseToolExecutor) executeSearchResources(_ context.Context, args map[s
 	}
 
 	allowedTypes := map[string]bool{
-		"":                 true,
-		"agent":            true,
-		"node":             true,
-		"vm":               true,
-		"system-container": true,
-		"app-container":    true,
-		"docker-host":      true,
-		"storage":          true,
-		"physical-disk":    true,
+		"":                  true,
+		"agent":             true,
+		"node":              true,
+		"vm":                true,
+		"system-container":  true,
+		"app-container":     true,
+		"docker-host":       true,
+		"storage":           true,
+		"physical-disk":     true,
+		"komodo-server":     true,
+		"komodo-stack":      true,
+		"komodo-deployment": true,
+		"komodo-swarm":      true,
+		"network-endpoint":  true,
 	}
 	if !allowedTypes[typeFilter] {
-		return NewErrorResult(fmt.Errorf("invalid type: %s. Use agent, node, vm, system-container, app-container, docker-host, storage, or physical-disk (compatibility aliases system and storage-pool are also accepted)", typeFilter)), nil
+		return NewErrorResult(fmt.Errorf("invalid type: %s. Use agent, node, vm, system-container, app-container, docker-host, storage, physical-disk, Komodo resource types, or network-endpoint (compatibility aliases system and storage-pool are also accepted)", typeFilter)), nil
 	}
 
 	// normalizeForSearch replaces common separators with spaces and splits at
@@ -5912,6 +6260,43 @@ func (e *PulseToolExecutor) executeSearchResources(_ context.Context, args map[s
 				Status:                   status,
 				Host:                     summary.Node,
 				Platform:                 canonicalResourcePlatform(resource),
+			})
+		}
+	}
+
+	if e.unifiedResourceProvider != nil {
+		for _, resource := range canonicalResourcesForTopology(e.unifiedResourceProvider) {
+			typeName := string(unifiedresources.CanonicalResourceType(resource.Type))
+			switch unifiedresources.ResourceType(typeName) {
+			case unifiedresources.ResourceTypeKomodoServer,
+				unifiedresources.ResourceTypeKomodoStack,
+				unifiedresources.ResourceTypeKomodoDeployment,
+				unifiedresources.ResourceTypeKomodoSwarm,
+				unifiedresources.ResourceTypeNetworkEndpoint:
+			default:
+				continue
+			}
+			if typeFilter != "" && typeFilter != typeName {
+				continue
+			}
+			if !statusMatchesFilter(string(resource.Status), statusFilter) {
+				continue
+			}
+			candidates := []string{resource.ID, resource.Name, resource.ParentName}
+			if resource.Availability != nil {
+				candidates = append(candidates, resource.Availability.TargetID, resource.Availability.LinkedResourceID, resource.Availability.Address, resource.Availability.Protocol)
+			}
+			if !matchesQuery(queryLower, candidates...) {
+				continue
+			}
+			addMatch(ResourceMatch{
+				GovernedResourceMetadata: governance.Resolve(candidates...),
+				Type:                     typeName,
+				ID:                       resource.ID,
+				Name:                     resource.Name,
+				Status:                   string(resource.Status),
+				Sources:                  append([]unifiedresources.DataSource(nil), resource.Sources...),
+				SourceStatus:             canonicalSourceObservations(resource.SourceStatus),
 			})
 		}
 	}

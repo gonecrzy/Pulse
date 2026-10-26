@@ -36,6 +36,49 @@ acceptance remains an operator action and requires trusted HTTPS/DNS on the test
 host. The workflow itself uses fixtures and local smoke tests only and has no
 Komodo or Proxmox credentials.
 
+### Phase 2G — End-to-end topology and incident correlation audit
+
+**Status (2026-10-26):** The canonical identity, Komodo topology, availability
+association, incident correlation, Patrol query context, and resource detail
+surfaces were audited and repaired on `feature/komodo-phase2-foundation`.
+Changes reuse the existing `ResourceRegistry`, directed relationship graph,
+alert synthesis, and `pulse_query` tool. The audit used synthetic fixtures
+only; it did not contact or disrupt production infrastructure.
+
+| Subsystem | Existing behavior | Tested? | Confirmed defect | Fix |
+|---|---|---|---|---|
+| Identity reconciliation | Explicit organization-scoped Proxmox/Komodo identity links persist and retain Proxmox metrics targets. No name-based merge is performed. | Yes: persisted synthetic `www-DMZ` Proxmox VMID 50110 ↔ Komodo Server across store restart; existing Jellyfin identity/link tests remain. | No defect found in explicit link resolution. `Alfheim` and `Public-DMZ` operator mappings are not present in repository fixtures or a live snapshot, so those specific mappings remain unverified. | Added an end-to-end test proving one canonical host, observations from both providers, VM history target preservation, Stack hosting, and check association after restart. |
+| Komodo topology ingestion | Complete inventory snapshots normalize Server/Stack parent references into canonical `hosted_by` relationships. | Yes: normalized parent, provenance, and restart tests. | Normalization emitted a dangling active edge when a referenced Server/Swarm was absent from the same inventory, and the Komodo edge omitted explicit provider provenance. | Retain the provider parent reference for later reconciliation, emit an active edge only when its parent is present, and stamp Komodo provenance. |
+| Availability association | Availability checks are separate canonical network-endpoint resources, linked with `checks` edges and projected onto their selected resource. | Yes: Stack-linked synthetic check through store restart; existing change/remove and reconciliation tests. | The resolved canonical target name/ID was not carried into the check view, and details could miss inbound check edges. | Record derived `resolvedResourceId` and target name separately from the configured link; project the canonical graph in both directions. |
+| Incident correlation | Active relationships supply incident context; alert lifecycle handles deduplication and recovery. | Yes: stale-edge regression plus existing recovery, notification, and dedup tests. | A stale provider relationship could still justify causal suppression of an independently valid availability alert. | Only current evidence can suppress a supported infrastructure symptom. Stale/unknown edges remain context but cannot suppress a valid independent alert. |
+| Notifications | Existing notification lifecycle delivers fired/recovered alerts and deduplicates repeated incidents. | Yes: existing lifecycle tests and the independent availability alert regression. | The stale relationship could prevent delivery before NotificationManager received the check alert. | Keep notification manager behavior unchanged; preserve the alert until normal lifecycle dedup/recovery policy applies. |
+| Patrol / AI diagnosis | `pulse_query topology` exposed a globally capped list of relationship IDs; `get` and `search` omitted Komodo resources and network endpoints. | Yes: scoped synthetic check → Stack → merged Proxmox/Komodo host traversal, provider freshness, disagreement, and edge evidence. | The model lacked a bounded, resource-scoped canonical neighborhood with endpoint status and provenance. | Add canonical Komodo/endpoint `get` and `search`, and bidirectional `topology` traversal from a canonical ID (default depth 2, max 5), with source observations, check outcomes, edge provenance, confidence, and freshness. Source error text is not copied into AI results. No repair execution authority was added. |
+| UI consistency | Resource details/facets returned relationships attached directly to the resource; availability cards omitted the resolved target label; incident events did not render related-resource evidence. | Yes: resource API, availability card, incident event component, and full frontend suites. | Incoming `hosted_by` / `checks` edges and related incident resources were missing from those views. | Use the registry graph projection in details and facets, display the resolved linked resource, and render related canonical IDs in incident evidence. |
+
+**Validation:** Full tests passed for `internal/komodo` (110),
+`internal/unifiedresources` (3,054), `internal/ai/tools` (1,916),
+`internal/api/resourceapi` (212), and `internal/ai` (2,138). The full
+`internal/alerts` suite has one root-only permission-test failure:
+`TestLoadHistory_PermissionError` expects mode `000` to block reads, which UID
+0 bypasses. The remaining alert suite passed (2,782 tests) with that one test
+excluded. The full frontend suite passed 22,185 tests with 3 skipped, and
+`tsc --noEmit` passed. Focused regression tests for stale suppression,
+missing-parent normalization, persisted topology, bidirectional API projection,
+and linked-resource presentation passed.
+
+**Live limits:** No operator runtime resource store or credential-bearing
+provider snapshot was available in this audit. The actual `www-DMZ`, `Alfheim`,
+`Jellyfin-DMZ`, and `Public-DMZ` operator links therefore require the isolated
+live acceptance checklist below. No verified Traefik or other reverse-proxy
+dependency was present in fixtures, so no affected services are inferred from
+proxy failure. Scoped graph data is available through existing AI query tools;
+a full interactive topology visualization and dependency-aware notification
+routing remain future work.
+
+**Image result:** Pending the branch push and `komodo-phase2f-image.yml` run.
+Record its immutable GHCR digest and workflow URL after publication. No merge
+to `sindri` or deployment is authorized by this checkpoint.
+
 ## Workspace and baseline
 
 - Primary checkout: `/root/Pulse`, remote `origin` = `https://github.com/gonecrzy/Pulse.git`.
@@ -135,7 +178,7 @@ The central graph has typed, directed, evidence-bearing relationships. The opera
 
 Persisted endpoints remain the canonical IDs the operator selected. Registry projections resolve linked/folded endpoints to the current canonical row and keep the stored edge available if either endpoint temporarily disappears. Discovered edges expose `evidenceSource` and `evidenceFreshness`; provider staleness updates freshness without deleting last-known evidence. Unknown provenance remains unknown. Availability `checks` edges are independent and may coexist with multiple operator `depends_on` edges. Provider-discovered edges still refresh only from their owning provider's successful complete observation. No second database or registry is introduced.
 
-Before adding an identity link, Pulse requires both resources to be present in the organization's registry and rejects a component merge that would include distinct native IDs from the same provider. The response identifies the conflicting source and IDs; a valid Proxmox-to-Komodo link remains allowed. A same-provider link is allowed only with `confirmProviderConflict: true` and a non-empty audit reason. There is no name-based matching. Operators must resolve an ambiguous source match or split an existing mistaken link before retrying. Traefik configuration parsing, broad topology UI changes, dependency-aware notification routing, and route-based alert behavior remain future work. See the Phase 2C addendum in the Komodo checkpoint for live-test requirements and full-suite diagnostics.
+Before adding an identity link, Pulse requires both resources to be present in the organization's registry and rejects a component merge that would include distinct native IDs from the same provider. The response identifies the conflicting source and IDs; a valid Proxmox-to-Komodo link remains allowed. A same-provider link is allowed only with `confirmProviderConflict: true` and a non-empty audit reason. There is no name-based matching. Operators must resolve an ambiguous source match or split an existing mistaken link before retrying. This audit adds bounded canonical topology context to the existing query tools and bidirectional relationship projection to resource details and facets; it does not add a second graph store or a full-page interactive topology view. Traefik configuration parsing, dependency-aware notification routing, and route-based alert behavior remain future work. See the Phase 2C addendum in the Komodo checkpoint for live-test requirements and full-suite diagnostics.
 
 ## Sindri behavior and test crosswalk
 

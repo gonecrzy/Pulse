@@ -89,6 +89,80 @@ func TestOperatorRelationshipResourceAPIContract(t *testing.T) {
 	}
 }
 
+func TestResourceDetailsAndFacetsIncludeInboundCanonicalRelationships(t *testing.T) {
+	const orgID = "default"
+	now := time.Now().UTC()
+	serverSourceID := "komodo:server:www-dmz"
+	stackSourceID := "komodo:stack:kristi-www"
+	checkSourceID := "availability:kristi-www-site"
+	serverID := unifiedresources.SourceSpecificID(unifiedresources.ResourceTypeKomodoServer, unifiedresources.SourceKomodo, serverSourceID)
+	stackID := unifiedresources.SourceSpecificID(unifiedresources.ResourceTypeKomodoStack, unifiedresources.SourceKomodo, stackSourceID)
+	checkID := unifiedresources.SourceSpecificID(unifiedresources.ResourceTypeNetworkEndpoint, unifiedresources.SourceAvailability, checkSourceID)
+	komodoRecords := []unifiedresources.IngestRecord{
+		{SourceID: serverSourceID, Resource: unifiedresources.Resource{ID: serverSourceID, Name: "www-DMZ", Type: unifiedresources.ResourceTypeKomodoServer, Status: unifiedresources.StatusOnline, LastSeen: now}},
+		{SourceID: stackSourceID, ParentSourceID: serverSourceID, Resource: unifiedresources.Resource{ID: stackSourceID, Name: "kristi-www", Type: unifiedresources.ResourceTypeKomodoStack, Status: unifiedresources.StatusOnline, LastSeen: now}},
+	}
+	availabilityRecords := []unifiedresources.IngestRecord{{
+		SourceID: checkSourceID,
+		Resource: unifiedresources.Resource{ID: checkSourceID, Name: "kristi-www-site", Type: unifiedresources.ResourceTypeNetworkEndpoint, Status: unifiedresources.StatusOnline, LastSeen: now, Availability: &unifiedresources.AvailabilityData{
+			TargetID: checkSourceID, LinkedResourceID: stackID, Protocol: "https", Address: "192.0.2.110", Enabled: true, Available: true, LastChecked: &now,
+		}},
+	}}
+	h := NewQueryService(&config.Config{DataPath: t.TempDir()})
+	h.SetSupplementalRecordsProvider(unifiedresources.SourceKomodo, operatorRelationshipRecordProvider{records: komodoRecords})
+	h.SetSupplementalRecordsProvider(unifiedresources.SourceAvailability, operatorRelationshipRecordProvider{records: availabilityRecords})
+
+	getResource := func(resourceID string) unifiedresources.Resource {
+		t.Helper()
+		recorder := httptest.NewRecorder()
+		request := httptest.NewRequest(http.MethodGet, "/api/resources/"+resourceID, nil)
+		request = request.WithContext(context.WithValue(request.Context(), apicontext.OrgIDContextKey, orgID))
+		h.HandleResourceRoutes(recorder, request)
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("GET %s status=%d body=%s", resourceID, recorder.Code, recorder.Body.String())
+		}
+		var resource unifiedresources.Resource
+		if err := json.NewDecoder(recorder.Body).Decode(&resource); err != nil {
+			t.Fatalf("decode resource %s: %v", resourceID, err)
+		}
+		return resource
+	}
+	server := getResource(serverID)
+	if len(server.Relationships) != 1 || server.Relationships[0].SourceID != stackID || server.Relationships[0].TargetID != serverID || server.Relationships[0].Type != unifiedresources.RelHostedBy {
+		t.Fatalf("server detail relationships = %+v, want inbound Stack hosted_by edge", server.Relationships)
+	}
+	stack := getResource(stackID)
+	if len(stack.Relationships) != 2 {
+		t.Fatalf("Stack detail relationships = %+v, want hosting and check associations", stack.Relationships)
+	}
+	var hasCheckEdge bool
+	for _, relationship := range stack.Relationships {
+		if relationship.SourceID == checkID && relationship.TargetID == stackID && relationship.Type == unifiedresources.RelChecks {
+			hasCheckEdge = true
+		}
+	}
+	if !hasCheckEdge {
+		t.Fatalf("Stack detail relationships omit inbound availability check %q: %+v", checkID, stack.Relationships)
+	}
+
+	facets := httptest.NewRecorder()
+	facetsRequest := httptest.NewRequest(http.MethodGet, "/api/resources/"+stackID+"/facets", nil)
+	facetsRequest = facetsRequest.WithContext(context.WithValue(facetsRequest.Context(), apicontext.OrgIDContextKey, orgID))
+	h.HandleResourceRoutes(facets, facetsRequest)
+	if facets.Code != http.StatusOK {
+		t.Fatalf("GET Stack facets status=%d body=%s", facets.Code, facets.Body.String())
+	}
+	var payload struct {
+		Relationships []unifiedresources.ResourceRelationship `json:"relationships"`
+	}
+	if err := json.NewDecoder(facets.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode Stack facets: %v", err)
+	}
+	if len(payload.Relationships) != 2 {
+		t.Fatalf("Stack facet relationships = %+v, want both-direction canonical edges", payload.Relationships)
+	}
+}
+
 func TestHandleLinkRejectsDistinctResourcesFromSameProvider(t *testing.T) {
 	firstSourceID := "komodo:connection:server:first"
 	secondSourceID := "komodo:connection:server:second"

@@ -74,6 +74,11 @@ export function AvailabilityProbeStatusCard(props: AvailabilityProbeStatusCardPr
   const isStale = () => presentation()?.freshnessLabel === 'stale';
   const isFreshUp = () => isUp() && !isStale();
   const targetAddr = () => getAvailabilityProbeEndpointLabel(props.availability);
+  const linkedResourceId = () =>
+    props.availability.correlationState === 'attached'
+      ? props.availability.resolvedResourceId?.trim() || props.availability.linkedResourceId?.trim()
+      : '';
+  const linkedResourceName = () => props.availability.linkedResourceName?.trim() || linkedResourceId();
   const failureLabel = () => {
     const err = (props.availability.lastError ?? '').trim();
     if (!err) return null;
@@ -289,6 +294,16 @@ export function AvailabilityProbeStatusCard(props: AvailabilityProbeStatusCardPr
               label="Resource"
               value={label()}
               valueClass="text-amber-600 dark:text-amber-300"
+            />
+          )}
+        </Show>
+        <Show when={linkedResourceId()}>
+          {(resourceId) => (
+            <InfoCardKeyValueRow
+              label="Linked resource"
+              value={linkedResourceName()}
+              valueClass="truncate"
+              valueTitle={resourceId()}
             />
           )}
         </Show>

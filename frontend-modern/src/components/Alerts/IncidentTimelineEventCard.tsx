@@ -1,4 +1,4 @@
-import { Show } from 'solid-js';
+import { For, Show } from 'solid-js';
 import type { IncidentEvent } from '@/types/api';
 import {
   formatIncidentEvidenceTime,
@@ -60,6 +60,14 @@ export function IncidentTimelineEventCard(props: IncidentTimelineEventCardProps)
               <Show when={evidence().actor}>
                 <dt>Recorded actor</dt>
                 <dd>{evidence().actor}</dd>
+              </Show>
+              <Show when={(evidence().relatedResources?.length ?? 0) > 0}>
+                <dt>Related resources</dt>
+                <dd class="min-w-0 space-y-1">
+                  <For each={evidence().relatedResources}>
+                    {(resourceId) => <div class="break-all font-mono">{resourceId}</div>}
+                  </For>
+                </dd>
               </Show>
               <dt>Record</dt>
               <dd>{evidence().id}</dd>
