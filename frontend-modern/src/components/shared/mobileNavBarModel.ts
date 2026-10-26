@@ -16,7 +16,7 @@ export type MobileNavBarPrimaryTab = {
 };
 
 export type MobileNavBarUtilityTab = {
-  id: 'alerts' | 'ai' | 'actions' | 'settings';
+  id: 'alerts' | 'ai' | 'actions' | 'relationships' | 'settings';
   label: string;
   route: string;
   tooltip: string;
@@ -56,7 +56,13 @@ const MOBILE_NAV_PRIMARY_PRIORITY = [
   'standalone',
 ] as const;
 
-const MOBILE_NAV_UTILITY_PRIORITY = ['alerts', 'ai', 'actions', 'settings'] as const;
+const MOBILE_NAV_UTILITY_PRIORITY = [
+  'alerts',
+  'ai',
+  'actions',
+  'relationships',
+  'settings',
+] as const;
 const MOBILE_NAV_FIXED_UTILITY_IDS = new Set<MobileNavBarUtilityTab['id']>([
   'alerts',
   'ai',

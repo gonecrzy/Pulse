@@ -111,7 +111,7 @@ func TestHandleLinkRejectsDistinctResourcesFromSameProvider(t *testing.T) {
 	}
 	h.SetStateProvider(resourceUnifiedSeedProvider{resources: rehydrated})
 	h.SetSupplementalRecordsProvider(unifiedresources.SourceKomodo, provider)
-	payload, _ := json.Marshal(map[string]string{"targetId": secondID, "reason": "test collision"})
+	payload, _ := json.Marshal(map[string]any{"targetId": secondID, "reason": "test collision", "confirmIdentity": true})
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPost, "/api/resources/"+firstID+"/link", bytes.NewReader(payload))
 	h.HandleResourceRoutes(recorder, request)
@@ -122,7 +122,7 @@ func TestHandleLinkRejectsDistinctResourcesFromSameProvider(t *testing.T) {
 		t.Fatalf("conflict response does not identify provider and source IDs: %s", recorder.Body.String())
 	}
 	confirmed, _ := json.Marshal(map[string]any{
-		"targetId": secondID, "reason": "operator confirmed these records identify one server", "confirmProviderConflict": true,
+		"targetId": secondID, "reason": "operator confirmed these records identify one server", "confirmIdentity": true, "confirmProviderConflict": true,
 	})
 	confirmedRecorder := httptest.NewRecorder()
 	confirmedRequest := httptest.NewRequest(http.MethodPost, "/api/resources/"+firstID+"/link", bytes.NewReader(confirmed))
@@ -142,11 +142,14 @@ func TestOperatorRelationshipRoutesFollowLinkedCanonicalEndpoints(t *testing.T) 
 	h := NewQueryService(&config.Config{DataPath: t.TempDir()})
 	h.SetStateProvider(resourceUnifiedSeedProvider{
 		snapshot: models.StateSnapshot{LastUpdate: now},
-		resources: []unifiedresources.Resource{{
-			ID: vmID, Type: unifiedresources.ResourceTypeVM, Name: "Jellyfin host", LastSeen: now,
-			Sources: []unifiedresources.DataSource{unifiedresources.SourceProxmox},
-			Proxmox: &unifiedresources.ProxmoxData{SourceID: proxmoxSourceID, VMID: 101},
-		}},
+		resources: []unifiedresources.Resource{
+			{
+				ID: vmID, Type: unifiedresources.ResourceTypeVM, Name: "Jellyfin host", LastSeen: now,
+				Sources: []unifiedresources.DataSource{unifiedresources.SourceProxmox},
+				Proxmox: &unifiedresources.ProxmoxData{SourceID: proxmoxSourceID, VMID: 101},
+			},
+			{ID: "service:database", Type: unifiedresources.ResourceTypeKomodoDeployment, Name: "Database", LastSeen: now},
+		},
 	})
 	h.SetSupplementalRecordsProvider(unifiedresources.SourceKomodo, operatorRelationshipRecordProvider{records: []unifiedresources.IngestRecord{{
 		SourceID: komodoSourceID,
@@ -222,5 +225,93 @@ func TestOperatorRelationshipRoutesFollowLinkedCanonicalEndpoints(t *testing.T) 
 	}
 	if stored, err = relationshipStore.ListOperatorRelationships(); err != nil || len(stored) != 0 {
 		t.Fatalf("DELETE left active edge %+v err=%v", stored, err)
+	}
+}
+
+func TestOperatorRelationshipAPIValidatesEndpointsAndDirection(t *testing.T) {
+	h := NewQueryService(&config.Config{DataPath: t.TempDir()})
+	h.SetStateProvider(resourceUnifiedSeedProvider{resources: []unifiedresources.Resource{
+		{ID: "vm-a", Type: unifiedresources.ResourceTypeVM, Name: "VM"},
+		{ID: "app-a", Type: unifiedresources.ResourceTypeAppContainer, Name: "App"},
+		{ID: "stack-a", Type: unifiedresources.ResourceTypeKomodoStack, Name: "Stack"},
+		{ID: "server-a", Type: unifiedresources.ResourceTypeKomodoServer, Name: "Server"},
+	}})
+	post := func(sourceID string, targetID, relationshipType string) *httptest.ResponseRecorder {
+		t.Helper()
+		payload, _ := json.Marshal(map[string]string{"targetId": targetID, "type": relationshipType})
+		recorder := httptest.NewRecorder()
+		request := httptest.NewRequest(http.MethodPost, "/api/resources/"+sourceID+"/relationships", bytes.NewReader(payload))
+		request = request.WithContext(context.WithValue(request.Context(), apicontext.OrgIDContextKey, "default"))
+		h.HandleResourceRoutes(recorder, request)
+		return recorder
+	}
+	if got := post("vm-a", "missing-from-this-org", "depends_on"); got.Code != http.StatusNotFound {
+		t.Fatalf("missing relationship target status=%d body=%s, want 404", got.Code, got.Body.String())
+	}
+	if got := post("vm-a", "app-a", "runs_on"); got.Code != http.StatusBadRequest {
+		t.Fatalf("reversed runs_on status=%d body=%s, want 400", got.Code, got.Body.String())
+	}
+	if got := post("vm-a", "app-a", "routes_to"); got.Code != http.StatusBadRequest {
+		t.Fatalf("unsupported routes_to pair status=%d body=%s, want 400", got.Code, got.Body.String())
+	}
+	if got := post("stack-a", "server-a", "hosted_by"); got.Code != http.StatusCreated {
+		t.Fatalf("valid hosted_by status=%d body=%s, want 201", got.Code, got.Body.String())
+	}
+}
+
+func TestHandleLinkRequiresExplicitIdentityConfirmation(t *testing.T) {
+	h := NewQueryService(&config.Config{DataPath: t.TempDir()})
+	h.SetStateProvider(resourceUnifiedSeedProvider{resources: []unifiedresources.Resource{
+		{ID: "pve-vm", Type: unifiedresources.ResourceTypeVM, Name: "Jellyfin-DMZ", Sources: []unifiedresources.DataSource{unifiedresources.SourceProxmox}},
+		{ID: "komodo-server", Type: unifiedresources.ResourceTypeKomodoServer, Name: "Jellyfin-DMZ", Sources: []unifiedresources.DataSource{unifiedresources.SourceKomodo}},
+	}})
+	post := func(confirm bool) *httptest.ResponseRecorder {
+		t.Helper()
+		payload, _ := json.Marshal(map[string]any{"targetId": "komodo-server", "confirmIdentity": confirm})
+		recorder := httptest.NewRecorder()
+		request := httptest.NewRequest(http.MethodPost, "/api/resources/pve-vm/link", bytes.NewReader(payload))
+		request = request.WithContext(context.WithValue(request.Context(), apicontext.OrgIDContextKey, "default"))
+		h.HandleResourceRoutes(recorder, request)
+		return recorder
+	}
+	if got := post(false); got.Code != http.StatusBadRequest {
+		t.Fatalf("unconfirmed identity link status=%d body=%s, want 400", got.Code, got.Body.String())
+	}
+	if got := post(true); got.Code != http.StatusOK {
+		t.Fatalf("confirmed identity link status=%d body=%s, want 200", got.Code, got.Body.String())
+	}
+}
+
+func TestIdentityLinkListIsOrganizationScoped(t *testing.T) {
+	h := NewQueryService(&config.Config{DataPath: t.TempDir()})
+	store, err := h.getStore("org-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.AddLink(unifiedresources.ResourceLink{
+		ResourceA: "pve-vm", ResourceB: "komodo-server", PrimaryID: "pve-vm",
+		Reason: "operator confirmed", CreatedBy: "operator:alice", CreatedAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	read := func(orgID string) *httptest.ResponseRecorder {
+		t.Helper()
+		recorder := httptest.NewRecorder()
+		request := httptest.NewRequest(http.MethodGet, "/api/resources/identity-links", nil)
+		request = request.WithContext(context.WithValue(request.Context(), apicontext.OrgIDContextKey, orgID))
+		h.HandleResourceRoutes(recorder, request)
+		return recorder
+	}
+	for _, tc := range []struct {
+		orgID string
+		want  int
+	}{{"org-a", 1}, {"org-b", 0}} {
+		response := read(tc.orgID)
+		var body struct {
+			Links []map[string]any `json:"links"`
+		}
+		if response.Code != http.StatusOK || json.NewDecoder(response.Body).Decode(&body) != nil || len(body.Links) != tc.want {
+			t.Fatalf("identity links for %s: status=%d body=%s, want %d links", tc.orgID, response.Code, response.Body.String(), tc.want)
+		}
 	}
 }

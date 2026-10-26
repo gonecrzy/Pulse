@@ -8,6 +8,9 @@ import type {
   ResourceChangeSourceType,
   ResourceFacetCounts,
   ResourceRelationship,
+  ResourceRelationshipType,
+  OperatorResourceRelationship,
+  ResourceIdentityLink,
   ResourcePolicyPostureSummary,
 } from '@/types/resource';
 
@@ -38,6 +41,10 @@ export interface ResourceFacetBundle {
   relationships?: ResourceRelationship[];
   recentChanges: ResourceChange[];
   counts: ResourceFacetCounts;
+}
+
+export interface ResourceIdentityLinksResponse {
+  links: ResourceIdentityLink[];
 }
 
 const normalizeResourceId = (resourceId: string): string => resourceId.trim();
@@ -114,5 +121,57 @@ export class ResourceAPI {
     return fetchFacet<ResourceFacetBundle>(
       `${buildFacetPath(resourceId, 'facets')}${buildTimelineQuery(options)}`,
     );
+  }
+
+  static async getIdentityLinks(): Promise<ResourceIdentityLinksResponse> {
+    return fetchFacet<ResourceIdentityLinksResponse>('/api/resources/identity-links');
+  }
+
+  static async addRelationship(
+    sourceId: string,
+    input: { targetId: string; type: ResourceRelationshipType; reason?: string },
+  ): Promise<{ relationship: OperatorResourceRelationship }> {
+    return apiFetchJSON<{ relationship: OperatorResourceRelationship }>(
+      buildFacetPath(sourceId, 'relationships'),
+      { method: 'POST', body: JSON.stringify(input) },
+    );
+  }
+
+  static async removeRelationship(
+    sourceId: string,
+    input: { targetId: string; type: ResourceRelationshipType },
+  ): Promise<{ status: string }> {
+    return apiFetchJSON<{ status: string }>(buildFacetPath(sourceId, 'relationships'), {
+      method: 'DELETE',
+      body: JSON.stringify(input),
+    });
+  }
+
+  static async linkIdentity(
+    primaryId: string,
+    targetId: string,
+    reason: string,
+    confirmProviderConflict = false,
+  ): Promise<{ status: string; message: string }> {
+    return apiFetchJSON<{ status: string; message: string }>(buildFacetPath(primaryId, 'link'), {
+      method: 'POST',
+      body: JSON.stringify({
+        targetId,
+        reason,
+        confirmIdentity: true,
+        confirmProviderConflict,
+      }),
+    });
+  }
+
+  static async unlinkIdentity(
+    resourceId: string,
+    targetId: string,
+    reason = '',
+  ): Promise<{ status: string; message: string }> {
+    return apiFetchJSON<{ status: string; message: string }>(buildFacetPath(resourceId, 'unlink'), {
+      method: 'POST',
+      body: JSON.stringify({ targetId, reason }),
+    });
   }
 }

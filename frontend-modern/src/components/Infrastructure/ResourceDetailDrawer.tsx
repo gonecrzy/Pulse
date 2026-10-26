@@ -30,6 +30,7 @@ import { CONTAINER_CPU_CAPACITY_DESCRIPTION } from '@/features/docker/dockerCpuP
 import { InlineNotice } from '@/components/shared/InlineNotice';
 import { GUEST_DRAWER_BACKUP_PRECAUTION } from '@/components/Workloads/guestDrawerModel';
 import { getShippedDocUrl } from '@/utils/docsLinks';
+import { ResourceRelationshipManager } from './ResourceRelationshipManager';
 
 interface ResourceDetailDrawerProps {
   resource: Resource;
@@ -109,6 +110,10 @@ const DrawerContent: Component<ResourceDetailDrawerProps> = (props) => {
   );
   const HeaderActions = () => (
     <>
+      <ResourceRelationshipManager
+        initialResourceId={props.resource.id}
+        onResourceActionSettled={props.onResourceActionSettled}
+      />
       <Show when={customUrl()}>
         <WebInterfaceLink
           url={customUrl()}

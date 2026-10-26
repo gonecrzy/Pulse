@@ -273,6 +273,27 @@ export type ResourceRelationshipType =
   | 'protected_by'
   | string;
 
+export interface OperatorResourceRelationship {
+  id: string;
+  sourceId: string;
+  targetId: string;
+  type: ResourceRelationshipType;
+  reason?: string;
+  createdBy?: string;
+  updatedBy?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface ResourceIdentityLink {
+  resourceA: string;
+  resourceB: string;
+  primaryId: string;
+  reason?: string;
+  createdBy?: string;
+  createdAt?: string;
+}
+
 export interface ResourceRelationship {
   id?: string;
   sourceId: string;

@@ -1622,6 +1622,46 @@ func (rr *ResourceRegistry) ListForPresentation() []Resource {
 	return coalescePresentationHostResources(resources, rr.presentationExclusionFilter(), rr.staleThresholds)
 }
 
+// ListResourceRelationships returns the active canonical edge projection for
+// read-only consumers such as Patrol. The registry remains the source of truth;
+// this is a bounded-shape view, not a second relationship store.
+func (rr *ResourceRegistry) ListResourceRelationships() []ResourceRelationship {
+	if rr == nil {
+		return []ResourceRelationship{}
+	}
+	resources := rr.ListForPresentation()
+	seen := make(map[string]struct{})
+	relationships := make([]ResourceRelationship, 0)
+	for _, resource := range resources {
+		for _, relationship := range ResourceRelationshipsWithCanonicalParent(resource) {
+			if !relationship.Active {
+				continue
+			}
+			key := relationship.ID
+			if key == "" {
+				key = string(relationship.Type) + "\x00" + CanonicalResourceID(relationship.SourceID) + "\x00" + CanonicalResourceID(relationship.TargetID)
+			}
+			if _, exists := seen[key]; exists {
+				continue
+			}
+			seen[key] = struct{}{}
+			relationship.SourceID = CanonicalResourceID(relationship.SourceID)
+			relationship.TargetID = CanonicalResourceID(relationship.TargetID)
+			relationships = append(relationships, relationship)
+		}
+	}
+	sort.Slice(relationships, func(i, j int) bool {
+		if relationships[i].SourceID != relationships[j].SourceID {
+			return relationships[i].SourceID < relationships[j].SourceID
+		}
+		if relationships[i].TargetID != relationships[j].TargetID {
+			return relationships[i].TargetID < relationships[j].TargetID
+		}
+		return relationships[i].Type < relationships[j].Type
+	})
+	return relationships
+}
+
 // ListByType returns all resources of the provided type.
 //
 // The returned slice is sorted by resource ID to provide deterministic results.

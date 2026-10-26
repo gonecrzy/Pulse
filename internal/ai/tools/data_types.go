@@ -419,10 +419,12 @@ type PaginationInfo struct {
 // TopologyResponse provides a fully hierarchical view of infrastructure
 // This is the recommended tool for understanding infrastructure relationships
 type TopologyResponse struct {
-	Proxmox    ProxmoxTopology    `json:"proxmox"`
-	Docker     DockerTopology     `json:"docker"`
-	Kubernetes KubernetesTopology `json:"kubernetes"`
-	Summary    TopologySummary    `json:"summary"`
+	Proxmox                ProxmoxTopology                         `json:"proxmox"`
+	Docker                 DockerTopology                          `json:"docker"`
+	Kubernetes             KubernetesTopology                      `json:"kubernetes"`
+	Relationships          []unifiedresources.ResourceRelationship `json:"relationships"`
+	RelationshipsTruncated bool                                    `json:"relationships_truncated,omitempty"`
+	Summary                TopologySummary                         `json:"summary"`
 }
 
 func EmptyTopologyResponse() TopologyResponse {
@@ -433,6 +435,9 @@ func (r TopologyResponse) NormalizeCollections() TopologyResponse {
 	r.Proxmox = r.Proxmox.NormalizeCollections()
 	r.Docker = r.Docker.NormalizeCollections()
 	r.Kubernetes = r.Kubernetes.NormalizeCollections()
+	if r.Relationships == nil {
+		r.Relationships = []unifiedresources.ResourceRelationship{}
+	}
 	return r
 }
 

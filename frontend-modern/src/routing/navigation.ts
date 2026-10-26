@@ -20,6 +20,7 @@ export type AppTabId =
   | 'komodo'
   | 'alerts'
   | 'actions'
+  | 'relationships'
   | 'ai'
   | 'settings';
 
@@ -35,6 +36,7 @@ export function getActiveTabForPath(path: string): ActiveAppTabId {
   if (path.startsWith(STANDALONE_PATH)) return 'standalone';
   if (path.startsWith('/alerts')) return 'alerts';
   if (path.startsWith(ACTIONS_PATH)) return 'actions';
+  if (path.startsWith('/relationships')) return 'relationships';
   if (path.startsWith(PATROL_PATH)) return 'ai';
   if (path.startsWith('/settings')) return 'settings';
   return null;

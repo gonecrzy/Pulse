@@ -229,6 +229,19 @@ func (a *MonitorAdapter) currentRegistry() *ResourceRegistry {
 	return registry
 }
 
+// ListResourceRelationships exposes the active canonical edge projection to
+// read-only consumers while keeping relationship ownership in ResourceRegistry.
+func (a *MonitorAdapter) ListResourceRelationships() []ResourceRelationship {
+	if a == nil {
+		return []ResourceRelationship{}
+	}
+	registry := a.currentRegistry()
+	if registry == nil {
+		return []ResourceRelationship{}
+	}
+	return registry.ListResourceRelationships()
+}
+
 // GetByReference delegates identity and alias resolution to the current registry.
 func (a *MonitorAdapter) GetByReference(reference string) (*Resource, string, bool) {
 	registry := a.currentRegistry()

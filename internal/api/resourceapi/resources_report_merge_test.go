@@ -72,7 +72,7 @@ func TestResourceReportMergeSplitsOperatorLinkedPair(t *testing.T) {
 			if tc.linkFromAgent {
 				fromID, targetID = agentID, otherID
 			}
-			linkPayload := map[string]any{"targetId": targetID}
+			linkPayload := map[string]any{"targetId": targetID, "confirmIdentity": true}
 			if tc.name == "agent-agent" {
 				linkPayload["confirmProviderConflict"] = true
 				linkPayload["reason"] = "operator confirmed these agent records describe the same host"
@@ -134,7 +134,7 @@ func TestResourceReportMergeSourceFilterSelectsLinks(t *testing.T) {
 			agentID = resource.ID
 		}
 	}
-	postResourceAction(t, h, vmID, "link", map[string]any{"targetId": agentID})
+	postResourceAction(t, h, vmID, "link", map[string]any{"targetId": agentID, "confirmIdentity": true})
 	rebuild()
 
 	// The VM's own source was not folded in by the link.
@@ -198,8 +198,8 @@ func TestResourceReportMergeSourceFilterDetachesChainMembers(t *testing.T) {
 			}
 			// Links apply in store order: the agent takes in the Docker host,
 			// then the VM takes in the agent.
-			postResourceAction(t, h, agentID, "link", map[string]any{"targetId": dockerID})
-			postResourceAction(t, h, vmID, "link", map[string]any{"targetId": agentID})
+			postResourceAction(t, h, agentID, "link", map[string]any{"targetId": dockerID, "confirmIdentity": true})
+			postResourceAction(t, h, vmID, "link", map[string]any{"targetId": agentID, "confirmIdentity": true})
 			chained := rebuild()
 			if got := resourceSourceGroups(chained); !slices.Equal(got, []string{"agent+docker+proxmox"}) {
 				t.Fatalf("links left %v, want the chain folded into one resource", got)
@@ -359,7 +359,7 @@ func TestResourceReportMergeSplitsPairBehindASuccessionShadowedRow(t *testing.T)
 	if err := store.AddLink(unified.ResourceLink{ResourceA: "agent-retired0000000", ResourceB: vmID, PrimaryID: agentID, CreatedAt: now.Add(-time.Hour)}); err != nil {
 		t.Fatal(err)
 	}
-	postResourceAction(t, h, vmID, "link", map[string]any{"targetId": agentID})
+	postResourceAction(t, h, vmID, "link", map[string]any{"targetId": agentID, "confirmIdentity": true})
 	linked := rebuild()
 	if len(linked) != 1 {
 		t.Fatalf("link left %d monitor resources, want one: %+v", len(linked), linked)

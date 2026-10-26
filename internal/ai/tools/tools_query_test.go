@@ -569,6 +569,43 @@ func TestExecuteListInfrastructureAndTopology(t *testing.T) {
 	}
 }
 
+func TestTopologyIncludesBoundedCanonicalRelationshipContext(t *testing.T) {
+	store := unifiedresources.NewMemoryStore()
+	serverSourceID := "komodo:connection:server:jellyfin"
+	databaseSourceID := "komodo:connection:deployment:database"
+	cacheSourceID := "komodo:connection:deployment:cache"
+	serverID := unifiedresources.SourceSpecificID(unifiedresources.ResourceTypeKomodoServer, unifiedresources.SourceKomodo, serverSourceID)
+	databaseID := unifiedresources.SourceSpecificID(unifiedresources.ResourceTypeKomodoDeployment, unifiedresources.SourceKomodo, databaseSourceID)
+	cacheID := unifiedresources.SourceSpecificID(unifiedresources.ResourceTypeKomodoDeployment, unifiedresources.SourceKomodo, cacheSourceID)
+	for _, edge := range []unifiedresources.OperatorResourceRelationship{
+		{SourceID: serverID, TargetID: databaseID, Type: unifiedresources.RelDependsOn, Reason: "database connection"},
+		{SourceID: serverID, TargetID: cacheID, Type: unifiedresources.RelDependsOn, Reason: "cache connection"},
+	} {
+		if err := store.PutOperatorRelationship(edge); err != nil {
+			t.Fatal(err)
+		}
+	}
+	registry := unifiedresources.NewRegistry(store)
+	registry.IngestRecords(unifiedresources.SourceKomodo, []unifiedresources.IngestRecord{
+		{SourceID: serverSourceID, Resource: unifiedresources.Resource{Type: unifiedresources.ResourceTypeKomodoServer, Name: "Jellyfin"}},
+		{SourceID: databaseSourceID, Resource: unifiedresources.Resource{Type: unifiedresources.ResourceTypeKomodoDeployment, Name: "Database"}},
+		{SourceID: cacheSourceID, Resource: unifiedresources.Resource{Type: unifiedresources.ResourceTypeKomodoDeployment, Name: "Cache"}},
+	})
+
+	response := BuildTopologyResponseFromReadState(registry, TopologyBuildOptions{MaxRelationships: 1})
+	if len(response.Relationships) != 1 || !response.RelationshipsTruncated {
+		t.Fatalf("topology relationships = %d, truncated=%t; want one bounded edge and truncation", len(response.Relationships), response.RelationshipsTruncated)
+	}
+	if response.Relationships[0].Type != unifiedresources.RelDependsOn || response.Relationships[0].Discoverer != "operator_store" {
+		t.Fatalf("topology dependency = %+v; want the canonical operator edge with provenance", response.Relationships[0])
+	}
+
+	summary := BuildTopologyResponseFromReadState(registry, TopologyBuildOptions{SummaryOnly: true})
+	if len(summary.Relationships) != 0 {
+		t.Fatalf("summary-only topology unexpectedly included relationship details: %+v", summary.Relationships)
+	}
+}
+
 func TestExecuteGetTopologySummaryOnly(t *testing.T) {
 	state := models.StateSnapshot{
 		Nodes: []models.Node{{ID: "node1", Name: "node1", Instance: "pve1", Status: "online"}},

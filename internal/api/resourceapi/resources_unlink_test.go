@@ -70,7 +70,7 @@ func TestResourceUnlinkSplitsManuallyLinkedPair(t *testing.T) {
 
 	post := func(action string) {
 		t.Helper()
-		body, _ := json.Marshal(map[string]string{"targetId": agentID})
+		body, _ := json.Marshal(map[string]any{"targetId": agentID, "confirmIdentity": true})
 		rec := httptest.NewRecorder()
 		h.HandleResourceRoutes(rec, httptest.NewRequest(http.MethodPost, "/api/resources/"+vmID+"/"+action, bytes.NewReader(body)))
 		if rec.Code != http.StatusOK {

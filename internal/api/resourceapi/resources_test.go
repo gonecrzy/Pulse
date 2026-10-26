@@ -1770,7 +1770,7 @@ func TestResourceLinkMergesResources(t *testing.T) {
 	primaryID := listResp.Data[0].ID
 	secondaryID := listResp.Data[1].ID
 
-	linkPayload := map[string]string{"targetId": secondaryID, "reason": "manual merge"}
+	linkPayload := map[string]any{"targetId": secondaryID, "reason": "manual merge", "confirmIdentity": true}
 	payloadBytes, _ := json.Marshal(linkPayload)
 	linkRec := httptest.NewRecorder()
 	linkReq := httptest.NewRequest(http.MethodPost, "/api/resources/"+primaryID+"/link", bytes.NewReader(payloadBytes))
@@ -1909,9 +1909,10 @@ func TestResourceLinkFromAgentKeepsHypervisorGuestAuthorityInAPIState(t *testing
 				t.Fatalf("missing pre-link resources: agent=%q guest=%q data=%+v", agentID, guestID, before.Data)
 			}
 
-			payload, err := json.Marshal(map[string]string{
-				"targetId": guestID,
-				"reason":   "agent runs inside guest",
+			payload, err := json.Marshal(map[string]any{
+				"targetId":        guestID,
+				"reason":          "agent runs inside guest",
+				"confirmIdentity": true,
 			})
 			if err != nil {
 				t.Fatalf("marshal link payload: %v", err)

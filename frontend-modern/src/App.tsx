@@ -99,6 +99,7 @@ const AlertsPage = lazy(() =>
   import('./pages/Alerts').then((module) => ({ default: module.Alerts })),
 );
 const ActionsPage = lazy(() => import('./pages/Actions'));
+const RelationshipsPage = lazy(() => import('./pages/Relationships'));
 const SettingsPage = lazy(() => import('./components/Settings/Settings'));
 const ProxmoxPage = lazy(() => import('./pages/Proxmox'));
 const DockerPage = lazy(() => import('./pages/Docker'));
@@ -611,6 +612,7 @@ function App() {
 
       <Route path="/alerts/*" component={AlertsPage} />
       <Route path="/actions/*" component={ActionsPage} />
+      <Route path="/relationships" component={RelationshipsPage} />
       <Route path={`${ROOT_PATROL_PATH}/*`} component={AIIntelligencePage} />
       <Route path="/settings/*" component={SettingsRoute} />
       <Route path="/docs" component={DocsPage} />

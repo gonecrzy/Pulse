@@ -49,5 +49,11 @@ type ReferenceReadState interface {
 	GetByReference(string) (*Resource, string, bool)
 }
 
+// RelationshipReadState is an optional read-only capability for consumers
+// that need the canonical typed graph without building another registry.
+type RelationshipReadState interface {
+	ListResourceRelationships() []ResourceRelationship
+}
+
 var _ ReferenceReadState = (*ResourceRegistry)(nil)
 var _ ReferenceReadState = (*MonitorAdapter)(nil)

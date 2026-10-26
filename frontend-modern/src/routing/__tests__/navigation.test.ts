@@ -32,5 +32,7 @@ describe('navigation routing helpers', () => {
   it('keeps Actions as a stable first-class route identity', () => {
     expect(getActiveTabForPath('/actions')).toBe('actions');
     expect(getActiveTabForPath('/actions/history')).toBe('actions');
+    expect(getActiveTabForPath('/relationships')).toBe('relationships');
+    expect(getActiveTabForPath('/relationships/identity')).toBe('relationships');
   });
 });

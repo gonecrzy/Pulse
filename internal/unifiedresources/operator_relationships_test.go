@@ -88,6 +88,47 @@ func TestOperatorRelationshipRejectsIdentityAndUnsupportedEdges(t *testing.T) {
 	}
 }
 
+func TestValidateOperatorRelationshipCompatibility(t *testing.T) {
+	tests := []struct {
+		name       string
+		sourceType ResourceType
+		targetType ResourceType
+		typeValue  RelationshipType
+		wantError  bool
+	}{
+		{name: "workload runs on host", sourceType: ResourceTypeAppContainer, targetType: ResourceTypeVM, typeValue: RelRunsOn},
+		{name: "reversed runs on", sourceType: ResourceTypeVM, targetType: ResourceTypeAppContainer, typeValue: RelRunsOn, wantError: true},
+		{name: "Komodo stack hosted by server", sourceType: ResourceTypeKomodoStack, targetType: ResourceTypeKomodoServer, typeValue: RelHostedBy},
+		{name: "reversed hosted by", sourceType: ResourceTypeKomodoServer, targetType: ResourceTypeKomodoStack, typeValue: RelHostedBy, wantError: true},
+		{name: "dependency permits unlike resources", sourceType: ResourceTypeKomodoServer, targetType: ResourceTypeKomodoDeployment, typeValue: RelDependsOn},
+		{name: "Kubernetes ingress routes to service", sourceType: ResourceTypeK8sIngress, targetType: ResourceTypeK8sService, typeValue: RelRoutesTo},
+		{name: "route model rejects unrelated resources", sourceType: ResourceTypeVM, targetType: ResourceTypeKomodoServer, typeValue: RelRoutesTo, wantError: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateOperatorRelationshipCompatibility(
+				Resource{Type: tt.sourceType}, Resource{Type: tt.targetType}, tt.typeValue,
+			)
+			if (err != nil) != tt.wantError {
+				t.Fatalf("ValidateOperatorRelationshipCompatibility() error = %v, wantError=%t", err, tt.wantError)
+			}
+		})
+	}
+}
+
+func TestValidateIdentityResourceCompatibility(t *testing.T) {
+	if err := ValidateIdentityResourceCompatibility(
+		Resource{Type: ResourceTypeVM}, Resource{Type: ResourceTypeKomodoServer},
+	); err != nil {
+		t.Fatalf("Proxmox VM to Komodo Server identity link: %v", err)
+	}
+	if err := ValidateIdentityResourceCompatibility(
+		Resource{Type: ResourceTypeStorage}, Resource{Type: ResourceTypeKomodoServer},
+	); err == nil {
+		t.Fatal("storage-to-server identity link unexpectedly succeeded")
+	}
+}
+
 func TestOperatorRelationshipsSurviveRebuildsAndRewriteLinkedEndpoints(t *testing.T) {
 	dir := t.TempDir()
 	store, err := NewSQLiteResourceStore(dir, "org-a")

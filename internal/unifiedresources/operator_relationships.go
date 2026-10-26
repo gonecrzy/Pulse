@@ -54,6 +54,80 @@ func IsOperatorRelationshipType(relationshipType RelationshipType) bool {
 	}
 }
 
+// ValidateOperatorRelationshipCompatibility checks the direction and resource
+// kinds supported by the operator relationship model. The generic graph is
+// shared by providers; this prevents a UI or API client from persisting a
+// reversed topology edge or inventing route semantics for unrelated types.
+func ValidateOperatorRelationshipCompatibility(source, target Resource, relationshipType RelationshipType) error {
+	sourceType := CanonicalResourceType(source.Type)
+	targetType := CanonicalResourceType(target.Type)
+	switch relationshipType {
+	case RelDependsOn:
+		return nil
+	case RelRunsOn:
+		if !isOperatorWorkloadType(sourceType) || !isOperatorHostType(targetType) {
+			return fmt.Errorf("runs_on must point from a workload to a supported execution host")
+		}
+	case RelHostedBy:
+		if !isOperatorHostedResourceType(sourceType) || !isOperatorHostType(targetType) {
+			return fmt.Errorf("hosted_by must point from a workload or stack to a supported host")
+		}
+	case RelRoutesTo:
+		if sourceType != ResourceTypeK8sIngress || targetType != ResourceTypeK8sService {
+			return fmt.Errorf("routes_to is supported only from a Kubernetes ingress to a Kubernetes service")
+		}
+	default:
+		return fmt.Errorf("unsupported operator relationship type %q", relationshipType)
+	}
+	return nil
+}
+
+// ValidateIdentityResourceCompatibility rejects identity folds across clearly
+// unrelated resource kinds while permitting the infrastructure host variants
+// emitted by different providers (for example, a Proxmox VM and Komodo Server).
+func ValidateIdentityResourceCompatibility(resourceA, resourceB Resource) error {
+	typeA := CanonicalResourceType(resourceA.Type)
+	typeB := CanonicalResourceType(resourceB.Type)
+	if typeA == typeB || (isOperatorHostType(typeA) && isOperatorHostType(typeB)) {
+		return nil
+	}
+	return fmt.Errorf("resources of type %q and %q are not compatible for identity linking", typeA, typeB)
+}
+
+func isOperatorHostType(resourceType ResourceType) bool {
+	switch resourceType {
+	case ResourceTypeAgent, ResourceTypeVM, ResourceTypeSystemContainer,
+		ResourceTypeK8sCluster, ResourceTypeK8sNode,
+		ResourceTypeKomodoServer, ResourceTypeKomodoSwarm, ResourceTypePBS,
+		ResourceTypePMG, ResourceTypeCeph:
+		return true
+	default:
+		return false
+	}
+}
+
+func isOperatorWorkloadType(resourceType ResourceType) bool {
+	switch resourceType {
+	case ResourceTypeVM, ResourceTypeSystemContainer, ResourceTypeAppContainer,
+		ResourceTypeDockerService, ResourceTypePod, ResourceTypeK8sDeployment,
+		ResourceTypeKomodoDeployment:
+		return true
+	default:
+		return false
+	}
+}
+
+func isOperatorHostedResourceType(resourceType ResourceType) bool {
+	switch resourceType {
+	case ResourceTypeKomodoStack, ResourceTypeKomodoDeployment,
+		ResourceTypeAppContainer, ResourceTypeDockerService,
+		ResourceTypePod, ResourceTypeK8sDeployment:
+		return true
+	default:
+		return false
+	}
+}
+
 func normalizeOperatorResourceRelationship(relationship *OperatorResourceRelationship) error {
 	if relationship == nil {
 		return fmt.Errorf("relationship is required")

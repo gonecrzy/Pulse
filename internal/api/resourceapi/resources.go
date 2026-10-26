@@ -505,6 +505,10 @@ func parseResourceTimelineQuery(r *http.Request, defaultLimit int, includeRelate
 
 // HandleResourceRoutes dispatches nested resource routes.
 func (h *QueryService) HandleResourceRoutes(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == "/api/resources/identity-links" {
+		h.HandleIdentityLinks(w, r)
+		return
+	}
 	if strings.TrimSuffix(r.URL.Path, "/") == "/api/resources/timeline" {
 		h.HandleListResourceTimeline(w, r)
 		return
@@ -837,6 +841,7 @@ func (h *QueryService) HandleLink(w http.ResponseWriter, r *http.Request) {
 	var payload struct {
 		TargetID                string `json:"targetId"`
 		Reason                  string `json:"reason"`
+		ConfirmIdentity         bool   `json:"confirmIdentity"`
 		ConfirmProviderConflict bool   `json:"confirmProviderConflict"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
@@ -847,6 +852,10 @@ func (h *QueryService) HandleLink(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "targetId required", http.StatusBadRequest)
 		return
 	}
+	if !payload.ConfirmIdentity {
+		http.Error(w, "confirmIdentity must be true to merge resource identities", http.StatusBadRequest)
+		return
+	}
 	payload.TargetID = unified.CanonicalResourceID(payload.TargetID)
 	if payload.TargetID == path {
 		http.Error(w, "Resources must have different IDs", http.StatusBadRequest)
@@ -855,6 +864,16 @@ func (h *QueryService) HandleLink(w http.ResponseWriter, r *http.Request) {
 	registry, err := h.buildRegistry(orgID)
 	if err != nil {
 		http.Error(w, sanitizeError(err, "Internal server error"), http.StatusInternalServerError)
+		return
+	}
+	resourceA, foundA := presentationResourceByID(registry, path)
+	resourceB, foundB := presentationResourceByID(registry, payload.TargetID)
+	if !foundA || !foundB {
+		http.Error(w, "Both identity endpoints must be current resources in this organization", http.StatusConflict)
+		return
+	}
+	if err := unified.ValidateIdentityResourceCompatibility(*resourceA, *resourceB); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	if err := registry.ValidateIdentityLink(path, payload.TargetID); err != nil {
@@ -986,6 +1005,29 @@ func (h *QueryService) HandleOperatorRelationships(w http.ResponseWriter, r *htt
 			http.Error(w, "A resource cannot have a relationship to itself", http.StatusBadRequest)
 			return
 		}
+		var sourceResource, targetResource *unified.Resource
+		if r.Method == http.MethodPost {
+			var sourceOK, targetOK bool
+			sourceResource, sourceOK = presentationResourceByID(registry, resolvedSourceID)
+			targetResource, targetOK = presentationResourceByID(registry, resolvedTargetID)
+			if !sourceOK || !targetOK {
+				http.Error(w, "Both relationship endpoints must be current resources in this organization", http.StatusNotFound)
+				return
+			}
+			if err := unified.ValidateOperatorRelationshipCompatibility(*sourceResource, *targetResource, relationshipType); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			for _, existing := range sourceResource.Relationships {
+				if existing.Active && existing.Type == relationshipType &&
+					unified.CanonicalResourceID(existing.SourceID) == resolvedSourceID &&
+					unified.CanonicalResourceID(existing.TargetID) == resolvedTargetID &&
+					existing.Discoverer != "operator_store" {
+					http.Error(w, "An equivalent provider-observed relationship already exists", http.StatusConflict)
+					return
+				}
+			}
+		}
 		actor := getUserID(r)
 		if r.Method == http.MethodDelete {
 			matches, err := matchingOperatorRelationships(relationshipStore, registry, resolvedSourceID, resolvedTargetID, relationshipType)
@@ -1065,6 +1107,50 @@ func (h *QueryService) HandleOperatorRelationships(w http.ResponseWriter, r *htt
 		w.Header().Set("Allow", "GET, POST, DELETE")
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+// HandleIdentityLinks lists the active operator-confirmed identity decisions
+// from the caller's organization store. Identity folds remain ResourceLink
+// state, separate from typed topology and dependency edges.
+func (h *QueryService) HandleIdentityLinks(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	store, err := h.getStore(apicontext.OrgID(r.Context()))
+	if err != nil {
+		http.Error(w, sanitizeError(err, "Internal server error"), http.StatusInternalServerError)
+		return
+	}
+	links, err := store.GetLinks()
+	if err != nil {
+		http.Error(w, sanitizeError(err, "Internal server error"), http.StatusInternalServerError)
+		return
+	}
+	sort.Slice(links, func(i, j int) bool {
+		if links[i].ResourceA != links[j].ResourceA {
+			return links[i].ResourceA < links[j].ResourceA
+		}
+		return links[i].ResourceB < links[j].ResourceB
+	})
+	type identityLinkResponse struct {
+		ResourceA string    `json:"resourceA"`
+		ResourceB string    `json:"resourceB"`
+		PrimaryID string    `json:"primaryId"`
+		Reason    string    `json:"reason,omitempty"`
+		CreatedBy string    `json:"createdBy,omitempty"`
+		CreatedAt time.Time `json:"createdAt,omitempty"`
+	}
+	response := make([]identityLinkResponse, 0, len(links))
+	for _, link := range links {
+		response = append(response, identityLinkResponse{
+			ResourceA: link.ResourceA, ResourceB: link.ResourceB, PrimaryID: link.PrimaryID,
+			Reason: link.Reason, CreatedBy: link.CreatedBy, CreatedAt: link.CreatedAt,
+		})
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{"links": response})
 }
 
 func resolveOperatorRelationshipEndpoint(registry *unified.ResourceRegistry, resourceID string) string {

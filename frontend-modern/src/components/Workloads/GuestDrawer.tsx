@@ -19,6 +19,7 @@ import { getShippedDocUrl } from '@/utils/docsLinks';
 import { useGuestDrawerState } from './useGuestDrawerState';
 import { GuestDrawerOverview } from './GuestDrawerOverview';
 import { GuestDrawerManage } from './GuestDrawerManage';
+import { ResourceRelationshipManager } from '@/components/Infrastructure/ResourceRelationshipManager';
 
 const GuestDrawerContent: Component<GuestDrawerProps> = (props) => {
   const {
@@ -64,16 +65,21 @@ const GuestDrawerContent: Component<GuestDrawerProps> = (props) => {
         collapseLabel={`Collapse ${props.guest.name} details`}
         onCollapse={props.onClose}
         actions={
-          <Show when={props.customUrl?.trim()}>
-            <WebInterfaceLink
-              url={props.customUrl}
-              ariaLabel={`Open web interface for ${props.guest.name}`}
-              class={getDrawerHeaderActionButtonClass()}
-            >
-              <ExternalLinkIcon class="h-3.5 w-3.5" aria-hidden="true" />
-              <span>Open</span>
-            </WebInterfaceLink>
-          </Show>
+          <>
+            <ResourceRelationshipManager
+              initialResourceId={props.guest.canonicalResourceId ?? props.guest.id}
+            />
+            <Show when={props.customUrl?.trim()}>
+              <WebInterfaceLink
+                url={props.customUrl}
+                ariaLabel={`Open web interface for ${props.guest.name}`}
+                class={getDrawerHeaderActionButtonClass()}
+              >
+                <ExternalLinkIcon class="h-3.5 w-3.5" aria-hidden="true" />
+                <span>Open</span>
+              </WebInterfaceLink>
+            </Show>
+          </>
         }
       >
         <DrawerSubjectHeading

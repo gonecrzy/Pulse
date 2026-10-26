@@ -3,6 +3,7 @@ import type { JSX } from 'solid-js';
 import { A, useLocation, useNavigate } from '@solidjs/router';
 import BellIcon from 'lucide-solid/icons/bell';
 import ListChecksIcon from 'lucide-solid/icons/list-checks';
+import GitBranchIcon from 'lucide-solid/icons/git-branch';
 import SettingsIcon from 'lucide-solid/icons/settings';
 import Maximize2Icon from 'lucide-solid/icons/maximize-2';
 import Minimize2Icon from 'lucide-solid/icons/minimize-2';
@@ -297,6 +298,7 @@ export function AppLayout(props: AppLayoutProps) {
     standalone: 'Machines',
     alerts: 'Alerts',
     actions: 'Actions',
+    relationships: 'Relationships',
     ai: 'Patrol',
     settings: 'Settings',
   };
@@ -608,6 +610,16 @@ export function AppLayout(props: AppLayoutProps) {
         countLabel: actionApprovalBadge()?.label,
         breakdown: undefined,
         icon: ListChecksIcon,
+      },
+      {
+        id: 'relationships',
+        label: 'Relationships',
+        route: '/relationships',
+        tooltip: 'Review infrastructure dependencies and confirmed identities',
+        badge: null,
+        count: undefined,
+        breakdown: undefined,
+        icon: GitBranchIcon,
       },
     ];
 

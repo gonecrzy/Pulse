@@ -4165,6 +4165,7 @@ func (e *PulseToolExecutor) executeListInfrastructure(_ context.Context, args ma
 type TopologyBuildOptions struct {
 	Include                     string
 	SummaryOnly                 bool
+	MaxRelationships            int
 	MaxProxmoxNodes             int
 	MaxVMsPerNode               int
 	MaxContainersPerNode        int
@@ -4604,6 +4605,20 @@ func BuildTopologyResponseFromReadState(rs unifiedresources.ReadState, options T
 	response.Proxmox.Nodes = proxmoxNodes
 	response.Docker.Hosts = dockerHosts
 	response.Kubernetes.Clusters = k8sClusters
+	if !options.SummaryOnly {
+		if relationshipReader, ok := rs.(unifiedresources.RelationshipReadState); ok {
+			relationships := relationshipReader.ListResourceRelationships()
+			limit := options.MaxRelationships
+			if limit <= 0 {
+				limit = 50
+			}
+			if len(relationships) > limit {
+				response.RelationshipsTruncated = true
+				relationships = relationships[:limit]
+			}
+			response.Relationships = relationships
+		}
+	}
 	response.Summary = summary
 	return response.NormalizeCollections()
 }
@@ -4715,6 +4730,7 @@ func (e *PulseToolExecutor) executeGetTopology(_ context.Context, args map[strin
 	response := BuildTopologyResponseFromReadState(rs, TopologyBuildOptions{
 		Include:                     include,
 		SummaryOnly:                 summaryOnly,
+		MaxRelationships:            topologyLimit,
 		MaxProxmoxNodes:             maxProxmoxNodes,
 		MaxVMsPerNode:               maxVMsPerNode,
 		MaxContainersPerNode:        maxContainersPerNode,

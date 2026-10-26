@@ -213,4 +213,46 @@ describe('ResourceAPI', () => {
       },
     );
   });
+
+  it('keeps operator topology edges on the relationships endpoint', async () => {
+    vi.mocked(apiFetchJSON).mockResolvedValueOnce({ relationship: { id: 'edge-1' } } as any);
+    await ResourceAPI.addRelationship('vm:42', {
+      targetId: 'node:1',
+      type: 'runs_on',
+      reason: 'Verified placement',
+    });
+
+    expect(apiFetchJSON).toHaveBeenCalledWith('/api/resources/vm%3A42/relationships', {
+      method: 'POST',
+      body: JSON.stringify({ targetId: 'node:1', type: 'runs_on', reason: 'Verified placement' }),
+    });
+  });
+
+  it('keeps explicit identity folds on the separate ResourceLink endpoints', async () => {
+    vi.mocked(apiFetchJSON)
+      .mockResolvedValueOnce({ links: [] } as any)
+      .mockResolvedValueOnce({ status: 'linked', message: 'ok' } as any)
+      .mockResolvedValueOnce({ status: 'unlinked', message: 'ok' } as any);
+
+    await ResourceAPI.getIdentityLinks();
+    await ResourceAPI.linkIdentity('pve:42', 'agent:abc', 'Same machine', true);
+    await ResourceAPI.unlinkIdentity('pve:42', 'agent:abc', 'Incorrect link');
+
+    expect(apiFetchJSON).toHaveBeenNthCalledWith(1, '/api/resources/identity-links', {
+      cache: 'no-store',
+    });
+    expect(apiFetchJSON).toHaveBeenNthCalledWith(2, '/api/resources/pve%3A42/link', {
+      method: 'POST',
+      body: JSON.stringify({
+        targetId: 'agent:abc',
+        reason: 'Same machine',
+        confirmIdentity: true,
+        confirmProviderConflict: true,
+      }),
+    });
+    expect(apiFetchJSON).toHaveBeenNthCalledWith(3, '/api/resources/pve%3A42/unlink', {
+      method: 'POST',
+      body: JSON.stringify({ targetId: 'agent:abc', reason: 'Incorrect link' }),
+    });
+  });
 });
