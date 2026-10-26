@@ -160,7 +160,7 @@ export function KomodoPageSurface() {
           <h1 class="text-xl font-semibold text-base-content">Komodo</h1>
           <p class="mt-1 text-sm text-muted">
             Read-only inventory from the canonical Pulse resource registry. All resources includes
-            Komodo records folded into a cross-provider identity; type tabs show their canonical
+            Komodo records folded into a cross-provider identity. Type tabs show their canonical
             Pulse type.
           </p>
         </div>
