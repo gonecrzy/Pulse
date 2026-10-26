@@ -75,9 +75,16 @@ proxy failure. Scoped graph data is available through existing AI query tools;
 a full interactive topology visualization and dependency-aware notification
 routing remain future work.
 
-**Image result:** Pending the branch push and `komodo-phase2f-image.yml` run.
-Record its immutable GHCR digest and workflow URL after publication. No merge
-to `sindri` or deployment is authorized by this checkpoint.
+**Image result:** [Workflow run #22](https://github.com/gonecrzy/Pulse/actions/runs/40405935417)
+passed for source commit `ffb76e771e0fafc579d95409bb40d5b0ce861cb5`. It built
+and smoke-tested the `linux/amd64` runtime, published the commit-specific
+`ghcr.io/gonecrzy/pulse:komodo-ffb76e771e0f` and convenience
+`ghcr.io/gonecrzy/pulse:komodo-test` tags, and verified both resolve to
+`sha256:af50282ca9d0e3909bbce72b9212b9488f2a46287e904c360222d1bd196056be`.
+The workflow then pulled and smoke-tested
+`ghcr.io/gonecrzy/pulse@sha256:af50282ca9d0e3909bbce72b9212b9488f2a46287e904c360222d1bd196056be`,
+including architecture, source label, startup, health, and `/data` restart
+persistence. No merge to `sindri` or deployment is authorized by this checkpoint.
 
 ## Workspace and baseline
 
