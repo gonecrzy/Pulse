@@ -310,6 +310,7 @@ func TestGetPoolsDatasetsAndAlertsUseNativeQueryShapes(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	client := mustClientForServer(t, server.URL, ClientConfig{APIKey: "api-key"})
+	t.Cleanup(client.Close)
 	pools, err := client.GetPools(context.Background())
 	if err != nil {
 		t.Fatalf("GetPools() error = %v", err)
