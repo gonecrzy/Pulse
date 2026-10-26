@@ -115,6 +115,46 @@ describe('InfrastructureSourceManager setup summary', () => {
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1024 });
   });
 
+  it('shows Komodo as API-backed and editable in the infrastructure list', () => {
+    const onOpenConnection = vi.fn();
+    const komodoConnection = connectionFixture({
+      id: 'komodo:core-1',
+      type: 'komodo',
+      name: 'Komodo Core',
+      address: 'https://komodo.example.test',
+      source: 'manual',
+      capabilities: { supportsPause: true, supportsScope: false, supportsTest: true },
+    });
+    const komodoRow = row({
+      id: komodoConnection.id,
+      ownerType: 'komodo',
+      name: komodoConnection.name,
+      subtitle: 'via platform API',
+      source: 'api',
+      coverageLabels: ['Servers', 'Stacks', 'Deployments', 'Swarms'],
+      canEdit: true,
+      canPause: true,
+      isAgent: false,
+      connection: komodoConnection,
+    });
+
+    render(() => (
+      <InfrastructureSourceManager
+        rows={() => [komodoRow]}
+        discoveredNodes={() => []}
+        discoveryEnabled={false}
+        discoveryScanStatus={() => ({ scanning: false })}
+        readOnly={false}
+        onOpenConnection={onOpenConnection}
+      />
+    ));
+
+    expect(screen.getAllByText('Komodo Core')).toHaveLength(2);
+    expect(screen.getByText('API')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Manage' }));
+    expect(onOpenConnection).toHaveBeenCalledWith(komodoRow);
+  });
+
   it('renders manual discovery as a visible operator action', () => {
     const onRunDiscovery = vi.fn();
     const onOpenDiscoverySettings = vi.fn();
