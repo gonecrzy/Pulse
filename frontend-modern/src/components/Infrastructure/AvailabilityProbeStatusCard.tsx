@@ -78,7 +78,8 @@ export function AvailabilityProbeStatusCard(props: AvailabilityProbeStatusCardPr
     props.availability.correlationState === 'attached'
       ? props.availability.resolvedResourceId?.trim() || props.availability.linkedResourceId?.trim()
       : '';
-  const linkedResourceName = () => props.availability.linkedResourceName?.trim() || linkedResourceId();
+  const linkedResourceName = () =>
+    props.availability.linkedResourceName?.trim() || linkedResourceId();
   const failureLabel = () => {
     const err = (props.availability.lastError ?? '').trim();
     if (!err) return null;
