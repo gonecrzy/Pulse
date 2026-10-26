@@ -183,10 +183,10 @@ func TestDialPinnedIPsClosesLateSuccessfulLoser(t *testing.T) {
 		<-ctx.Done()
 		return loser, nil
 	}
+	require.NoError(t, peer.SetReadDeadline(time.Now().Add(2*time.Second)))
 	connection, err := dialPinnedIPs(context.Background(), "tcp", "443", []net.IP{net.ParseIP("192.0.2.1"), net.ParseIP("192.0.2.2")}, time.Second, dial)
 	require.NoError(t, err)
 	require.Same(t, winner, connection)
-	require.NoError(t, peer.SetReadDeadline(time.Now().Add(time.Second)))
 	_, err = peer.Read(make([]byte, 1))
 	require.ErrorIs(t, err, io.EOF, "the unused successful connection must close")
 }
