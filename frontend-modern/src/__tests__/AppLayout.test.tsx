@@ -188,7 +188,7 @@ describe('AppLayout navigation icons', () => {
     expect(systemGroup).toBeTruthy();
 
     const desktopTabs = within(systemGroup as HTMLElement).getAllByRole('link');
-    expect(desktopTabs).toHaveLength(4);
+    expect(desktopTabs).toHaveLength(5);
     desktopTabs.forEach((tab) => {
       expect(tab.tagName).toBe('A');
       expect(tab.querySelector('svg')).toBeTruthy();
@@ -198,6 +198,9 @@ describe('AppLayout navigation icons', () => {
     });
     expect(desktopPatrolTab.querySelector('svg')).toBeTruthy();
     expect(within(systemGroup as HTMLElement).getByRole('link', { name: '1 Alerts' })).toBeTruthy();
+    expect(
+      within(systemGroup as HTMLElement).getByRole('link', { name: 'Relationships' }),
+    ).toBeTruthy();
     expect(
       within(systemGroup as HTMLElement).queryByRole('link', {
         name: 'Pulse Patrol Patrol',
