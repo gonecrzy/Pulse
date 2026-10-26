@@ -310,7 +310,6 @@ func TestGetPoolsDatasetsAndAlertsUseNativeQueryShapes(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	client := mustClientForServer(t, server.URL, ClientConfig{APIKey: "api-key"})
-	t.Cleanup(client.Close)
 	pools, err := client.GetPools(context.Background())
 	if err != nil {
 		t.Fatalf("GetPools() error = %v", err)
@@ -1975,6 +1974,9 @@ func mustClientForServer(t *testing.T, serverURL string, config ClientConfig) *C
 		t.Fatalf("NewClient() error = %v", err)
 	}
 	client.allowInsecureRPC = true
+	// RPC-backed tests may leave a keepalive goroutine after their final read.
+	// Close it before the next test can replace package-global logger state.
+	t.Cleanup(client.Close)
 	return client
 }
 
