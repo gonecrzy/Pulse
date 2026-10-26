@@ -177,6 +177,79 @@ func TestAvailabilityExplicitLinkRetainsCheckAndProjectsFacetToKnownResource(t *
 	}
 }
 
+func TestAvailabilityAssociationEditsPreserveKomodoStackIdentity(t *testing.T) {
+	rr := NewRegistry(nil)
+	now := time.Now().UTC()
+	stackASourceID := "komodo:connection-a:stack:kristi-www"
+	stackBSourceID := "komodo:connection-a:stack:other-site"
+	stackAID := SourceSpecificID(ResourceTypeKomodoStack, SourceKomodo, stackASourceID)
+	stackBID := SourceSpecificID(ResourceTypeKomodoStack, SourceKomodo, stackBSourceID)
+	rr.IngestRecords(SourceKomodo, []IngestRecord{
+		{SourceID: stackASourceID, Resource: Resource{ID: stackASourceID, Name: "kristi-www", Type: ResourceTypeKomodoStack, Status: StatusOnline, LastSeen: now}},
+		{SourceID: stackBSourceID, Resource: Resource{ID: stackBSourceID, Name: "other-site", Type: ResourceTypeKomodoStack, Status: StatusOnline, LastSeen: now}},
+	})
+	assertStackIdentity := func(id string) {
+		t.Helper()
+		stack, ok := rr.Get(id)
+		if !ok || stack == nil || stack.Canonical == nil {
+			t.Fatalf("Stack %q missing canonical identity: %+v", id, stack)
+		}
+		if stack.Canonical.PrimaryID != id {
+			t.Fatalf("Stack %q primary identity = %q", id, stack.Canonical.PrimaryID)
+		}
+		for _, alias := range stack.Canonical.Aliases {
+			if alias == "kristi-www-site" || alias == "192.0.2.110" {
+				t.Fatalf("Stack %q borrowed availability identity alias %q: %+v", id, alias, stack.Canonical)
+			}
+		}
+	}
+	assertStackIdentity(stackAID)
+
+	check := func(linkedResourceID string, available bool) IngestRecord {
+		checkedAt := now
+		return IngestRecord{
+			SourceID: "kristi-www-site",
+			Resource: Resource{
+				ID: "kristi-www-site", Name: "kristi-www-site", Type: ResourceTypeNetworkEndpoint,
+				Status: StatusOnline, LastSeen: now,
+				Availability: &AvailabilityData{
+					TargetID: "kristi-www-site", LinkedResourceID: linkedResourceID,
+					Address: "192.0.2.110", Protocol: "https", Enabled: true,
+					Available: available, LastChecked: &checkedAt,
+				},
+			},
+		}
+	}
+	rr.IngestRecords(SourceAvailability, []IngestRecord{check(stackAID, true)})
+	assertStackIdentity(stackAID)
+	if resources := rr.List(); len(resources) != 3 {
+		t.Fatalf("inventory after initial association has %d resources, want two Stacks and one check", len(resources))
+	}
+
+	rr.IngestRecords(SourceAvailability, []IngestRecord{check(stackBID, false)})
+	assertStackIdentity(stackAID)
+	assertStackIdentity(stackBID)
+	stackA, _ := rr.Get(stackAID)
+	if len(AvailabilityChecksForResource(*stackA)) != 0 {
+		t.Fatalf("previous Stack retained moved check: %+v", stackA.AvailabilityChecks)
+	}
+	stackB, _ := rr.Get(stackBID)
+	if checks := AvailabilityChecksForResource(*stackB); len(checks) != 1 || checks[0].TargetID != "kristi-www-site" {
+		t.Fatalf("new Stack projection = %+v, want the updated check", checks)
+	}
+
+	rr.IngestRecords(SourceAvailability, []IngestRecord{check("", true)})
+	assertStackIdentity(stackAID)
+	assertStackIdentity(stackBID)
+	stackB, _ = rr.Get(stackBID)
+	if len(AvailabilityChecksForResource(*stackB)) != 0 {
+		t.Fatalf("Stack retained removed check association: %+v", stackB.AvailabilityChecks)
+	}
+	if resources := rr.List(); len(resources) != 3 {
+		t.Fatalf("inventory after association removal has %d resources, want no duplicate", len(resources))
+	}
+}
+
 func TestAvailabilityUnlinkedUnmatchedMintsNetworkEndpoint(t *testing.T) {
 	rr := NewRegistry(nil)
 

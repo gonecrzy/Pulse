@@ -370,9 +370,16 @@ func (h *QueryService) HandleGetResource(w http.ResponseWriter, r *http.Request)
 	resourceCopy.Relationships = canonicalResourceRelationshipContext(registry, resourceCopy)
 	unified.RefreshCanonicalMetadata(&resourceCopy)
 	resourceCopy.Type = resourceContractType(resourceCopy)
+	response := struct {
+		unified.Resource
+		RelationshipContext resourceRelationshipContextResponse `json:"relationshipContext"`
+	}{
+		Resource:            resourceCopy,
+		RelationshipContext: canonicalResourceRelationshipNeighborhood(registry, resourceCopy, 2, 25, 50),
+	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resourceCopy)
+	json.NewEncoder(w).Encode(response)
 }
 
 func (h *QueryService) applyActionAvailability(ctx context.Context, resources []unified.Resource) {
@@ -471,6 +478,136 @@ func canonicalResourceRelationshipContext(registry *unified.ResourceRegistry, re
 	return relationships
 }
 
+func canonicalResourceRelationshipNeighborhood(
+	registry *unified.ResourceRegistry,
+	root unified.Resource,
+	maxDepth int,
+	maxResources int,
+	maxRelationships int,
+) resourceRelationshipContextResponse {
+	context := resourceRelationshipContextResponse{
+		Resources:     []resourceRelationshipContextNode{},
+		Relationships: []unified.ResourceRelationship{},
+	}
+	if registry == nil {
+		return context
+	}
+	rootID := unified.CanonicalResourceID(root.ID)
+	if rootID == "" {
+		return context
+	}
+	if maxDepth <= 0 {
+		maxDepth = 2
+	}
+	if maxResources <= 0 {
+		maxResources = 25
+	}
+	if maxRelationships <= 0 {
+		maxRelationships = 50
+	}
+	resourcesByID := make(map[string]unified.Resource)
+	for _, resource := range registry.ListForPresentation() {
+		id := unified.CanonicalResourceID(resource.ID)
+		if id != "" {
+			resourcesByID[id] = resource
+		}
+	}
+	if _, exists := resourcesByID[rootID]; !exists {
+		resourcesByID[rootID] = root
+	}
+	allRelationships := registry.ListResourceRelationships()
+	type graphNode struct {
+		id    string
+		depth int
+	}
+	visited := map[string]struct{}{rootID: {}}
+	queue := []graphNode{{id: rootID}}
+	seenRelationships := make(map[string]struct{})
+	for len(queue) > 0 {
+		current := queue[0]
+		queue = queue[1:]
+		if current.depth >= maxDepth {
+			continue
+		}
+		for _, relationship := range allRelationships {
+			if !relationship.Active {
+				continue
+			}
+			sourceID := unified.CanonicalResourceID(relationship.SourceID)
+			targetID := unified.CanonicalResourceID(relationship.TargetID)
+			neighborID := ""
+			if sourceID == current.id {
+				neighborID = targetID
+			} else if targetID == current.id {
+				neighborID = sourceID
+			}
+			if neighborID == "" {
+				continue
+			}
+			if _, exists := resourcesByID[neighborID]; !exists {
+				continue
+			}
+			key := relationship.ID
+			if key == "" {
+				key = string(relationship.Type) + "\x00" + sourceID + "\x00" + targetID
+			}
+			if _, exists := seenRelationships[key]; !exists {
+				seenRelationships[key] = struct{}{}
+				relationship.SourceID = sourceID
+				relationship.TargetID = targetID
+				context.Relationships = append(context.Relationships, relationship)
+			}
+			if _, exists := visited[neighborID]; exists {
+				continue
+			}
+			if len(visited) >= maxResources {
+				context.Truncated = true
+				continue
+			}
+			visited[neighborID] = struct{}{}
+			queue = append(queue, graphNode{id: neighborID, depth: current.depth + 1})
+		}
+	}
+	if len(context.Relationships) > maxRelationships {
+		context.Truncated = true
+		context.Relationships = context.Relationships[:maxRelationships]
+	}
+	ids := make([]string, 0, len(visited))
+	for id := range visited {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	for _, id := range ids {
+		resource := resourcesByID[id]
+		context.Resources = append(context.Resources, resourceRelationshipContextNode{
+			ID:                 id,
+			Type:               unified.CanonicalResourceType(resource.Type),
+			Name:               resource.Name,
+			Status:             resource.Status,
+			LastSeen:           resource.LastSeen,
+			Sources:            append([]unified.DataSource(nil), resource.Sources...),
+			SourceStatus:       resource.SourceStatus,
+			CanonicalIdentity:  resource.Canonical,
+			Health:             resource.Health,
+			Availability:       resource.Availability,
+			AvailabilityChecks: append([]unified.AvailabilityData(nil), resource.AvailabilityChecks...),
+			Incidents:          append([]unified.ResourceIncident(nil), resource.Incidents...),
+			IncidentCount:      resource.IncidentCount,
+			IncidentSummary:    resource.IncidentSummary,
+		})
+	}
+	sort.Slice(context.Relationships, func(i, j int) bool {
+		if context.Relationships[i].SourceID != context.Relationships[j].SourceID {
+			return context.Relationships[i].SourceID < context.Relationships[j].SourceID
+		}
+		if context.Relationships[i].TargetID != context.Relationships[j].TargetID {
+			return context.Relationships[i].TargetID < context.Relationships[j].TargetID
+		}
+		return context.Relationships[i].Type < context.Relationships[j].Type
+	})
+	return context
+}
+
 func presentationResourceByID(registry *unified.ResourceRegistry, resourceID string) (*unified.Resource, bool) {
 	resource, _, ok := presentationResourceByReference(registry, resourceID)
 	return resource, ok
@@ -516,6 +653,33 @@ type resourceFacetBundleResponse struct {
 	Relationships []unified.ResourceRelationship `json:"relationships,omitempty"`
 	RecentChanges []unified.ResourceChange       `json:"recentChanges"`
 	Counts        resourceFacetCountsResponse    `json:"counts"`
+}
+
+// resourceRelationshipContextResponse is a bounded projection of the existing
+// canonical registry graph for a detail view. It carries enough adjacent
+// resource state to explain a relationship without changing edge ownership or
+// treating topology as causal evidence.
+type resourceRelationshipContextResponse struct {
+	Resources     []resourceRelationshipContextNode `json:"resources"`
+	Relationships []unified.ResourceRelationship    `json:"relationships"`
+	Truncated     bool                              `json:"truncated,omitempty"`
+}
+
+type resourceRelationshipContextNode struct {
+	ID                 string                                      `json:"id"`
+	Type               unified.ResourceType                        `json:"type"`
+	Name               string                                      `json:"name"`
+	Status             unified.ResourceStatus                      `json:"status"`
+	LastSeen           time.Time                                   `json:"lastSeen"`
+	Sources            []unified.DataSource                        `json:"sources"`
+	SourceStatus       map[unified.DataSource]unified.SourceStatus `json:"sourceStatus,omitempty"`
+	CanonicalIdentity  *unified.CanonicalIdentity                  `json:"canonicalIdentity,omitempty"`
+	Health             *unified.ResourceHealth                     `json:"health,omitempty"`
+	Availability       *unified.AvailabilityData                   `json:"availability,omitempty"`
+	AvailabilityChecks []unified.AvailabilityData                  `json:"availabilityChecks,omitempty"`
+	Incidents          []unified.ResourceIncident                  `json:"incidents,omitempty"`
+	IncidentCount      int                                         `json:"incidentCount,omitempty"`
+	IncidentSummary    string                                      `json:"incidentSummary,omitempty"`
 }
 
 type resourceTimelineQueryOptions struct {

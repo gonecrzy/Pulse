@@ -287,6 +287,11 @@ export function StandalonePageSurface() {
                 probeAgentOptions={buildProbeAgentOptions(model().machines)}
                 view={availabilityView()}
                 onViewChange={setAvailabilityView}
+                selectedResourceId={
+                  typeof searchParams[STANDALONE_QUERY_PARAMS.resource] === 'string'
+                    ? searchParams[STANDALONE_QUERY_PARAMS.resource]
+                    : undefined
+                }
                 externalSearch={machineSearchFilter}
                 onExternalSearchChange={setMachineSearchFilter}
                 externalStatus={machineStatusFilter}

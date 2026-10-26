@@ -2,6 +2,7 @@ import { useRelativeTimeNow } from '@/utils/relativeTimeClock';
 import { A } from '@solidjs/router';
 import {
   Show,
+  createEffect,
   createMemo,
   createResource,
   onCleanup,
@@ -117,6 +118,7 @@ export const AvailabilityChecksTable: Component<{
   probeAgentOptions?: readonly ProbeAgentOption[];
   view?: AvailabilityChecksView;
   onViewChange?: (view: AvailabilityChecksView) => void;
+  selectedResourceId?: string;
   externalSearch?: () => string;
   onExternalSearchChange?: (value: string) => void;
   externalStatus?: () => PlatformResourceStatusFilter;
@@ -184,6 +186,15 @@ export const AvailabilityChecksTable: Component<{
   );
   const drawer = createPlatformResourceDetailState({ idPrefix: 'availability-check-detail' });
   const resolveResourceLabel = createPlatformResourceLabelResolver(() => props.resources);
+  let lastAutoOpenedResourceId = '';
+  createEffect(() => {
+    const requestedId = props.selectedResourceId?.trim();
+    if (!requestedId || requestedId === lastAutoOpenedResourceId) return;
+    const resource = props.resources.find((candidate) => candidate.id === requestedId);
+    if (!resource) return;
+    drawer.open(resource);
+    lastAutoOpenedResourceId = requestedId;
+  });
 
   return (
     <Show

@@ -43,7 +43,11 @@ const availabilityResource = (overrides: Partial<Resource> = {}): Resource =>
     ...overrides,
   }) as Resource;
 
-const renderTable = (resources: Resource[], probeAgentOptions?: ProbeAgentOption[]) =>
+const renderTable = (
+  resources: Resource[],
+  probeAgentOptions?: ProbeAgentOption[],
+  selectedResourceId?: string,
+) =>
   render(() => (
     <Router>
       <Route
@@ -55,6 +59,7 @@ const renderTable = (resources: Resource[], probeAgentOptions?: ProbeAgentOption
             emptyTitle="No checks"
             emptyDescription="Add checks"
             probeAgentOptions={probeAgentOptions}
+            selectedResourceId={selectedResourceId}
           />
         )}
       />
@@ -128,6 +133,18 @@ describe('AvailabilityChecksTable', () => {
       container.querySelector(
         '[data-inline-platform-resource-detail-for="availability:mock-availability-mqtt-meter"]',
       ),
+    ).not.toBeNull();
+  });
+
+  it('opens the requested check from a relationship navigation link', () => {
+    const check = availabilityResource();
+    renderTable([check], undefined, check.id);
+
+    expect(
+      screen.getByRole('button', { name: 'Collapse details for MQTT power meter' }),
+    ).toHaveAttribute('aria-expanded', 'true');
+    expect(
+      document.querySelector(`[data-inline-platform-resource-detail-for="${check.id}"]`),
     ).not.toBeNull();
   });
 

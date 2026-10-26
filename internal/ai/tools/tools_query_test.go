@@ -12,6 +12,7 @@ import (
 	"github.com/rcourtman/pulse-go-rewrite/internal/agentexec"
 	komodocore "github.com/rcourtman/pulse-go-rewrite/internal/komodo"
 	"github.com/rcourtman/pulse-go-rewrite/internal/models"
+	"github.com/rcourtman/pulse-go-rewrite/internal/storagehealth"
 	"github.com/rcourtman/pulse-go-rewrite/internal/truenas"
 	"github.com/rcourtman/pulse-go-rewrite/internal/unifiedresources"
 )
@@ -637,7 +638,9 @@ func TestExecuteGetTopologyReturnsScopedCanonicalIncidentNeighborhood(t *testing
 	})
 	registry.IngestRecords(unifiedresources.SourceAvailability, []unifiedresources.IngestRecord{{
 		SourceID: probeID,
-		Resource: unifiedresources.Resource{Type: unifiedresources.ResourceTypeNetworkEndpoint, Name: "kristi-www-site", Status: unifiedresources.StatusOffline, LastSeen: now, Availability: &unifiedresources.AvailabilityData{
+		Resource: unifiedresources.Resource{Type: unifiedresources.ResourceTypeNetworkEndpoint, Name: "kristi-www-site", Status: unifiedresources.StatusOffline, LastSeen: now, Health: &unifiedresources.ResourceHealth{Verdict: unifiedresources.HealthCritical}, Incidents: []unifiedresources.ResourceIncident{{
+			Provider: "availability", NativeID: probeID, Code: "availability_unreachable", Severity: storagehealth.RiskCritical, Summary: "HTTPS returned 503", StartedAt: now,
+		}}, Availability: &unifiedresources.AvailabilityData{
 			TargetID: probeID, LinkedResourceID: stackCanonicalID, Protocol: "https", Address: "192.0.2.110", Enabled: true, Available: false, LastChecked: &now,
 		}},
 	}})
@@ -669,8 +672,11 @@ func TestExecuteGetTopologyReturnsScopedCanonicalIncidentNeighborhood(t *testing
 		t.Fatalf("host source freshness = %+v, want current observations from both providers", host.SourceStatus)
 	}
 	check, checkFound := byID[probeCanonicalID]
-	if !checkFound || check.Status != string(unifiedresources.StatusOffline) || check.Availability == nil || check.Availability.Outcome != "unreachable" || check.Availability.LinkedResourceID != stackCanonicalID || check.Availability.LinkedResourceName != "kristi-www" {
+	if !checkFound || check.Status != string(unifiedresources.StatusOffline) || check.Health == nil || check.Health.Verdict != unifiedresources.HealthCritical || check.Availability == nil || check.Availability.Outcome != "unreachable" || check.Availability.LastChecked == nil || !check.Availability.LastChecked.Equal(now) || check.Availability.LinkedResourceID != stackCanonicalID || check.Availability.LinkedResourceName != "kristi-www" {
 		t.Fatalf("availability check topology resource = %+v, want its Stack association", check)
+	}
+	if len(check.Incidents) != 1 || check.Incidents[0].Code != "availability_unreachable" || check.Incidents[0].Summary != "HTTPS returned 503" {
+		t.Fatalf("availability incident context = %+v, want the active HTTPS failure", check.Incidents)
 	}
 	if len(topology.Relationships) != 2 {
 		t.Fatalf("scoped relationships = %+v, want availability-to-Stack and Stack-to-host edges", topology.Relationships)
@@ -736,6 +742,34 @@ func TestExecuteGetTopologyReturnsScopedCanonicalIncidentNeighborhood(t *testing
 	}
 	if !foundCanonicalHost {
 		t.Fatalf("merged Komodo member topology = %+v, want canonical host %q", linkedNeighborhood.CanonicalResources, pveID)
+	}
+
+	vmTopologyResult, err := executor.executeGetTopology(context.Background(), map[string]interface{}{"resource_id": pveID})
+	if err != nil {
+		t.Fatalf("topology from Proxmox VM: %v", err)
+	}
+	var vmNeighborhood TopologyResponse
+	if err := json.Unmarshal([]byte(vmTopologyResult.Content[0].Text), &vmNeighborhood); err != nil {
+		t.Fatalf("decode Proxmox VM topology: %v", err)
+	}
+	vmIDs := make(map[string]struct{}, len(vmNeighborhood.CanonicalResources))
+	for _, resource := range vmNeighborhood.CanonicalResources {
+		vmIDs[resource.ID] = struct{}{}
+	}
+	if len(vmIDs) != 3 {
+		t.Fatalf("topology from VM has %d unique resources, want VM, Stack and HTTPS check: %+v", len(vmIDs), vmNeighborhood.CanonicalResources)
+	}
+	if _, ok := vmIDs[pveID]; !ok {
+		t.Fatalf("VM-started topology omitted Proxmox identity %q: %+v", pveID, vmNeighborhood.CanonicalResources)
+	}
+	if _, ok := vmIDs[stackCanonicalID]; !ok {
+		t.Fatalf("VM-started topology omitted Komodo Stack %q: %+v", stackCanonicalID, vmNeighborhood.CanonicalResources)
+	}
+	if _, ok := vmIDs[probeCanonicalID]; !ok {
+		t.Fatalf("VM-started topology omitted availability check %q: %+v", probeCanonicalID, vmNeighborhood.CanonicalResources)
+	}
+	if len(vmNeighborhood.Relationships) != 2 {
+		t.Fatalf("VM-started topology relationships = %+v, want the two verified edges", vmNeighborhood.Relationships)
 	}
 }
 

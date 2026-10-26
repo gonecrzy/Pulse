@@ -206,6 +206,206 @@ func TestKomodoProviderIncidentsIgnoreStaleEvidenceAndRecoverOnFreshInventory(t 
 	}
 }
 
+func TestWWWDMZFixtureIncidentOwnershipAndIndependentRecovery(t *testing.T) {
+	// Fixture-only state transition test. No provider is polled and no live
+	// service or infrastructure is contacted.
+	m := newTestManager(t)
+	configureUnifiedEvalManager(t, m, unifiedEvalBaseConfig())
+	var notificationContext []Alert
+	m.SetAlertCallback(func(alert *Alert) {
+		notificationContext = append(notificationContext, *alert)
+	})
+	const (
+		vmID    = "vm:www-dmz-50110"
+		stackID = "komodo-stack:kristi-www"
+		checkID = "availability:kristi-www-site"
+	)
+	base := time.Now().UTC().Truncate(time.Second)
+	managerNow := base
+	m.now = func() time.Time { return managerNow }
+	checkSource := operationaltrust.EvidenceSource{Provider: "availability", Collector: "availability-poller"}
+
+	fixture := func(at time.Time, httpsFailed, stackFailed, vmFailed, komodoStale bool) []unifiedresources.Resource {
+		workloadObservedAt := at
+		workloadSourceState := "online"
+		if komodoStale {
+			workloadObservedAt = at.Add(-20 * time.Minute)
+			workloadSourceState = "stale"
+		}
+		vm := unifiedresources.Resource{
+			ID: vmID, Type: unifiedresources.ResourceTypeVM, Name: "www-DMZ", Status: unifiedresources.StatusOnline,
+			ParentName: "cluster-a", LastSeen: at,
+			Sources: []unifiedresources.DataSource{unifiedresources.SourceProxmox, unifiedresources.SourceKomodo},
+			SourceStatus: map[unifiedresources.DataSource]unifiedresources.SourceStatus{
+				unifiedresources.SourceProxmox: {Status: "online", LastSeen: at},
+				unifiedresources.SourceKomodo:  {Status: workloadSourceState, LastSeen: workloadObservedAt},
+			},
+		}
+		stack := unifiedresources.Resource{
+			ID: stackID, Type: unifiedresources.ResourceTypeKomodoStack, Name: "kristi-www", Status: unifiedresources.StatusOnline,
+			ParentName: "www-DMZ", LastSeen: workloadObservedAt, Sources: []unifiedresources.DataSource{unifiedresources.SourceKomodo},
+			SourceStatus: map[unifiedresources.DataSource]unifiedresources.SourceStatus{
+				unifiedresources.SourceKomodo: {Status: workloadSourceState, LastSeen: workloadObservedAt},
+			},
+			Relationships: []unifiedresources.ResourceRelationship{{
+				SourceID: stackID, TargetID: vmID, Type: unifiedresources.RelHostedBy, Active: true,
+				Confidence: 1, EvidenceSource: unifiedresources.SourceKomodo,
+				EvidenceFreshness: unifiedresources.RelationshipFreshnessCurrent, Discoverer: "komodo_adapter",
+			}},
+		}
+		checkedAt := at
+		check := unifiedresources.Resource{
+			ID: checkID, Type: unifiedresources.ResourceTypeNetworkEndpoint, Name: "kristi-www-site",
+			Status: unifiedresources.StatusOnline, LastSeen: at, Sources: []unifiedresources.DataSource{unifiedresources.SourceAvailability},
+			SourceStatus: map[unifiedresources.DataSource]unifiedresources.SourceStatus{
+				unifiedresources.SourceAvailability: {Status: "online", LastSeen: at},
+			},
+			Availability: &unifiedresources.AvailabilityData{
+				TargetID: "kristi-www-site", LinkedResourceID: stackID, ResolvedResourceID: stackID,
+				LinkedResourceName: "kristi-www", Address: "https://www.example.test", Protocol: "https",
+				Enabled: true, Available: !httpsFailed, LastChecked: &checkedAt,
+				AggregateState:      map[bool]string{true: "unavailable", false: "healthy"}[httpsFailed],
+				ProbeOutcome:        map[bool]string{true: "unreachable", false: "reachable"}[httpsFailed],
+				ConsecutiveFailures: map[bool]int{true: 2, false: 0}[httpsFailed], FailureThreshold: 2,
+				CorrelationState: unifiedresources.AvailabilityCorrelationAttached,
+			},
+			Relationships: []unifiedresources.ResourceRelationship{{
+				SourceID: checkID, TargetID: stackID, Type: unifiedresources.RelChecks, Active: true,
+				Confidence: 1, EvidenceSource: unifiedresources.SourceAvailability,
+				EvidenceFreshness: unifiedresources.RelationshipFreshnessCurrent, Discoverer: "availability_adapter",
+			}},
+		}
+
+		if stackFailed {
+			stack.Status = unifiedresources.StatusOffline
+			stack.Incidents = []unifiedresources.ResourceIncident{{
+				Provider: "komodo", NativeID: "stack-kristi-www", Code: "komodo_resource_unhealthy",
+				Severity: storagehealth.RiskCritical, Source: "komodo.inventory", Summary: "Stack kristi-www is unhealthy",
+				StartedAt: at, ConfirmationsRequired: 1, RecoveryConfirmationsRequired: 2,
+			}}
+		}
+		if vmFailed {
+			vm.Status = unifiedresources.StatusOffline
+			vm.Incidents = []unifiedresources.ResourceIncident{{
+				Provider: "proxmox", NativeID: "50110", Code: "proxmox_vm_unavailable",
+				Severity: storagehealth.RiskCritical, Source: "proxmox.vm-status", Summary: "VM www-DMZ is unavailable",
+				StartedAt: at, ConfirmationsRequired: 1, RecoveryConfirmationsRequired: 2,
+			}}
+		}
+		if httpsFailed {
+			check.Status = unifiedresources.StatusOffline
+			subject := operationaltrust.EvidenceSubject{ResourceID: checkID}
+			evidenceID, err := operationaltrust.NewEvidenceID(checkSource, subject, checkedAt, "kristi-www-site")
+			if err != nil {
+				t.Fatalf("create fixture availability evidence: %v", err)
+			}
+			validUntil := checkedAt.Add(2 * time.Minute)
+			envelope := &operationaltrust.EvidenceEnvelope{
+				ID: evidenceID, Source: checkSource, Subject: subject, ObservedAt: checkedAt, IngestedAt: checkedAt,
+				ValidUntil: &validUntil, Completeness: operationaltrust.EvidenceComplete,
+				Confidence: operationaltrust.EvidenceConfirmed, Permissions: operationaltrust.EvidencePermissionsSufficient,
+				PayloadRef: &operationaltrust.EvidencePayloadRef{Kind: "availability-target", ID: "kristi-www-site"},
+			}
+			check.Availability.Evidence = envelope
+			check.AvailabilityChecks = []unifiedresources.AvailabilityData{*check.Availability}
+			check.Incidents = []unifiedresources.ResourceIncident{{
+				Provider: "availability", NativeID: "kristi-www-site", Code: "availability_unreachable",
+				Severity: storagehealth.RiskCritical, Source: "availability-poller", Summary: "HTTPS check returned 503",
+				StartedAt: at, ConfirmationsRequired: 1, RecoveryConfirmationsRequired: 2,
+			}}
+		}
+		return []unifiedresources.Resource{vm, stack, check}
+	}
+	activeFor := func(wantResourceID string) *Alert {
+		t.Helper()
+		active := m.GetActiveAlerts()
+		if len(active) != 1 || active[0].ResourceID != wantResourceID {
+			t.Fatalf("active alerts = %+v, want the single incident owner %q", active, wantResourceID)
+		}
+		return &active[0]
+	}
+	syncFixture := func(at time.Time, httpsFailed, stackFailed, vmFailed, komodoStale bool) {
+		t.Helper()
+		managerNow = at
+		m.SyncUnifiedResourceIncidents(fixture(at, httpsFailed, stackFailed, vmFailed, komodoStale))
+	}
+
+	syncFixture(base, false, false, false, false)
+	if active := m.GetActiveAlerts(); len(active) != 0 {
+		t.Fatalf("healthy fixture started with active alerts: %+v", active)
+	}
+
+	checkFailureAt := base.Add(time.Minute)
+	syncFixture(checkFailureAt, true, false, false, false)
+	checkAlert := activeFor(checkID)
+	if checkAlert.Metadata["incidentCode"] != "availability_unreachable" || checkAlert.ResourceName != "kristi-www-site" {
+		t.Fatalf("HTTPS notification context = %+v", checkAlert)
+	}
+	if len(checkAlert.Evidence) != 1 || !checkAlert.Evidence[0].ObservedAt.Equal(checkFailureAt) || checkAlert.Evidence[0].Subject.ResourceID != checkID {
+		t.Fatalf("HTTPS alert evidence = %+v, want failed check observation at %s", checkAlert.Evidence, checkFailureAt)
+	}
+	if checkAlert.Correlation != nil {
+		t.Fatalf("healthy Stack/VM plus a failed check must not invent a root cause: %+v", checkAlert.Correlation)
+	}
+	if len(notificationContext) != 1 || notificationContext[0].ResourceID != checkID || notificationContext[0].Metadata["incidentCode"] != "availability_unreachable" || len(notificationContext[0].Evidence) != 1 {
+		t.Fatalf("HTTPS notification callback context = %+v, want the failed check identity and evidence", notificationContext)
+	}
+	syncFixture(base.Add(2*time.Minute), false, false, false, false)
+	if len(m.GetActiveAlerts()) != 1 {
+		t.Fatal("availability incident cleared before its second fresh recovery observation")
+	}
+	syncFixture(base.Add(3*time.Minute), false, false, false, false)
+	if len(m.GetActiveAlerts()) != 0 {
+		t.Fatalf("HTTPS recovery left alerts active: %+v", m.GetActiveAlerts())
+	}
+
+	stackFailureAt := base.Add(4 * time.Minute)
+	syncFixture(stackFailureAt, false, true, false, false)
+	stackAlert := activeFor(stackID)
+	if stackAlert.ResourceName != "kristi-www" || stackAlert.Metadata["incidentProvider"] != "komodo" {
+		t.Fatalf("Stack notification context = %+v", stackAlert)
+	}
+	if len(notificationContext) != 2 || notificationContext[1].ResourceID != stackID || notificationContext[1].Metadata["incidentProvider"] != "komodo" {
+		t.Fatalf("Stack notification callback context = %+v, want Komodo Stack ownership", notificationContext)
+	}
+	syncFixture(base.Add(5*time.Minute), false, false, false, false)
+	syncFixture(base.Add(6*time.Minute), false, false, false, false)
+	if len(m.GetActiveAlerts()) != 0 {
+		t.Fatalf("independent Stack recovery left alerts active: %+v", m.GetActiveAlerts())
+	}
+
+	vmFailureAt := base.Add(7 * time.Minute)
+	syncFixture(vmFailureAt, false, false, true, true)
+	vmAlert := activeFor(vmID)
+	providerSources, ok := vmAlert.Metadata["resourceSources"].([]string)
+	if !ok || len(providerSources) != 2 || providerSources[0] != "proxmox" || providerSources[1] != "komodo" {
+		t.Fatalf("VM notification provider context = %#v, want Proxmox and Komodo", vmAlert.Metadata["resourceSources"])
+	}
+	if vmAlert.Correlation != nil {
+		t.Fatalf("stale workload observations alone must not be presented as causal evidence: %+v", vmAlert.Correlation)
+	}
+	if len(notificationContext) != 3 || notificationContext[2].ResourceID != vmID || notificationContext[2].Metadata["incidentProvider"] != "proxmox" {
+		t.Fatalf("VM notification callback context = %+v, want Proxmox incident ownership", notificationContext)
+	}
+
+	// The check and Komodo workload recover independently while the Proxmox VM
+	// incident remains active. Stale data does not add, refresh, or clear alerts.
+	syncFixture(base.Add(8*time.Minute), false, false, true, true)
+	if active := activeFor(vmID); active.LastSeen.Equal(vmAlert.LastSeen) {
+		t.Fatalf("VM alert did not receive its current Proxmox observation: %+v", active)
+	}
+	syncFixture(base.Add(9*time.Minute), false, false, true, false)
+	activeFor(vmID)
+	syncFixture(base.Add(10*time.Minute), false, false, false, false)
+	if len(m.GetActiveAlerts()) != 1 {
+		t.Fatalf("VM incident cleared before its second fresh recovery observation: %+v", m.GetActiveAlerts())
+	}
+	syncFixture(base.Add(11*time.Minute), false, false, false, false)
+	if len(m.GetActiveAlerts()) != 0 {
+		t.Fatalf("independent VM recovery left alerts active: %+v", m.GetActiveAlerts())
+	}
+}
+
 func TestSyncUnifiedResourceIncidentsRoutesAttachedCheckThroughSourceOwnedLifecycle(t *testing.T) {
 	m := newTestManager(t)
 	configureUnifiedEvalManager(t, m, unifiedEvalBaseConfig())

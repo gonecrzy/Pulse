@@ -38,6 +38,7 @@ import {
 import { getAllFilterOptionLabel } from '@/components/shared/filterOptionPresentation';
 import { getServiceHealthPresentation } from '@/utils/serviceHealthPresentation';
 import { ResourceCorrelationSummary } from './ResourceCorrelationSummary';
+import { buildResourcePagePath } from '@/features/platformNavigation/resourcePagePath';
 import { ResourceFacetSummary } from './ResourceFacetSummary';
 import { getResourceDrawerFacts, useResourceSummarySections } from './ResourceDetailSummary';
 import { ResourceInvestigationContextTables } from './ResourceInvestigationContextTables';
@@ -1309,11 +1310,33 @@ export const ResourceDetailDrawerOverviewTab: Component<ResourceDetailDrawerOver
             dataTestId="resource-relationship-map-section"
             title="Relationship map"
             relationships={drawer.resourceRelationships()}
+            relatedResources={drawer
+              .resourceRelationshipContextResources()
+              .filter((relatedResource) => relatedResource.id !== resource().id)}
+            buildResourceHref={(resourceId) => {
+              if (resourceId === resource().id) return null;
+              const relatedResource = drawer
+                .resourceRelationshipContextResources()
+                .find((candidate) => candidate.id === resourceId);
+              return relatedResource
+                ? buildResourcePagePath({
+                    id: relatedResource.id,
+                    type: relatedResource.type,
+                    name: relatedResource.name,
+                  })
+                : null;
+            }}
+            resolveResourceLabel={(resourceId) =>
+              drawer
+                .resourceRelationshipContextResources()
+                .find((candidate) => candidate.id === resourceId)?.name ||
+              drawer.resolveResourceLabel(resourceId)
+            }
             dependencies={drawer.resourceDependencies()}
             dependents={drawer.resourceDependents()}
             correlations={drawer.resourceCorrelations()}
-            resolveResourceLabel={drawer.resolveResourceLabel}
             showLastSeen
+            maxCorrelations={12}
           />
         </Show>
       </div>

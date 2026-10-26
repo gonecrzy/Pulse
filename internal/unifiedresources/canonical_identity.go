@@ -267,14 +267,18 @@ func canonicalTrueNASHostname(resource Resource) string {
 }
 
 func canonicalAvailabilityTargetID(resource Resource) string {
-	if resource.Availability == nil {
+	// Availability projections are copied onto monitored resources so their
+	// health and detail views can show the observation. Only the endpoint that
+	// owns a configured check may use its target as identity; a projected check
+	// must not replace a Stack, VM, or other infrastructure resource's native ID.
+	if CanonicalResourceType(resource.Type) != ResourceTypeNetworkEndpoint || resource.Availability == nil {
 		return ""
 	}
 	return strings.TrimSpace(resource.Availability.TargetID)
 }
 
 func canonicalAvailabilityAddress(resource Resource) string {
-	if resource.Availability == nil {
+	if CanonicalResourceType(resource.Type) != ResourceTypeNetworkEndpoint || resource.Availability == nil {
 		return ""
 	}
 	return strings.TrimSpace(resource.Availability.Address)

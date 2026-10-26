@@ -1,6 +1,6 @@
 import { For, Show, createMemo, type Component } from 'solid-js';
 import type { ResourceCorrelation } from '@/types/aiIntelligence';
-import type { ResourceRelationship } from '@/types/resource';
+import type { ResourceRelationship, ResourceRelationshipContextResource } from '@/types/resource';
 import { formatRelativeTime } from '@/utils/format';
 import { useRelativeTimeNow } from '@/utils/relativeTimeClock';
 import {
@@ -18,6 +18,7 @@ import {
 interface ResourceCorrelationSummaryProps {
   correlations?: readonly ResourceCorrelation[] | null;
   relationships?: readonly ResourceRelationship[] | null;
+  relatedResources?: readonly ResourceRelationshipContextResource[] | null;
   dependencies?: readonly string[] | null;
   dependents?: readonly string[] | null;
   title?: string;
@@ -35,6 +36,7 @@ export const ResourceCorrelationSummary: Component<ResourceCorrelationSummaryPro
   const className = () => props.class?.trim() ?? '';
   const correlations = createMemo(() => sortResourceCorrelations(props.correlations ?? []));
   const relationships = createMemo(() => sortResourceRelationships(props.relationships ?? []));
+  const relatedResources = () => props.relatedResources ?? [];
   const dependencies = () => props.dependencies ?? [];
   const dependents = () => props.dependents ?? [];
   const buildResourceHref = props.buildResourceHref ?? (() => null);
@@ -42,6 +44,7 @@ export const ResourceCorrelationSummary: Component<ResourceCorrelationSummaryPro
   const maxCorrelations = () => props.maxCorrelations ?? 3;
   const hasContent = () =>
     relationships().length > 0 ||
+    relatedResources().length > 0 ||
     dependencies().length > 0 ||
     dependents().length > 0 ||
     correlations().length > 0;
@@ -136,6 +139,121 @@ export const ResourceCorrelationSummary: Component<ResourceCorrelationSummaryPro
                               {summary ? ' · ' : ''}last seen {lastSeenLabel()}
                             </>
                           </Show>
+                        </div>
+                      </Show>
+                    </div>
+                  );
+                }}
+              </For>
+            </div>
+          </div>
+        </Show>
+
+        <Show when={relatedResources().length > 0}>
+          <div class="mt-3" data-testid="resource-related-resources">
+            <div class="text-[9px] uppercase tracking-wide text-muted">Related resources</div>
+            <div class="mt-1 space-y-1.5">
+              <For each={relatedResources()}>
+                {(resource) => {
+                  const label =
+                    resource.canonicalIdentity?.displayName?.trim() ||
+                    resource.name.trim() ||
+                    resource.id;
+                  const href = buildResourceHref(resource.id);
+                  const lastSeen = resource.lastSeen ? Date.parse(String(resource.lastSeen)) : NaN;
+                  const lastSeenLabel = () =>
+                    Number.isFinite(lastSeen)
+                      ? formatRelativeTime(lastSeen, {
+                          compact: true,
+                          emptyText: 'unknown',
+                          now: now(),
+                        })
+                      : 'unknown';
+                  const availability = resource.availability;
+                  const checkState =
+                    availability?.available === true
+                      ? 'reachable'
+                      : availability?.available === false
+                        ? 'failed'
+                        : 'unknown';
+                  const canonical = resource.canonicalIdentity;
+                  const aliases = (canonical?.aliases ?? [])
+                    .filter((alias) => alias && alias !== canonical?.primaryId)
+                    .slice(0, 4);
+
+                  return (
+                    <div
+                      class="rounded-sm bg-surface px-2 py-1.5"
+                      data-testid="resource-related-resource"
+                    >
+                      <div class="flex flex-wrap items-center gap-1.5 text-[10px] text-base-content">
+                        {href ? (
+                          <a
+                            class="inline-flex items-center rounded-sm bg-surface-alt px-1.5 py-0.5 text-blue-700 hover:underline dark:text-blue-300"
+                            href={href}
+                            aria-label={`Open related resource ${label}`}
+                          >
+                            {label}
+                          </a>
+                        ) : (
+                          <span class="inline-flex items-center rounded-sm bg-surface-alt px-1.5 py-0.5">
+                            {label}
+                          </span>
+                        )}
+                        <span class="text-muted">{resource.type}</span>
+                        <span class="rounded-sm bg-surface-alt px-1.5 py-0.5">
+                          {resource.health?.verdict ?? resource.status}
+                        </span>
+                        <span class="text-muted">seen {lastSeenLabel()}</span>
+                      </div>
+                      <Show when={(resource.sources?.length ?? 0) > 0}>
+                        <div class="mt-1 text-[10px] text-muted">
+                          Providers: {(resource.sources ?? []).join(', ')}
+                        </div>
+                      </Show>
+                      <Show when={canonical?.primaryId || aliases.length > 0}>
+                        <div class="mt-1 break-all text-[10px] text-muted">
+                          <Show when={canonical?.primaryId}>
+                            Primary identity: {canonical?.primaryId}
+                          </Show>
+                          <Show when={aliases.length > 0}>
+                            <Show when={canonical?.primaryId}> · </Show>
+                            Provider identity links: {aliases.join(', ')}
+                          </Show>
+                        </div>
+                      </Show>
+                      <Show when={Object.keys(resource.sourceStatus ?? {}).length > 0}>
+                        <div class="mt-1 flex flex-wrap gap-x-2 gap-y-0.5 text-[10px] text-muted">
+                          <For each={Object.entries(resource.sourceStatus ?? {})}>
+                            {([source, observation]) => (
+                              <span>
+                                {source}: {observation.status || 'unknown'}
+                                {observation.lastSeen
+                                  ? ` · seen ${formatRelativeTime(observation.lastSeen, { compact: true, emptyText: 'unknown', now: now() })}`
+                                  : ''}
+                              </span>
+                            )}
+                          </For>
+                        </div>
+                      </Show>
+                      <Show when={availability}>
+                        <div class="mt-1 text-[10px] text-muted">
+                          Availability: {checkState}
+                          {availability?.lastChecked
+                            ? ` · checked ${formatRelativeTime(availability.lastChecked, { compact: true, emptyText: 'unknown', now: now() })}`
+                            : ''}
+                          {availability?.applicationStatusCode
+                            ? ` · HTTP ${availability.applicationStatusCode}`
+                            : ''}
+                          {availability?.lastError ? ` · ${availability.lastError}` : ''}
+                        </div>
+                      </Show>
+                      <Show when={(resource.incidentCount ?? resource.incidents?.length ?? 0) > 0}>
+                        <div class="mt-1 text-[10px] text-amber-700 dark:text-amber-300">
+                          Active incidents:{' '}
+                          {resource.incidentSummary ||
+                            resource.incidents?.map((incident) => incident.summary).join(' · ') ||
+                            resource.incidentCount}
                         </div>
                       </Show>
                     </div>

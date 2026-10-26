@@ -757,3 +757,66 @@ history, service dependencies, alerts and recovery, NotificationManager,
 Patrol sanitization, and monitoring with Sindri AI disabled. CI does not contact
 infrastructure or intentionally interrupt services; live acceptance uses only
 the already approved read-only account and test-only failures.
+
+## Phase 2H — Canonical identity and reverse topology validation (2026-10-26)
+
+### Findings and changes
+
+The availability association and relationship graph were already persisted in
+the central org-scoped registry. The Stack identity defect was in canonical
+projection: a linked availability observation is also projected onto its
+monitored resource, and `canonicalPrimaryID` considered the projected check
+target before falling back to the resource ID without first checking the
+resource type. A Stack could therefore display the check's `availability:` ID
+as its primary identity and inherit check target/address aliases. The
+availability target and address now contribute identity only for a
+`network-endpoint`; linked Stacks retain their Komodo canonical ID. The check
+remains a separate endpoint with its own target identity.
+
+The reverse topology defect was in API/UI projection. Registry edges already
+supported canonical endpoint rewrites and bidirectional traversal, but the
+resource detail API exposed only edges directly incident to the selected
+resource. Proxmox inventory is source-filtered, so its detail drawer could not
+show Komodo and availability rows from its local table snapshot. Resource
+details now include a read-only, two-hop neighborhood from the same canonical
+graph, bounded to 25 resources and 50 relationships. The shared relationship
+panel presents direction, relationship type, provider provenance, state,
+freshness, canonical identities, availability results, and active incident
+context. Links open the selected Komodo or availability resource detail.
+
+Sindri's existing topology query already traverses the same relationship graph
+from either endpoint. Its canonical topology resource now carries health,
+incident details, and incident counts/summaries alongside current provider
+observations and availability evidence. Fixture coverage checks traversal from
+both `kristi-www-site` and VMID 50110, including both provider observations on
+the explicitly linked VM. Relationships remain topology evidence only; the
+incident fixture verifies that a failed HTTPS check does not infer a VM/Stack
+root cause and that stale Komodo observations do not become causal evidence.
+
+No destructive identity migration or schema migration is required. Provider
+source IDs, canonical resource IDs, stored identity links, relationship edges,
+and existing Proxmox metric targets remain unchanged. The stack identity is
+corrected when canonical metadata is projected; update/removal and restart
+fixtures verify that the check remains addressable and does not duplicate the
+Stack or relationship. No live provider was contacted or disrupted.
+
+### Regression coverage and validation
+
+| Check | Result |
+|---|---|
+| `internal/unifiedresources`, `internal/komodo`, `internal/api/resourceapi`, `internal/ai/tools` | Passed: 3,055, 110, 214, and 1,916 tests respectively. |
+| `internal/alerts` | 2,782 passed; the existing `TestLoadHistory_PermissionError` fails only when run as root because root can read its mode-000 fixture. The new fixture incident/notification/recovery test passes. |
+| Focused API reverse traversal and org-isolation tests | Passed: 2 tests. |
+| Frontend correlation summary, availability row navigation, and resource path tests | Passed: 3 files, 31 tests. |
+| Frontend type check, format check, and lint audits | Passed. |
+| Workflow trust validator and its tests | Passed: validator and 48 Python tests. |
+| Mutation registry governance and `internal/repoctl` governance tests | Passed: 15 and 31 tests. |
+
+The checked relationship neighborhood is intentionally bounded to two hops.
+It includes only active, verified canonical graph edges and does not infer
+`routes_to`, root cause, or an unobserved provider state. Older history remains
+available through each resource's existing history and metric APIs after
+following its detail link.
+
+The Phase 2H feature-branch image qualification and digest are recorded after
+the GitHub Actions workflow publishes and verifies the pushed source revision.

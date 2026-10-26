@@ -97,6 +97,21 @@ describe('buildResourcePagePath', () => {
     ).toBe('/proxmox/overview');
   });
 
+  it('opens a Komodo resource from a relationship link', () => {
+    expect(
+      buildResourcePagePath({
+        id: 'komodo:stack:kristi-www',
+        name: 'kristi-www',
+        resource: resource({
+          id: 'komodo:stack:kristi-www',
+          name: 'kristi-www',
+          type: 'komodo-stack',
+          sources: ['komodo'],
+        }),
+      }),
+    ).toBe('/komodo/stacks?resource=komodo%3Astack%3Akristi-www&q=kristi-www');
+  });
+
   it('falls back to the record type when the registry cannot resolve the id', () => {
     expect(
       buildResourcePagePath({ id: 'docker:host/abc', name: 'nginx', type: 'app-container' }),
@@ -229,7 +244,7 @@ describe('buildResourcePagePath', () => {
           sources: ['availability' as never],
         }),
       }),
-    ).toBe('/standalone/availability');
+    ).toBe('/standalone/availability?resource=endpoint-1&q=res-1');
   });
   it('opens the thresholds tab that holds a resource, searched to its name', () => {
     expect(buildResourceThresholdsPath({ id: 'c-1', name: 'nginx', type: 'app-container' })).toBe(

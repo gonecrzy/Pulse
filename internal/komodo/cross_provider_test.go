@@ -161,6 +161,14 @@ func TestWWWDMZStackAvailabilityChainPersistsAcrossRestart(t *testing.T) {
 		if !ok || stack.ParentID == nil || *stack.ParentID != pveID {
 			t.Fatalf("Stack = %+v, want hosted_by canonical host %q", stack, pveID)
 		}
+		if stack.Canonical == nil || stack.Canonical.PrimaryID != stackCanonicalID {
+			t.Fatalf("Stack canonical identity = %+v, want native Komodo identity %q", stack.Canonical, stackCanonicalID)
+		}
+		for _, alias := range stack.Canonical.Aliases {
+			if alias == probeID || alias == "192.0.2.110" {
+				t.Fatalf("Stack identity borrowed availability alias %q: %+v", alias, stack.Canonical)
+			}
+		}
 		stackEdges := unifiedresources.ResourceRelationshipsWithCanonicalParent(*stack)
 		if len(stackEdges) != 1 || stackEdges[0].Type != unifiedresources.RelHostedBy || stackEdges[0].TargetID != pveID || stackEdges[0].EvidenceSource != unifiedresources.SourceKomodo {
 			t.Fatalf("Stack relationships = %+v, want Komodo hosted_by canonical host", stackEdges)

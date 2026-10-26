@@ -311,6 +311,29 @@ export interface ResourceRelationship {
   metadata?: Record<string, unknown>;
 }
 
+export interface ResourceRelationshipContextResource {
+  id: string;
+  type: ResourceType;
+  name: string;
+  status: ResourceStatus;
+  lastSeen?: string | number;
+  sources?: string[];
+  sourceStatus?: Record<string, ResourceSourceStatus>;
+  canonicalIdentity?: ResourceCanonicalIdentity;
+  health?: ResourceHealth;
+  availability?: ResourceAvailabilityMeta;
+  availabilityChecks?: ResourceAvailabilityMeta[];
+  incidents?: ResourceIncident[];
+  incidentCount?: number;
+  incidentSummary?: string;
+}
+
+export interface ResourceRelationshipContext {
+  resources: ResourceRelationshipContextResource[];
+  relationships: ResourceRelationship[];
+  truncated?: boolean;
+}
+
 export interface ResourceCapabilityParam {
   name: string;
   type: string;
@@ -1706,6 +1729,7 @@ export interface Resource {
   actionReadiness?: ResourceActionReadiness[];
   sourceStatus?: Record<string, ResourceSourceStatus>;
   relationships?: ResourceRelationship[];
+  relationshipContext?: ResourceRelationshipContext;
   recentChanges?: ResourceChange[];
   facetCounts?: ResourceFacetCounts;
 

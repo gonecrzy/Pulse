@@ -1,5 +1,5 @@
 import { A, useLocation, useSearchParams } from '@solidjs/router';
-import { For, Show, createMemo } from 'solid-js';
+import { For, Show, createEffect, createMemo } from 'solid-js';
 import {
   createPlatformResourceDetailState,
   createPlatformResourceLabelResolver,
@@ -152,6 +152,12 @@ export function KomodoPageSurface() {
   };
   const drawer = createPlatformResourceDetailState({ idPrefix: 'komodo-resource-detail' });
   const resolveResourceLabel = createPlatformResourceLabelResolver(() => resources());
+  createEffect(() => {
+    const selectedId = searchParams[KOMODO_QUERY_PARAMS.resource];
+    if (typeof selectedId !== 'string' || !selectedId) return;
+    const selectedResource = filteredResources().find((resource) => resource.id === selectedId);
+    if (selectedResource) drawer.open(selectedResource);
+  });
 
   return (
     <div data-testid="komodo-page" class="pulse-wide-data-surface space-y-3">

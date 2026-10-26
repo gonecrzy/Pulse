@@ -4300,11 +4300,15 @@ func canonicalRelationshipsForTopology(rs unifiedresources.ReadState, resources 
 
 func canonicalTopologyResource(resource unifiedresources.Resource) CanonicalTopologyResource {
 	projection := CanonicalTopologyResource{
-		ID:      unifiedresources.CanonicalResourceID(resource.ID),
-		Type:    string(unifiedresources.CanonicalResourceType(resource.Type)),
-		Name:    resource.Name,
-		Status:  string(resource.Status),
-		Sources: append([]unifiedresources.DataSource(nil), resource.Sources...),
+		ID:              unifiedresources.CanonicalResourceID(resource.ID),
+		Type:            string(unifiedresources.CanonicalResourceType(resource.Type)),
+		Name:            resource.Name,
+		Status:          string(resource.Status),
+		Health:          resource.Health,
+		Incidents:       append([]unifiedresources.ResourceIncident(nil), resource.Incidents...),
+		IncidentCount:   resource.IncidentCount,
+		IncidentSummary: resource.IncidentSummary,
+		Sources:         append([]unifiedresources.DataSource(nil), resource.Sources...),
 	}
 	if resource.ParentID != nil {
 		projection.ParentID = unifiedresources.CanonicalResourceID(*resource.ParentID)

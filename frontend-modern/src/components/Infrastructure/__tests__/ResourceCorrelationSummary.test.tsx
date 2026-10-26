@@ -174,4 +174,71 @@ describe('ResourceCorrelationSummary', () => {
     expect(screen.getByText(/100% confidence · Proxmox Adapter · last seen/)).toBeInTheDocument();
     expect(screen.getAllByText(/last seen/i).length).toBeGreaterThanOrEqual(2);
   });
+
+  it('shows related provider state, incidents, and navigable resource details', () => {
+    render(() => (
+      <ResourceCorrelationSummary
+        title="Relationship map"
+        relationships={[
+          {
+            sourceId: 'availability-check',
+            targetId: 'komodo-stack',
+            type: 'checks',
+            confidence: 1,
+            evidenceSource: 'availability',
+            evidenceFreshness: 'current',
+            active: true,
+            discoverer: 'availability_adapter',
+            observedAt: '2026-10-26T10:00:00Z',
+            lastSeenAt: '2026-10-26T10:00:00Z',
+          },
+        ]}
+        relatedResources={[
+          {
+            id: 'availability-check',
+            type: 'network-endpoint',
+            name: 'kristi-www-site',
+            status: 'offline',
+            lastSeen: '2026-10-26T10:00:00Z',
+            sources: ['availability'],
+            sourceStatus: {
+              availability: { status: 'online', lastSeen: '2026-10-26T10:00:00Z' },
+            },
+            canonicalIdentity: {
+              primaryId: 'availability:kristi-www-site',
+              aliases: ['kristi-www-site'],
+            },
+            availability: {
+              targetId: 'kristi-www-site',
+              available: false,
+              lastChecked: '2026-10-26T10:00:00Z',
+              applicationStatusCode: 503,
+            },
+            incidents: [
+              {
+                code: 'availability_unreachable',
+                severity: 'critical',
+                summary: 'HTTPS returned 503',
+              },
+            ],
+            incidentCount: 1,
+          },
+        ]}
+        buildResourceHref={(id) => `/standalone/availability?resource=${id}`}
+        showLastSeen
+      />
+    ));
+
+    expect(
+      screen.getByRole('link', { name: 'Open related resource kristi-www-site' }),
+    ).toHaveAttribute('href', '/standalone/availability?resource=availability-check');
+    expect(screen.getByText('Providers: availability')).toBeInTheDocument();
+    expect(screen.getByText(/availability: online/)).toBeInTheDocument();
+    expect(screen.getByText(/HTTP 503/)).toBeInTheDocument();
+    expect(screen.getByText(/HTTPS returned 503/)).toBeInTheDocument();
+    expect(screen.getByTestId('resource-related-resource')).toHaveTextContent(
+      'Provider identity links: kristi-www-site',
+    );
+    expect(screen.getByText(/Availability: failed/)).toBeInTheDocument();
+  });
 });

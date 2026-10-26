@@ -12,6 +12,7 @@ import {
   buildWorkloadsRouteSearch,
   DOCKER_QUERY_PARAMS,
   KUBERNETES_QUERY_PARAMS,
+  KOMODO_QUERY_PARAMS,
   STANDALONE_QUERY_PARAMS,
   TRUENAS_QUERY_PARAMS,
   type AlertThresholdsTab,
@@ -252,7 +253,13 @@ export function buildResourcePagePath(subject: ResourcePageSubject): string | nu
           : undefined;
 
   // Availability checks are endpoints Pulse probes, listed beside Machines.
-  if (type === 'network-endpoint') return buildStandalonePath('availability');
+  // Preserve a direct target selection so relationship links open the check's
+  // detail drawer instead of landing on an unfiltered inventory.
+  if (type === 'network-endpoint') {
+    const params = new URLSearchParams({ [STANDALONE_QUERY_PARAMS.resource]: id });
+    if (name) params.set(STANDALONE_QUERY_PARAMS.query, name);
+    return `${buildStandalonePath('availability')}?${params.toString()}`;
+  }
 
   switch (platform) {
     case 'proxmox':
@@ -301,8 +308,13 @@ export function buildResourcePagePath(subject: ResourcePageSubject): string | nu
         ? buildDockerPath(tab)
         : withQuery(buildDockerPath(), DOCKER_QUERY_PARAMS.query, name);
     }
-    case 'komodo':
-      return withQuery(buildKomodoPath(komodoTab), 'q', name);
+    case 'komodo': {
+      const params = new URLSearchParams();
+      if (id) params.set(KOMODO_QUERY_PARAMS.resource, id);
+      if (name) params.set(KOMODO_QUERY_PARAMS.query, name);
+      const query = params.toString();
+      return `${buildKomodoPath(komodoTab)}${query ? `?${query}` : ''}`;
+    }
     case 'kubernetes':
       return withQuery(
         buildKubernetesPath(KUBERNETES_TAB_BY_TYPE[type]),

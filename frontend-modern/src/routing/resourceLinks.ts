@@ -20,6 +20,7 @@ export const STANDALONE_QUERY_PARAMS = {
   query: 'q',
   status: 'status',
   view: 'view',
+  resource: 'resource',
 } as const;
 export const PROXMOX_PATH = '/proxmox';
 export const PROXMOX_DEFAULT_TAB = 'overview';
@@ -56,6 +57,7 @@ export const KOMODO_PATH = '/komodo';
 export const KOMODO_DEFAULT_TAB = 'all';
 export const KOMODO_QUERY_PARAMS = {
   query: 'q',
+  resource: 'resource',
 } as const;
 export const ALERT_THRESHOLDS_PATH = '/alerts/thresholds';
 export const PMG_THRESHOLDS_PATH = '/alerts/thresholds/mail-gateway';

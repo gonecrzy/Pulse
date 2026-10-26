@@ -27,6 +27,28 @@ func (p operatorRelationshipRecordProvider) SnapshotOwnedSources() []unifiedreso
 	return []unifiedresources.DataSource{unifiedresources.SourceKomodo}
 }
 
+type availabilityRelationshipRecordProvider struct {
+	records []unifiedresources.IngestRecord
+}
+
+type tenantCanonicalResourcesProvider map[string][]unifiedresources.Resource
+
+func (p tenantCanonicalResourcesProvider) UnifiedReadStateForTenant(string) unifiedresources.ReadState {
+	return nil
+}
+
+func (p tenantCanonicalResourcesProvider) UnifiedResourceSnapshotForTenant(orgID string) ([]unifiedresources.Resource, time.Time) {
+	return append([]unifiedresources.Resource(nil), p[orgID]...), time.Now().UTC()
+}
+
+func (p availabilityRelationshipRecordProvider) GetCurrentRecords() []unifiedresources.IngestRecord {
+	return append([]unifiedresources.IngestRecord(nil), p.records...)
+}
+
+func (p availabilityRelationshipRecordProvider) SnapshotOwnedSources() []unifiedresources.DataSource {
+	return []unifiedresources.DataSource{unifiedresources.SourceAvailability}
+}
+
 func TestOperatorRelationshipResourceAPIContract(t *testing.T) {
 	const orgID = "default"
 	serviceSourceID := "komodo:connection:server:jellyfin"
@@ -161,6 +183,188 @@ func TestResourceDetailsAndFacetsIncludeInboundCanonicalRelationships(t *testing
 	if len(payload.Relationships) != 2 {
 		t.Fatalf("Stack facet relationships = %+v, want both-direction canonical edges", payload.Relationships)
 	}
+}
+
+func TestProxmoxDetailsProjectRelatedKomodoChainAtTwoHops(t *testing.T) {
+	const orgID = "default"
+	now := time.Now().UTC()
+	pveSourceID := "pve:cluster-a:vmid:50110"
+	serverSourceID := "komodo:connection-a:server:www-dmz"
+	stackSourceID := "komodo:connection-a:stack:kristi-www"
+	checkSourceID := "kristi-www-site"
+	vmID := unifiedresources.SourceSpecificID(unifiedresources.ResourceTypeVM, unifiedresources.SourceProxmox, pveSourceID)
+	serverID := unifiedresources.SourceSpecificID(unifiedresources.ResourceTypeKomodoServer, unifiedresources.SourceKomodo, serverSourceID)
+	stackID := unifiedresources.SourceSpecificID(unifiedresources.ResourceTypeKomodoStack, unifiedresources.SourceKomodo, stackSourceID)
+	checkID := unifiedresources.SourceSpecificID(unifiedresources.ResourceTypeNetworkEndpoint, unifiedresources.SourceAvailability, checkSourceID)
+	h := NewQueryService(&config.Config{DataPath: t.TempDir()})
+	h.SetStateProvider(resourceUnifiedSeedProvider{resources: []unifiedresources.Resource{{
+		ID: vmID, Type: unifiedresources.ResourceTypeVM, Name: "www-DMZ", Status: unifiedresources.StatusOnline, LastSeen: now,
+		Sources: []unifiedresources.DataSource{unifiedresources.SourceProxmox},
+		Proxmox: &unifiedresources.ProxmoxData{SourceID: pveSourceID, VMID: 50110, Instance: "cluster-a"},
+	}}})
+	h.SetSupplementalRecordsProvider(unifiedresources.SourceKomodo, operatorRelationshipRecordProvider{records: []unifiedresources.IngestRecord{
+		{SourceID: serverSourceID, Resource: unifiedresources.Resource{ID: serverSourceID, Name: "www-DMZ", Type: unifiedresources.ResourceTypeKomodoServer, Status: unifiedresources.StatusOnline, LastSeen: now}},
+		{SourceID: stackSourceID, ParentSourceID: serverSourceID, Resource: unifiedresources.Resource{ID: stackSourceID, Name: "kristi-www", Type: unifiedresources.ResourceTypeKomodoStack, Status: unifiedresources.StatusOnline, LastSeen: now}},
+	}})
+	checkedAt := now.Add(-30 * time.Second)
+	h.SetSupplementalRecordsProvider(unifiedresources.SourceAvailability, availabilityRelationshipRecordProvider{records: []unifiedresources.IngestRecord{{
+		SourceID: checkSourceID,
+		Resource: unifiedresources.Resource{ID: checkSourceID, Name: "kristi-www-site", Type: unifiedresources.ResourceTypeNetworkEndpoint, Status: unifiedresources.StatusOffline, LastSeen: now, Availability: &unifiedresources.AvailabilityData{
+			TargetID: checkSourceID, LinkedResourceID: stackID, Address: "192.0.2.110", Protocol: "https", Enabled: true, Available: false, LastChecked: &checkedAt,
+		}},
+	}}})
+	store, err := h.getStore(orgID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.AddLink(unifiedresources.ResourceLink{ResourceA: vmID, ResourceB: serverID, PrimaryID: vmID, Reason: "fixture identity link"}); err != nil {
+		t.Fatal(err)
+	}
+
+	request := httptest.NewRequest(http.MethodGet, "/api/resources/"+vmID, nil)
+	request = request.WithContext(context.WithValue(request.Context(), apicontext.OrgIDContextKey, orgID))
+	response := httptest.NewRecorder()
+	h.HandleResourceRoutes(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("GET VM details status=%d body=%s", response.Code, response.Body.String())
+	}
+	var payload struct {
+		ID                  string                             `json:"id"`
+		Sources             []unifiedresources.DataSource      `json:"sources"`
+		Canonical           unifiedresources.CanonicalIdentity `json:"canonicalIdentity"`
+		RelationshipContext struct {
+			Resources []struct {
+				ID           string                                                        `json:"id"`
+				Type         unifiedresources.ResourceType                                 `json:"type"`
+				Name         string                                                        `json:"name"`
+				Status       unifiedresources.ResourceStatus                               `json:"status"`
+				LastSeen     time.Time                                                     `json:"lastSeen"`
+				Sources      []unifiedresources.DataSource                                 `json:"sources"`
+				SourceStatus map[unifiedresources.DataSource]unifiedresources.SourceStatus `json:"sourceStatus"`
+				Availability *unifiedresources.AvailabilityData                            `json:"availability"`
+			} `json:"resources"`
+			Relationships []unifiedresources.ResourceRelationship `json:"relationships"`
+		} `json:"relationshipContext"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.ID != vmID || payload.Canonical.PrimaryID != "vm:"+pveSourceID {
+		t.Fatalf("VM identity = %q / %+v, want native Proxmox primary vm:%s", payload.ID, payload.Canonical, pveSourceID)
+	}
+	if !containsDataSource(payload.Sources, unifiedresources.SourceProxmox) || !containsDataSource(payload.Sources, unifiedresources.SourceKomodo) {
+		t.Fatalf("VM provider sources = %v, want Proxmox and Komodo identity observations", payload.Sources)
+	}
+	contextIDs := make(map[string]struct{}, len(payload.RelationshipContext.Resources))
+	for _, resource := range payload.RelationshipContext.Resources {
+		contextIDs[resource.ID] = struct{}{}
+		if resource.ID == stackID {
+			observation := resource.SourceStatus[unifiedresources.SourceKomodo]
+			if observation.Status != "online" || !observation.LastSeen.Equal(now) {
+				t.Fatalf("Stack provider observation = %+v, want current Komodo state at %s", observation, now)
+			}
+		}
+		if resource.ID == checkID {
+			observation := resource.SourceStatus[unifiedresources.SourceAvailability]
+			if resource.Availability == nil || resource.Availability.TargetID != checkSourceID || resource.Status != unifiedresources.StatusOffline || !resource.LastSeen.Equal(now) || !observation.LastSeen.Equal(now) {
+				t.Fatalf("check context = %+v, want current failed HTTPS observation at %s", resource, now)
+			}
+		}
+	}
+	for _, id := range []string{vmID, stackID, checkID} {
+		if _, ok := contextIDs[id]; !ok {
+			t.Fatalf("relationship context omitted %q: %+v", id, payload.RelationshipContext.Resources)
+		}
+	}
+	if len(payload.RelationshipContext.Resources) != 3 {
+		t.Fatalf("relationship context has %d resources, want one each for VM, Stack, and check: %+v", len(payload.RelationshipContext.Resources), payload.RelationshipContext.Resources)
+	}
+	if len(payload.RelationshipContext.Relationships) != 2 {
+		t.Fatalf("relationship context edges = %+v, want complete two-hop chain", payload.RelationshipContext.Relationships)
+	}
+	hosting, checks := false, false
+	for _, relationship := range payload.RelationshipContext.Relationships {
+		switch {
+		case relationship.SourceID == stackID && relationship.TargetID == vmID && relationship.Type == unifiedresources.RelHostedBy:
+			hosting = relationship.EvidenceSource == unifiedresources.SourceKomodo && relationship.Active
+		case relationship.SourceID == checkID && relationship.TargetID == stackID && relationship.Type == unifiedresources.RelChecks:
+			checks = relationship.EvidenceSource == unifiedresources.SourceAvailability && relationship.Active
+		}
+	}
+	if !hosting || !checks {
+		t.Fatalf("relationship context direction/provenance = %+v", payload.RelationshipContext.Relationships)
+	}
+}
+
+func TestResourceRelationshipContextIsOrganizationScoped(t *testing.T) {
+	const (
+		orgA = "org-a"
+		orgB = "org-b"
+	)
+	now := time.Now().UTC()
+	vmID := unifiedresources.SourceSpecificID(unifiedresources.ResourceTypeVM, unifiedresources.SourceProxmox, "pve:cluster-a:vmid:50110")
+	stackID := unifiedresources.SourceSpecificID(unifiedresources.ResourceTypeKomodoStack, unifiedresources.SourceKomodo, "komodo:connection-a:stack:kristi-www")
+	resources := []unifiedresources.Resource{
+		{ID: vmID, Type: unifiedresources.ResourceTypeVM, Name: "www-DMZ", Status: unifiedresources.StatusOnline, LastSeen: now, Sources: []unifiedresources.DataSource{unifiedresources.SourceProxmox}},
+		{ID: stackID, Type: unifiedresources.ResourceTypeKomodoStack, Name: "kristi-www", Status: unifiedresources.StatusOnline, LastSeen: now, Sources: []unifiedresources.DataSource{unifiedresources.SourceKomodo}},
+	}
+	h := NewQueryService(&config.Config{DataPath: t.TempDir()})
+	h.SetTenantStateProvider(tenantCanonicalResourcesProvider{orgA: resources, orgB: resources})
+	storeA, err := h.getStore(orgA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	relationshipStore, ok := storeA.(unifiedresources.OperatorRelationshipStore)
+	if !ok {
+		t.Fatal("organization resource store does not support operator relationships")
+	}
+	if err := relationshipStore.PutOperatorRelationship(unifiedresources.OperatorResourceRelationship{
+		SourceID: vmID, TargetID: stackID, Type: unifiedresources.RelDependsOn,
+		CreatedAt: now, UpdatedAt: now,
+	}); err != nil {
+		t.Fatalf("persist organization A relationship: %v", err)
+	}
+
+	read := func(orgID string) struct {
+		Resources     []json.RawMessage                       `json:"resources"`
+		Relationships []unifiedresources.ResourceRelationship `json:"relationships"`
+	} {
+		t.Helper()
+		request := httptest.NewRequest(http.MethodGet, "/api/resources/"+vmID, nil)
+		request = request.WithContext(context.WithValue(request.Context(), apicontext.OrgIDContextKey, orgID))
+		response := httptest.NewRecorder()
+		h.HandleResourceRoutes(response, request)
+		if response.Code != http.StatusOK {
+			t.Fatalf("GET VM for %s status=%d body=%s", orgID, response.Code, response.Body.String())
+		}
+		var payload struct {
+			RelationshipContext struct {
+				Resources     []json.RawMessage                       `json:"resources"`
+				Relationships []unifiedresources.ResourceRelationship `json:"relationships"`
+			} `json:"relationshipContext"`
+		}
+		if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode VM context for %s: %v", orgID, err)
+		}
+		return payload.RelationshipContext
+	}
+	contextA := read(orgA)
+	if len(contextA.Resources) != 2 || len(contextA.Relationships) != 1 {
+		t.Fatalf("organization A relationship context = %+v, want its VM-to-Stack edge", contextA)
+	}
+	contextB := read(orgB)
+	if len(contextB.Resources) != 1 || len(contextB.Relationships) != 0 {
+		t.Fatalf("organization B received organization A topology: %+v", contextB)
+	}
+}
+
+func containsDataSource(sources []unifiedresources.DataSource, expected unifiedresources.DataSource) bool {
+	for _, source := range sources {
+		if source == expected {
+			return true
+		}
+	}
+	return false
 }
 
 func TestHandleLinkRejectsDistinctResourcesFromSameProvider(t *testing.T) {

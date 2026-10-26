@@ -443,15 +443,19 @@ type TopologyResponse struct {
 // the canonical relationship graph. SourceStatus reports provider observation
 // freshness; Status is the registry's resource health aggregation.
 type CanonicalTopologyResource struct {
-	ID           string                                                     `json:"id"`
-	Type         string                                                     `json:"type"`
-	Name         string                                                     `json:"name"`
-	Status       string                                                     `json:"status"`
-	ParentID     string                                                     `json:"parent_id,omitempty"`
-	ParentName   string                                                     `json:"parent_name,omitempty"`
-	Sources      []unifiedresources.DataSource                              `json:"sources"`
-	SourceStatus map[unifiedresources.DataSource]CanonicalSourceObservation `json:"source_status,omitempty"`
-	Availability *TopologyAvailabilityObservation                           `json:"availability,omitempty"`
+	ID              string                                                     `json:"id"`
+	Type            string                                                     `json:"type"`
+	Name            string                                                     `json:"name"`
+	Status          string                                                     `json:"status"`
+	Health          *unifiedresources.ResourceHealth                           `json:"health,omitempty"`
+	Incidents       []unifiedresources.ResourceIncident                        `json:"incidents,omitempty"`
+	IncidentCount   int                                                        `json:"incident_count,omitempty"`
+	IncidentSummary string                                                     `json:"incident_summary,omitempty"`
+	ParentID        string                                                     `json:"parent_id,omitempty"`
+	ParentName      string                                                     `json:"parent_name,omitempty"`
+	Sources         []unifiedresources.DataSource                              `json:"sources"`
+	SourceStatus    map[unifiedresources.DataSource]CanonicalSourceObservation `json:"source_status,omitempty"`
+	Availability    *TopologyAvailabilityObservation                           `json:"availability,omitempty"`
 }
 
 // TopologyAvailabilityObservation keeps the endpoint result and its explicit

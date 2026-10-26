@@ -54,6 +54,25 @@ export const useResourceDetailDrawerHistoryState = (
     return id ? { id } : null;
   });
 
+  // The Proxmox and other platform list requests are source-scoped. Fetch the
+  // detail projection only while a drawer is open so its bounded canonical
+  // neighborhood can include related resources outside that list scope.
+  const resourceDetailRequest = createMemo(() => {
+    const id = resourceFacetId();
+    return id ? { id } : null;
+  });
+  const resourceDetailState = createNonSuspendingQuery<Resource | null, { id: string }>({
+    source: resourceDetailRequest,
+    fetcher: async (request) => (request?.id ? ResourceAPI.getResource(request.id) : null),
+    initialValue: null,
+  });
+  const resourceRelationshipContextResources = createMemo(
+    () => resourceDetailState.value()?.relationshipContext?.resources ?? [],
+  );
+  const resourceRelationshipContextRelationships = createMemo(
+    () => resourceDetailState.value()?.relationshipContext?.relationships ?? [],
+  );
+
   const resourceFacetsState = createNonSuspendingQuery<ResourceFacetBundle, { id: string }>({
     source: resourceFacetRequest,
     fetcher: async (request) => {
@@ -253,6 +272,8 @@ export const useResourceDetailDrawerHistoryState = (
     setTimelineSourceAdapterFilter,
     resourceIntelligence,
     resourceTimeline,
+    resourceRelationshipContextResources,
+    resourceRelationshipContextRelationships,
     resourceFacetCapabilities,
     resourceFacetRelationships,
     historyFacetCounts,
