@@ -289,6 +289,7 @@ export function AppLayout(props: AppLayoutProps) {
   // as the bare app name.
   const tabTitleByActive: Record<NonNullable<ReturnType<typeof getActiveTabForPath>>, string> = {
     proxmox: 'Proxmox',
+    komodo: 'Komodo',
     docker: 'Docker',
     kubernetes: 'Kubernetes',
     truenas: 'TrueNAS',

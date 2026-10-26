@@ -12,6 +12,7 @@ import { logger } from '@/utils/logger';
 import { apiFetchJSON } from '@/utils/apiClient';
 import {
   PRIMARY_PLATFORM_NAV_IDS,
+  type PrimaryPlatformNavId,
   type PlatformNavigationVisibility,
 } from '@/features/platformNavigation/platformNavigationModel';
 import { SESSION_STORAGE_KEYS, STORAGE_KEYS } from '@/utils/localStorage';
