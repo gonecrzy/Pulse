@@ -354,7 +354,7 @@ describe('AppLayout navigation icons', () => {
       within(infrastructureGroup as HTMLElement)
         .getAllByRole('link')
         .map((tab) => tab.getAttribute('aria-label')),
-    ).toEqual(['Proxmox', 'Docker', 'vSphere', 'Machines']);
+    ).toEqual(['Proxmox', 'Docker', 'vSphere', 'Komodo', 'Machines']);
     expect(
       within(infrastructureGroup as HTMLElement).getByRole('link', { name: 'Machines' }),
     ).toBeTruthy();
@@ -373,6 +373,9 @@ describe('AppLayout navigation icons', () => {
     expect(
       within(infrastructureGroup as HTMLElement).getByRole('link', { name: 'vSphere' }),
     ).toBeTruthy();
+    expect(
+      within(infrastructureGroup as HTMLElement).getByRole('link', { name: 'Komodo' }),
+    ).toHaveAttribute('href', '/komodo/all');
 
     const mobileNav = screen.getByRole('navigation', { name: 'Mobile navigation' });
     fireEvent.click(
@@ -383,10 +386,10 @@ describe('AppLayout navigation icons', () => {
       within(platformMenu)
         .getAllByRole('menuitem')
         .map((item) => item.getAttribute('data-tab-id')),
-    ).toEqual(['proxmox', 'docker', 'vmware', 'standalone']);
+    ).toEqual(['proxmox', 'docker', 'vmware', 'standalone', 'komodo']);
   });
 
-  it('does not expose cached platform evidence before navigation admission resolves', () => {
+  it('keeps Komodo reachable before other navigation admission resolves', () => {
     renderLayout(
       [makeResource({ id: 'docker-1', type: 'docker-host', platformType: 'docker' })],
       '/settings/infrastructure',
@@ -403,7 +406,11 @@ describe('AppLayout navigation icons', () => {
     const desktopNav = screen.getByRole('navigation', { name: 'Primary navigation' });
     const infrastructureGroup = desktopNav.querySelector('[aria-label="Infrastructure"]');
     expect(infrastructureGroup).toBeTruthy();
-    expect(within(infrastructureGroup as HTMLElement).queryByRole('link')).toBeNull();
+    expect(
+      within(infrastructureGroup as HTMLElement)
+        .getAllByRole('link')
+        .map((tab) => tab.getAttribute('aria-label')),
+    ).toEqual(['Komodo']);
   });
 
   it('restores the previous Proxmox route state when returning from another platform tab', async () => {
