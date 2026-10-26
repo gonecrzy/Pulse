@@ -373,29 +373,31 @@ const ResourceRelationshipManagerPanel: Component<{
 
   return (
     <div class={props.inline ? 'space-y-5' : 'flex h-full min-h-0 flex-col'}>
-      <div class="flex items-start justify-between gap-4 border-b border-border pb-4">
-        <div>
-          <h2 id={pageTitleId()} class="text-lg font-semibold text-base-content">
-            Infrastructure relationships
-          </h2>
-          <p class="mt-1 max-w-3xl text-sm text-muted">
-            Record directed dependencies and routes, or explicitly confirm two records describe the
-            same infrastructure identity.
-          </p>
+      <Show when={!props.inline}>
+        <div class="flex items-start justify-between gap-4 border-b border-border pb-4">
+          <div>
+            <h2 id={pageTitleId()} class="text-lg font-semibold text-base-content">
+              Infrastructure relationships
+            </h2>
+            <p class="mt-1 max-w-3xl text-sm text-muted">
+              Record directed dependencies and routes, or explicitly confirm two records describe
+              the same infrastructure identity.
+            </p>
+          </div>
+          <Show when={props.onClose}>
+            {(onClose) => (
+              <button
+                type="button"
+                onClick={onClose()}
+                class="rounded-md p-1.5 text-muted hover:bg-surface-hover"
+                aria-label="Close relationships"
+              >
+                <XIcon class="h-4 w-4" />
+              </button>
+            )}
+          </Show>
         </div>
-        <Show when={props.onClose}>
-          {(onClose) => (
-            <button
-              type="button"
-              onClick={onClose()}
-              class="rounded-md p-1.5 text-muted hover:bg-surface-hover"
-              aria-label="Close relationships"
-            >
-              <XIcon class="h-4 w-4" />
-            </button>
-          )}
-        </Show>
-      </div>
+      </Show>
 
       <div class="flex flex-wrap gap-2" role="tablist" aria-label="Relationship manager modes">
         <button
