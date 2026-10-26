@@ -30,7 +30,7 @@ func TestResourceRoutesRequireWriteScopeForMutations(t *testing.T) {
 	}
 
 	mutations := []struct{ path, body string }{
-		{"/api/resources/vm-1/link", `{"targetId":"agent-1"}`},
+		{"/api/resources/vm-1/link", `{"targetId":"agent-1","confirmIdentity":true}`},
 		{"/api/resources/vm-1/unlink", `{"targetId":"agent-1"}`},
 		{"/api/resources/vm-1/report-merge", `{}`},
 	}

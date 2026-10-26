@@ -15069,7 +15069,7 @@ func TestContract_ResourceReportMergeReplacesOperatorLink(t *testing.T) {
 	}
 
 	linkRec := httptest.NewRecorder()
-	h.HandleLink(linkRec, httptest.NewRequest(http.MethodPost, "/api/resources/"+vmID+"/link", strings.NewReader(`{"targetId":"`+agentID+`"}`)))
+	h.HandleLink(linkRec, httptest.NewRequest(http.MethodPost, "/api/resources/"+vmID+"/link", strings.NewReader(`{"targetId":"`+agentID+`","confirmIdentity":true}`)))
 	if linkRec.Code != http.StatusOK {
 		t.Fatalf("link status = %d, body=%s", linkRec.Code, linkRec.Body.String())
 	}
@@ -15147,7 +15147,7 @@ func TestContract_ResourceReportMergeSourceFilterKeepsLinksOfUnreportedMembers(t
 	link := func(fromID, targetID string) {
 		t.Helper()
 		rec := httptest.NewRecorder()
-		h.HandleLink(rec, httptest.NewRequest(http.MethodPost, "/api/resources/"+fromID+"/link", strings.NewReader(`{"targetId":"`+targetID+`"}`)))
+		h.HandleLink(rec, httptest.NewRequest(http.MethodPost, "/api/resources/"+fromID+"/link", strings.NewReader(`{"targetId":"`+targetID+`","confirmIdentity":true}`)))
 		if rec.Code != http.StatusOK {
 			t.Fatalf("link status = %d, body=%s", rec.Code, rec.Body.String())
 		}
