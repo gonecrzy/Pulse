@@ -144,6 +144,37 @@ describe('useConnectionsLedger', () => {
     );
   });
 
+  it('marks Komodo Core as an API-managed editable connection', async () => {
+    const lastSeen = '2026-10-25T12:00:00Z';
+    const connection: Connection = {
+      id: 'komodo:core',
+      type: 'komodo',
+      name: 'Komodo Core',
+      address: 'https://komodo.example.test',
+      state: 'active',
+      stateReason: '',
+      enabled: true,
+      surfaces: ['servers', 'stacks', 'deployments', 'swarms'],
+      scope: { servers: true, stacks: true, deployments: true, swarms: true },
+      lastSeen,
+      lastError: null,
+      source: 'manual',
+      capabilities: { supportsPause: true, supportsScope: true, supportsTest: true },
+    };
+    vi.spyOn(ConnectionsAPI, 'list').mockResolvedValue({ connections: [connection], systems: [] });
+
+    const { result } = renderHook(() => useConnectionsLedger());
+
+    await waitFor(() => expect(result.rows()).toHaveLength(1));
+    expect(result.rows()[0]).toMatchObject({
+      id: 'komodo:core',
+      ownerType: 'komodo',
+      source: 'api',
+      subtitle: 'via platform API',
+      canEdit: true,
+    });
+  });
+
   it('reuses large stable row models across equivalent ledger refreshes', async () => {
     const connections: Connection[] = Array.from({ length: 120 }, (_, index) => ({
       id: `agent:stable-${index}`,
