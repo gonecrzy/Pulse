@@ -114,6 +114,47 @@ its context at 100 resources / 200 relationships; the UI keeps shared-host
 branches collapsed. The immutable image reference is reported after the
 feature branch publication workflow completes.
 
+### Phase 2J — Patrol architecture, entitlements, and Sindri integration audit
+
+**Status (2026-10-27):** A source-level audit of Patrol, Assistant, findings,
+investigations, action execution, licensing, provider integration, and the
+current frontend is recorded in
+[the Phase 2J architecture audit](2026-10-27-patrol-sindri-architecture-audit.md).
+It includes the capability and entitlement matrices, runtime call graph,
+Codex-LB assessment, UI recommendation, ordered checkpoints, and migration and
+safety risks. This is a documentation-only checkpoint; no runtime code or
+tests changed.
+
+The audit updates the implementation status of this roadmap:
+
+- The fork feature profile is implemented and default-empty. Only
+  `fork.ai_investigation` and `fork.governed_actions` are marked implemented;
+  the former does not replace Pulse's commercial gates for general automatic
+  Patrol investigations or alert analysis.
+- Komodo monitoring, canonical cross-provider topology, resource-scoped
+  topology queries, and the bounded Patrol evidence path are implemented in
+  the completed Phase 2E/2G/2I work above. Do not repeat those foundations.
+- OpenAI-compatible custom base URLs and model/tool readiness checks already
+  exist. Codex-LB-only provider enforcement is still unavailable because
+  `fork.codex_lb_gateway` is registered but not implemented. No fallback to an
+  alternate provider should be added.
+- Pulse's typed action lifecycle, operator approval and existing execution
+  adapters are reusable. Komodo mutation adapters, the `fork.action_safety`
+  feature, operator-owned multi-alert cases, ordered repair plans and inbound
+  Discord approvals remain future work. Outbound Discord notifications are
+  already supported.
+- `/patrol/*` is the primary frontend workspace. The Assistant chat launcher
+  has been retired; the shared backend chat service remains used by
+  investigations. Add Sindri context to Patrol rather than creating a second
+  navigation or AI runtime.
+
+The Phase 2J audit's seven ordered checkpoints supersede earlier roadmap rows
+that proposed building the fork profile, Komodo monitoring, topology ingestion,
+or generic action lifecycle from scratch. Preserve the commercial entitlement,
+authentication, tenant isolation, credential, approval and execution safety
+boundaries documented here. No action method, production change, deployment or
+merge into `sindri` is authorized by this audit.
+
 ## Workspace and baseline
 
 - Primary checkout: `/root/Pulse`, remote `origin` = `https://github.com/gonecrzy/Pulse.git`.
@@ -128,7 +169,7 @@ feature branch publication workflow completes.
 
 The initial upstream review covered merge commit `9fb404604`, `208f0cbf1` (“Preserve backup-age incidents across unknown success dates”), and `6fb43d930` (a browser proof fixture correction). The substantive alert change is in `internal/alerts/backup_snapshot.go`: a listed backup with a missing, zero, or future success timestamp no longer counts as recovery, and the newest usable provider timestamp wins. Tests cover provider order, linked/orphan subjects, occurrence retention, and exclusions/removal.
 
-Before synchronization, a fresh fetch found upstream at `ece25327105f8be262dc9639caa4ce08282c77cc`. The intervening changes were reviewed: `92f20dafd` hides Re-investigate while a fix remains queued, avoiding duplicate action plans; `d07080e8f` and its current merge lineage retain snapshot warnings when a listed snapshot has an invalid date and add lifecycle, policy, identity, and real-consumer browser proof. These are first-party Pulse changes with no API/schema or dependency changes. The public verification record contains only a synthetic UI scenario and no credentials or deployment values. The newer reviewed tip is integrated by merge commit `80b04593ee49a326f404ce98c5e50cf61439eba1`, with prior branch head `71ad40bda11140b7d798827cab584b9f44edd5b8` as first parent and upstream as second parent. The published checkpoint `63e1d72afd47fda39b37205b7fd3c7a4436dc696` remains an ancestor. Preserve this history; do not reset, rebase, recreate, or force-push it. The local checkpoint still needs a normal fast-forward push to the feature branch.
+Before synchronization, a fresh fetch found upstream at `ece25327105f8be262dc9639caa4ce08282c77cc`. The intervening changes were reviewed: `92f20dafd` hides Re-investigate while a fix remains queued, avoiding duplicate action plans; `d07080e8f` and its current merge lineage retain snapshot warnings when a listed snapshot has an invalid date and add lifecycle, policy, identity, and real-consumer browser proof. These are first-party Pulse changes with no API/schema or dependency changes. The public verification record contains only a synthetic UI scenario and no credentials or deployment values. The newer reviewed tip is integrated by merge commit `80b04593ee49a326f404ce98c5e50cf61439eba1`, with prior branch head `71ad40bda11140b7d798827cab584b9f44edd5b8` as first parent and upstream as second parent. The published checkpoint `63e1d72afd47fda39b37205b7fd3c7a4436dc696` remains an ancestor. Preserve this history; do not reset, rebase, recreate, or force-push it. At the Phase 2I baseline, the local checkpoint still needed a normal fast-forward push to the feature branch.
 
 ## Architecture and file ownership
 
