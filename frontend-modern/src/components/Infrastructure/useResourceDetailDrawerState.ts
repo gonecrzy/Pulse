@@ -56,9 +56,9 @@ export const useResourceDetailDrawerState = (options: UseResourceDetailDrawerSta
     debugEnabled,
     resourceIntelligence: history.resourceIntelligence,
     resourceRelationships: () =>
-      history.resourceRelationshipContextRelationships().length > 0
-        ? history.resourceRelationshipContextRelationships()
-        : history.resourceFacetRelationships(),
+      history.resourceFacetRelationships().length > 0
+        ? history.resourceFacetRelationships()
+        : (resource().relationships ?? []),
   });
   const dockerActions = useResourceDetailDrawerDockerActionsState({
     dockerHostSourceId: derived.dockerHostSourceId,

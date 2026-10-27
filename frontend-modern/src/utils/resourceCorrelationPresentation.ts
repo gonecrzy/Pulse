@@ -132,8 +132,31 @@ export function formatResourceRelationshipSummary(relationship: ResourceRelation
 
 export function sortResourceRelationships(
   relationships: readonly ResourceRelationship[],
+  selectedResourceId?: string,
 ): ResourceRelationship[] {
+  const relevanceRank = (relationship: ResourceRelationship): number => {
+    if (!selectedResourceId) return 0;
+    if (
+      relationship.sourceId === selectedResourceId &&
+      ['runs_on', 'hosted_by'].includes(relationship.type)
+    ) {
+      return 0;
+    }
+    if (
+      relationship.targetId === selectedResourceId &&
+      ['runs_on', 'hosted_by'].includes(relationship.type)
+    ) {
+      return 1;
+    }
+    if (relationship.type === 'depends_on') return 2;
+    if (relationship.type === 'stores_on') return 3;
+    if (relationship.type === 'checks') return 4;
+    return 5;
+  };
   return [...relationships].sort((left, right) => {
+    const relevanceDiff = relevanceRank(left) - relevanceRank(right);
+    if (relevanceDiff !== 0) return relevanceDiff;
+
     if (left.active !== right.active) return left.active ? -1 : 1;
 
     const confidenceDiff = (right.confidence || 0) - (left.confidence || 0);

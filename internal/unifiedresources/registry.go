@@ -1637,10 +1637,7 @@ func (rr *ResourceRegistry) ListResourceRelationships() []ResourceRelationship {
 			if !relationship.Active {
 				continue
 			}
-			key := relationship.ID
-			if key == "" {
-				key = string(relationship.Type) + "\x00" + CanonicalResourceID(relationship.SourceID) + "\x00" + CanonicalResourceID(relationship.TargetID)
-			}
+			key := RelationshipPresentationKey(relationship)
 			if _, exists := seen[key]; exists {
 				continue
 			}
@@ -1650,6 +1647,16 @@ func (rr *ResourceRegistry) ListResourceRelationships() []ResourceRelationship {
 			relationships = append(relationships, relationship)
 		}
 	}
+	for _, relationship := range ProxmoxVMStorageBackingRelationships(resources) {
+		key := RelationshipPresentationKey(relationship)
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		relationship.SourceID = CanonicalResourceID(relationship.SourceID)
+		relationship.TargetID = CanonicalResourceID(relationship.TargetID)
+		relationships = append(relationships, relationship)
+	}
 	sort.Slice(relationships, func(i, j int) bool {
 		if relationships[i].SourceID != relationships[j].SourceID {
 			return relationships[i].SourceID < relationships[j].SourceID
@@ -1657,7 +1664,10 @@ func (rr *ResourceRegistry) ListResourceRelationships() []ResourceRelationship {
 		if relationships[i].TargetID != relationships[j].TargetID {
 			return relationships[i].TargetID < relationships[j].TargetID
 		}
-		return relationships[i].Type < relationships[j].Type
+		if relationships[i].Type != relationships[j].Type {
+			return relationships[i].Type < relationships[j].Type
+		}
+		return RelationshipPresentationKey(relationships[i]) < RelationshipPresentationKey(relationships[j])
 	})
 	return relationships
 }
@@ -4402,6 +4412,17 @@ func mergeProxmoxData(existing *ProxmoxData, incoming *ProxmoxData) *ProxmoxData
 	}
 	if incoming.VMID != 0 {
 		merged.VMID = incoming.VMID
+		if incoming.VMConfigObservationStatus != "" {
+			merged.VMConfigObservationStatus = incoming.VMConfigObservationStatus
+		}
+		if !incoming.VMConfigObservedAt.IsZero() &&
+			(incoming.VMConfigObservedAt.After(merged.VMConfigObservedAt) || merged.VMConfigObservedAt.IsZero()) {
+			// A successful configuration read is authoritative even when it
+			// contains no virtual disks. Failed or unavailable reads have no
+			// observation time and therefore retain the last known evidence.
+			merged.VMConfigStorageVolumes = append([]models.ProxmoxVMStorageVolume(nil), incoming.VMConfigStorageVolumes...)
+			merged.VMConfigObservedAt = incoming.VMConfigObservedAt
+		}
 		// A native guest facet is a complete observation of admission state.
 		// Retaining the previous reason/status can hide a newly paused read or
 		// leave a recovered guest paused forever. Non-guest partial facets do

@@ -1309,10 +1309,26 @@ export const ResourceDetailDrawerOverviewTab: Component<ResourceDetailDrawerOver
           <ResourceCorrelationSummary
             dataTestId="resource-relationship-map-section"
             title="Relationship map"
+            selectedResourceId={resource().id}
             relationships={drawer.resourceRelationships()}
-            relatedResources={drawer
-              .resourceRelationshipContextResources()
-              .filter((relatedResource) => relatedResource.id !== resource().id)}
+            contextResources={drawer.resourceRelationshipContextResources()}
+            serviceMonitoringRelationships={drawer
+              .resourceRelationshipContextDetails()
+              .filter(
+                (edge) => edge.classification === 'service_monitoring' && edge.scope === 'indirect',
+              )}
+            crossBranchRelationships={drawer
+              .resourceRelationshipContextDetails()
+              .filter(
+                (edge) =>
+                  edge.scope === 'indirect' &&
+                  ['indirect_dependency', 'cross_branch_relationship'].includes(
+                    edge.classification,
+                  ),
+              )}
+            infrastructureRelationships={drawer
+              .resourceRelationshipContextDetails()
+              .filter((edge) => edge.classification === 'shared_infrastructure')}
             buildResourceHref={(resourceId) => {
               if (resourceId === resource().id) return null;
               const relatedResource = drawer
@@ -1332,9 +1348,9 @@ export const ResourceDetailDrawerOverviewTab: Component<ResourceDetailDrawerOver
                 .find((candidate) => candidate.id === resourceId)?.name ||
               drawer.resolveResourceLabel(resourceId)
             }
+            correlations={drawer.resourceCorrelations()}
             dependencies={drawer.resourceDependencies()}
             dependents={drawer.resourceDependents()}
-            correlations={drawer.resourceCorrelations()}
             showLastSeen
             maxCorrelations={12}
           />

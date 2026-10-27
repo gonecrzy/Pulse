@@ -2029,7 +2029,7 @@ func (e *PulseToolExecutor) registerQueryTools() {
 					},
 					"resource_id": {
 						Type:        "string",
-						Description: "Canonical resource identifier (for action: get, config, or resource-scoped health). For topology, scopes the relationship graph around this canonical resource. Provider-native IDs and names are accepted as lookup aliases for get; canonical unified resources are returned with their canonical ID.",
+						Description: "Canonical resource identifier (for action: get, config, or resource-scoped health). For topology, scopes the graph around this canonical resource and labels each edge as direct, service monitoring, verified hardware backing, shared infrastructure, or an indirect neighbor with its traversal path. A path indicates possible relevance, not confirmed impact. Provider-native IDs and names are accepted as lookup aliases for get; canonical unified resources are returned with their canonical ID.",
 					},
 					"type": {
 						Type:        "string",
@@ -2059,7 +2059,7 @@ func (e *PulseToolExecutor) registerQueryTools() {
 					},
 					"depth": {
 						Type:        "integer",
-						Description: "Maximum relationship hops around resource_id for scoped topology (default: 2, maximum: 5)",
+						Description: "Maximum relationship hops around resource_id for scoped topology (default: 2, maximum: 5). The response labels direct edges separately from indirect paths and shared infrastructure; graph reachability alone does not establish a dependency or failure impact.",
 					},
 					"max_canonical_resources": {
 						Type:        "integer",
@@ -4263,28 +4263,28 @@ func canonicalResourcesForTopology(provider UnifiedResourceProvider) []unifiedre
 }
 
 func canonicalRelationshipsForTopology(rs unifiedresources.ReadState, resources []unifiedresources.Resource) []unifiedresources.ResourceRelationship {
+	var candidates []unifiedresources.ResourceRelationship
 	if reader, ok := rs.(topologyRelationshipReadState); ok {
-		return reader.ListResourceRelationships()
-	}
-	seen := make(map[string]struct{})
-	relationships := make([]unifiedresources.ResourceRelationship, 0)
-	for _, resource := range resources {
-		for _, relationship := range unifiedresources.ResourceRelationshipsWithCanonicalParent(resource) {
-			if !relationship.Active {
-				continue
-			}
-			key := relationship.ID
-			if key == "" {
-				key = string(relationship.Type) + "\x00" + unifiedresources.CanonicalResourceID(relationship.SourceID) + "\x00" + unifiedresources.CanonicalResourceID(relationship.TargetID)
-			}
-			if _, exists := seen[key]; exists {
-				continue
-			}
-			seen[key] = struct{}{}
-			relationship.SourceID = unifiedresources.CanonicalResourceID(relationship.SourceID)
-			relationship.TargetID = unifiedresources.CanonicalResourceID(relationship.TargetID)
-			relationships = append(relationships, relationship)
+		candidates = reader.ListResourceRelationships()
+	} else {
+		for _, resource := range resources {
+			candidates = append(candidates, unifiedresources.ResourceRelationshipsWithCanonicalParent(resource)...)
 		}
+	}
+	seen := make(map[string]struct{}, len(candidates))
+	relationships := make([]unifiedresources.ResourceRelationship, 0, len(candidates))
+	for _, relationship := range candidates {
+		if !relationship.Active {
+			continue
+		}
+		relationship.SourceID = unifiedresources.CanonicalResourceID(relationship.SourceID)
+		relationship.TargetID = unifiedresources.CanonicalResourceID(relationship.TargetID)
+		key := unifiedresources.RelationshipPresentationKey(relationship)
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		relationships = append(relationships, relationship)
 	}
 	sort.Slice(relationships, func(i, j int) bool {
 		if relationships[i].SourceID != relationships[j].SourceID {
@@ -4293,9 +4293,50 @@ func canonicalRelationshipsForTopology(rs unifiedresources.ReadState, resources 
 		if relationships[i].TargetID != relationships[j].TargetID {
 			return relationships[i].TargetID < relationships[j].TargetID
 		}
-		return relationships[i].Type < relationships[j].Type
+		if relationships[i].Type != relationships[j].Type {
+			return relationships[i].Type < relationships[j].Type
+		}
+		return unifiedresources.RelationshipPresentationKey(relationships[i]) < unifiedresources.RelationshipPresentationKey(relationships[j])
 	})
 	return relationships
+}
+
+func topologyRelationshipProjection(
+	relationship unifiedresources.ResourceRelationship,
+	rootID string,
+	path []string,
+	resources map[string]unifiedresources.Resource,
+) CanonicalTopologyRelationship {
+	projection := CanonicalTopologyRelationship{ResourceRelationship: relationship}
+	if rootID == "" {
+		projection.Scope = "estate_graph_edge"
+		projection.ImpactAssessment = "not_inferred"
+		switch relationship.Type {
+		case unifiedresources.RelDependsOn:
+			projection.Classification = "dependency_relationship"
+		case unifiedresources.RelStoresOn:
+			projection.Classification = "verified_hardware_backing"
+		case unifiedresources.RelChecks:
+			projection.Classification = "service_monitoring"
+		default:
+			projection.Classification = "graph_relationship"
+		}
+		return projection
+	}
+	projection.Scope = unifiedresources.ResourceRelationshipScope(rootID, relationship)
+	projection.Classification = unifiedresources.ClassifyResourceRelationshipContext(rootID, relationship, path, resources)
+	projection.Distance = len(path) - 1
+	projection.TraversalPath = append([]string(nil), path...)
+	projection.ImpactAssessment = unifiedresources.AssessResourceRelationshipImpact(rootID, relationship, path, resources)
+	return projection
+}
+
+func unscopedTopologyRelationships(relationships []unifiedresources.ResourceRelationship) []CanonicalTopologyRelationship {
+	projected := make([]CanonicalTopologyRelationship, 0, len(relationships))
+	for _, relationship := range relationships {
+		projected = append(projected, topologyRelationshipProjection(relationship, "", nil, nil))
+	}
+	return projected
 }
 
 func canonicalTopologyResource(resource unifiedresources.Resource) CanonicalTopologyResource {
@@ -4336,6 +4377,41 @@ func canonicalTopologyResource(resource unifiedresources.Resource) CanonicalTopo
 				projection.Availability.Outcome = "unreachable"
 			}
 		}
+	}
+	if unifiedresources.CanonicalResourceType(resource.Type) == unifiedresources.ResourceTypeVM && resource.Proxmox != nil {
+		observedAt := resource.LastSeen
+		freshness := ""
+		if observation, ok := resource.SourceStatus[unifiedresources.SourceProxmox]; ok {
+			if !observation.LastSeen.IsZero() {
+				observedAt = observation.LastSeen
+			}
+			freshness = observation.Status
+		}
+		guest := &TopologyProxmoxGuestObservation{
+			Source:               unifiedresources.SourceProxmox,
+			ObservedAt:           observedAt,
+			Freshness:            freshness,
+			VMID:                 resource.Proxmox.VMID,
+			Instance:             resource.Proxmox.Instance,
+			NodeName:             resource.Proxmox.NodeName,
+			CPUs:                 resource.Proxmox.CPUs,
+			RuntimeStatus:        resource.Proxmox.RuntimeStatus,
+			OSName:               resource.Proxmox.OSName,
+			OSVersion:            resource.Proxmox.OSVersion,
+			GuestAgentStatus:     resource.Proxmox.GuestAgentStatus,
+			GuestAgentExpected:   resource.Proxmox.GuestAgentExpected,
+			NetworkInterfaces:    append([]unifiedresources.NetworkInterface(nil), resource.Proxmox.NetworkInterfaces...),
+			GuestReportedDisks:   append([]unifiedresources.DiskInfo(nil), resource.Proxmox.Disks...),
+			GuestDiskObservation: resource.Proxmox.DiskObservation.Source,
+			GuestDiskObservedAt:  resource.Proxmox.DiskObservation.ObservedAt,
+			SwapUsed:             resource.Proxmox.SwapUsed,
+			SwapTotal:            resource.Proxmox.SwapTotal,
+		}
+		if resource.Proxmox.Memory != nil {
+			memory := *resource.Proxmox.Memory
+			guest.Memory = &memory
+		}
+		projection.ProxmoxGuest = guest
 	}
 	return projection
 }
@@ -4419,15 +4495,18 @@ func attachCanonicalTopologyContext(
 	if rootID == "" {
 		return fmt.Errorf("canonical resource %q not found; use action=search to resolve a canonical ID first", resourceID)
 	}
+	response.RootResourceID = rootID
 
 	type graphNode struct {
 		id    string
 		depth int
+		path  []string
 	}
-	visited := map[string]bool{rootID: true}
-	queue := []graphNode{{id: rootID}}
-	edgeSeen := make(map[string]struct{})
-	selectedEdges := make([]unifiedresources.ResourceRelationship, 0)
+	pathsByID := map[string][]string{rootID: {rootID}}
+	depthsByID := map[string]int{rootID: 0}
+	queue := []graphNode{{id: rootID, path: []string{rootID}}}
+	edgesByKey := make(map[string]unifiedresources.ResourceRelationship)
+	pathsByEdge := make(map[string][]string)
 	for len(queue) > 0 {
 		current := queue[0]
 		queue = queue[1:]
@@ -4435,11 +4514,13 @@ func attachCanonicalTopologyContext(
 			continue
 		}
 		for _, relationship := range allRelationships {
+			sourceID := unifiedresources.CanonicalResourceID(relationship.SourceID)
+			targetID := unifiedresources.CanonicalResourceID(relationship.TargetID)
 			neighbor := ""
-			if relationship.SourceID == current.id {
-				neighbor = relationship.TargetID
-			} else if relationship.TargetID == current.id {
-				neighbor = relationship.SourceID
+			if sourceID == current.id {
+				neighbor = targetID
+			} else if targetID == current.id {
+				neighbor = sourceID
 			}
 			if neighbor == "" {
 				continue
@@ -4447,36 +4528,41 @@ func attachCanonicalTopologyContext(
 			if _, ok := byID[neighbor]; !ok {
 				continue
 			}
-			key := relationship.ID
-			if key == "" {
-				key = string(relationship.Type) + "\x00" + relationship.SourceID + "\x00" + relationship.TargetID
+			relationship.SourceID = sourceID
+			relationship.TargetID = targetID
+			key := unifiedresources.RelationshipPresentationKey(relationship)
+			traversalPath := append(append([]string(nil), current.path...), neighbor)
+			if previousPath, exists := pathsByEdge[key]; !exists || unifiedresources.RelationshipPathLess(traversalPath, previousPath) {
+				pathsByEdge[key] = traversalPath
+				edgesByKey[key] = relationship
 			}
-			if _, exists := edgeSeen[key]; !exists {
-				edgeSeen[key] = struct{}{}
-				selectedEdges = append(selectedEdges, relationship)
-			}
-			if visited[neighbor] {
+			if _, visited := pathsByID[neighbor]; visited {
 				continue
 			}
-			if len(visited) >= maxResources {
+			if len(pathsByID) >= maxResources {
 				response.CanonicalResourcesTruncated = true
 				continue
 			}
-			visited[neighbor] = true
-			queue = append(queue, graphNode{id: neighbor, depth: current.depth + 1})
+			nextPath := append(append([]string(nil), current.path...), neighbor)
+			pathsByID[neighbor] = nextPath
+			depthsByID[neighbor] = current.depth + 1
+			queue = append(queue, graphNode{id: neighbor, depth: current.depth + 1, path: nextPath})
 		}
 	}
-	ids := make([]string, 0, len(visited))
-	for id := range visited {
+	ids := make([]string, 0, len(pathsByID))
+	for id := range pathsByID {
 		ids = append(ids, id)
 	}
 	sort.Strings(ids)
 	for _, id := range ids {
-		response.CanonicalResources = append(response.CanonicalResources, canonicalTopologyResource(byID[id]))
+		resource := canonicalTopologyResource(byID[id])
+		resource.Distance = depthsByID[id]
+		resource.Path = append([]string(nil), pathsByID[id]...)
+		response.CanonicalResources = append(response.CanonicalResources, resource)
 	}
-	if len(selectedEdges) > maxResources {
-		response.RelationshipsTruncated = true
-		selectedEdges = selectedEdges[:maxResources]
+	selectedEdges := make([]unifiedresources.ResourceRelationship, 0, len(edgesByKey))
+	for _, relationship := range edgesByKey {
+		selectedEdges = append(selectedEdges, relationship)
 	}
 	sort.Slice(selectedEdges, func(i, j int) bool {
 		if selectedEdges[i].SourceID != selectedEdges[j].SourceID {
@@ -4485,9 +4571,20 @@ func attachCanonicalTopologyContext(
 		if selectedEdges[i].TargetID != selectedEdges[j].TargetID {
 			return selectedEdges[i].TargetID < selectedEdges[j].TargetID
 		}
-		return selectedEdges[i].Type < selectedEdges[j].Type
+		if selectedEdges[i].Type != selectedEdges[j].Type {
+			return selectedEdges[i].Type < selectedEdges[j].Type
+		}
+		return unifiedresources.RelationshipPresentationKey(selectedEdges[i]) < unifiedresources.RelationshipPresentationKey(selectedEdges[j])
 	})
-	response.Relationships = selectedEdges
+	if len(selectedEdges) > maxResources {
+		response.RelationshipsTruncated = true
+		selectedEdges = selectedEdges[:maxResources]
+	}
+	response.Relationships = make([]CanonicalTopologyRelationship, 0, len(selectedEdges))
+	for _, relationship := range selectedEdges {
+		path := pathsByEdge[unifiedresources.RelationshipPresentationKey(relationship)]
+		response.Relationships = append(response.Relationships, topologyRelationshipProjection(relationship, rootID, path, byID))
+	}
 	return nil
 }
 
@@ -4928,7 +5025,7 @@ func BuildTopologyResponseFromReadState(rs unifiedresources.ReadState, options T
 				response.RelationshipsTruncated = true
 				relationships = relationships[:limit]
 			}
-			response.Relationships = relationships
+			response.Relationships = unscopedTopologyRelationships(relationships)
 		}
 	}
 	response.Summary = summary

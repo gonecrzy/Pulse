@@ -40,6 +40,36 @@ func (c *guestConfigCoverageClient) GetVMConfig(ctx context.Context, node string
 	return c.vmConfig, c.vmErr
 }
 
+func TestFetchVMConfigRetainsVerifiedStorageVolumeEvidence(t *testing.T) {
+	client := &guestConfigCoverageClient{vmConfig: map[string]interface{}{
+		"scsi0":      "local-zfs:vm-50110-disk-0,size=32G",
+		"scsi1":      "local-zfs:vm-50110-disk-1,size=32G",
+		"virtio0":    "ceph-rbd:vm-50110-disk-1,size=64G",
+		"ide2":       "local:iso/debian.iso,media=cdrom",
+		"sata0":      "none,media=cdrom",
+		"unused0":    "local-zfs:vm-50110-disk-2",
+		"ostype":     "l26",
+		"scsi-extra": "local-zfs:ignored",
+	}}
+	monitor := &Monitor{}
+	config, observedAt, status := monitor.fetchVMConfig(context.Background(), client, "pve01", 50110)
+	if observedAt.IsZero() || config == nil || status != "current" {
+		t.Fatalf("successful config fetch returned config=%v observedAt=%s status=%s", config, observedAt, status)
+	}
+	if client.vmCalls != 1 || client.lastNode != "pve01" || client.lastVMID != 50110 {
+		t.Fatalf("VM config request calls=%d node=%q vmid=%d", client.vmCalls, client.lastNode, client.lastVMID)
+	}
+	volumes := parseProxmoxVMStorageVolumes(config)
+	if len(volumes) != 3 {
+		t.Fatalf("parsed VM config volumes = %+v, want only the three attached disk slots", volumes)
+	}
+	if volumes[0] != (models.ProxmoxVMStorageVolume{DeviceKey: "scsi0", VolumeID: "local-zfs:vm-50110-disk-0", StorageID: "local-zfs"}) ||
+		volumes[1] != (models.ProxmoxVMStorageVolume{DeviceKey: "scsi1", VolumeID: "local-zfs:vm-50110-disk-1", StorageID: "local-zfs"}) ||
+		volumes[2] != (models.ProxmoxVMStorageVolume{DeviceKey: "virtio0", VolumeID: "ceph-rbd:vm-50110-disk-1", StorageID: "ceph-rbd"}) {
+		t.Fatalf("parsed VM config volumes = %+v", volumes)
+	}
+}
+
 func TestGetGuestConfig(t *testing.T) {
 	ctx := context.Background()
 

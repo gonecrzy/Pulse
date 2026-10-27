@@ -347,52 +347,55 @@ type MetricValue struct {
 
 // ProxmoxData contains Proxmox-specific data for a resource.
 type ProxmoxData struct {
-	SourceID                     string              `json:"sourceId,omitempty"`      // raw model ID from source snapshot
-	RuntimeStatus                string              `json:"runtimeStatus,omitempty"` // source-authored VM/LXC power state, independent of collection freshness
-	NodeIdentity                 string              `json:"nodeIdentity,omitempty"`
-	NodeName                     string              `json:"nodeName,omitempty"`
-	NodeAliases                  []string            `json:"nodeAliases,omitempty"`
-	NodeDisplayName              string              `json:"nodeDisplayName,omitempty"`
-	Pool                         string              `json:"pool,omitempty"`
-	ClusterName                  string              `json:"clusterName,omitempty"`
-	IsClusterMember              bool                `json:"isClusterMember,omitempty"`
-	Instance                     string              `json:"instance,omitempty"`
-	HostURL                      string              `json:"host,omitempty"`
-	GuestURL                     string              `json:"guestUrl,omitempty"`
-	ConnectionHealth             string              `json:"connectionHealth,omitempty"`
-	VMID                         int                 `json:"vmid,omitempty"`
-	ContainerType                string              `json:"containerType,omitempty"`
-	IsOCI                        bool                `json:"isOci,omitempty"`
-	CPUs                         int                 `json:"cpus,omitempty"`
-	Template                     bool                `json:"template,omitempty"`
-	Temperature                  *float64            `json:"temperature,omitempty"` // Max node CPU temp in Celsius
-	TemperatureDetails           *models.Temperature `json:"temperatureDetails,omitempty"`
-	PVEVersion                   string              `json:"pveVersion,omitempty"`
-	KernelVersion                string              `json:"kernelVersion,omitempty"`
-	Uptime                       int64               `json:"uptime,omitempty"`
-	LastBackup                   time.Time           `json:"lastBackup,omitempty"`
-	BackupInProgress             bool                `json:"backupInProgress,omitempty"`
-	DiskStatusReason             string              `json:"diskStatusReason,omitempty"`
-	GuestAgentStatus             string              `json:"guestAgentStatus,omitempty"`
-	GuestAgentExpected           bool                `json:"guestAgentExpected,omitempty"`
-	OSName                       string              `json:"osName,omitempty"`
-	OSVersion                    string              `json:"osVersion,omitempty"`
-	AgentVersion                 string              `json:"agentVersion,omitempty"`
-	NetworkInterfaces            []NetworkInterface  `json:"networkInterfaces,omitempty"`
-	OSTemplate                   string              `json:"osTemplate,omitempty"`
-	HasDocker                    bool                `json:"hasDocker,omitempty"`
-	DockerCheckedAt              *time.Time          `json:"dockerCheckedAt,omitempty"`
-	CPUInfo                      *CPUInfo            `json:"cpuInfo,omitempty"`
-	LoadAverage                  []float64           `json:"loadAverage,omitempty"`
-	PendingUpdates               int                 `json:"pendingUpdates,omitempty"`
-	TemperatureMonitoringEnabled *bool               `json:"temperatureMonitoringEnabled,omitempty"`
-	PendingUpdatesCheckedAt      *time.Time          `json:"pendingUpdatesCheckedAt,omitempty"`
-	PendingUpdatesStatus         string              `json:"pendingUpdatesStatus,omitempty"`
-	PendingUpdatesReason         string              `json:"pendingUpdatesReason,omitempty"`
-	Disks                        []DiskInfo          `json:"disks,omitempty"`
-	SwapUsed                     int64               `json:"swapUsed,omitempty"`
-	SwapTotal                    int64               `json:"swapTotal,omitempty"`
-	Balloon                      int64               `json:"balloon,omitempty"`
+	SourceID                     string                          `json:"sourceId,omitempty"`      // raw model ID from source snapshot
+	RuntimeStatus                string                          `json:"runtimeStatus,omitempty"` // source-authored VM/LXC power state, independent of collection freshness
+	NodeIdentity                 string                          `json:"nodeIdentity,omitempty"`
+	NodeName                     string                          `json:"nodeName,omitempty"`
+	NodeAliases                  []string                        `json:"nodeAliases,omitempty"`
+	NodeDisplayName              string                          `json:"nodeDisplayName,omitempty"`
+	Pool                         string                          `json:"pool,omitempty"`
+	ClusterName                  string                          `json:"clusterName,omitempty"`
+	IsClusterMember              bool                            `json:"isClusterMember,omitempty"`
+	Instance                     string                          `json:"instance,omitempty"`
+	HostURL                      string                          `json:"host,omitempty"`
+	GuestURL                     string                          `json:"guestUrl,omitempty"`
+	ConnectionHealth             string                          `json:"connectionHealth,omitempty"`
+	VMID                         int                             `json:"vmid,omitempty"`
+	VMConfigStorageVolumes       []models.ProxmoxVMStorageVolume `json:"vmConfigStorageVolumes,omitempty"`
+	VMConfigObservedAt           time.Time                       `json:"vmConfigObservedAt,omitempty"`
+	VMConfigObservationStatus    string                          `json:"vmConfigObservationStatus,omitempty"`
+	ContainerType                string                          `json:"containerType,omitempty"`
+	IsOCI                        bool                            `json:"isOci,omitempty"`
+	CPUs                         int                             `json:"cpus,omitempty"`
+	Template                     bool                            `json:"template,omitempty"`
+	Temperature                  *float64                        `json:"temperature,omitempty"` // Max node CPU temp in Celsius
+	TemperatureDetails           *models.Temperature             `json:"temperatureDetails,omitempty"`
+	PVEVersion                   string                          `json:"pveVersion,omitempty"`
+	KernelVersion                string                          `json:"kernelVersion,omitempty"`
+	Uptime                       int64                           `json:"uptime,omitempty"`
+	LastBackup                   time.Time                       `json:"lastBackup,omitempty"`
+	BackupInProgress             bool                            `json:"backupInProgress,omitempty"`
+	DiskStatusReason             string                          `json:"diskStatusReason,omitempty"`
+	GuestAgentStatus             string                          `json:"guestAgentStatus,omitempty"`
+	GuestAgentExpected           bool                            `json:"guestAgentExpected,omitempty"`
+	OSName                       string                          `json:"osName,omitempty"`
+	OSVersion                    string                          `json:"osVersion,omitempty"`
+	AgentVersion                 string                          `json:"agentVersion,omitempty"`
+	NetworkInterfaces            []NetworkInterface              `json:"networkInterfaces,omitempty"`
+	OSTemplate                   string                          `json:"osTemplate,omitempty"`
+	HasDocker                    bool                            `json:"hasDocker,omitempty"`
+	DockerCheckedAt              *time.Time                      `json:"dockerCheckedAt,omitempty"`
+	CPUInfo                      *CPUInfo                        `json:"cpuInfo,omitempty"`
+	LoadAverage                  []float64                       `json:"loadAverage,omitempty"`
+	PendingUpdates               int                             `json:"pendingUpdates,omitempty"`
+	TemperatureMonitoringEnabled *bool                           `json:"temperatureMonitoringEnabled,omitempty"`
+	PendingUpdatesCheckedAt      *time.Time                      `json:"pendingUpdatesCheckedAt,omitempty"`
+	PendingUpdatesStatus         string                          `json:"pendingUpdatesStatus,omitempty"`
+	PendingUpdatesReason         string                          `json:"pendingUpdatesReason,omitempty"`
+	Disks                        []DiskInfo                      `json:"disks,omitempty"`
+	SwapUsed                     int64                           `json:"swapUsed,omitempty"`
+	SwapTotal                    int64                           `json:"swapTotal,omitempty"`
+	Balloon                      int64                           `json:"balloon,omitempty"`
 	// Reclaimable buff/cache split out of the memory metric's free bytes.
 	MemoryCache int64          `json:"memoryCache,omitempty"`
 	Memory      *models.Memory `json:"memory,omitempty"`

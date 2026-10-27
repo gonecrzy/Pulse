@@ -198,6 +198,7 @@ func cloneProxmoxData(in *ProxmoxData) *ProxmoxData {
 	out.LoadAverage = cloneFloat64Slice(in.LoadAverage)
 	out.NodeAliases = cloneStringSlice(in.NodeAliases)
 	out.NetworkInterfaces = cloneNetworkInterfaces(in.NetworkInterfaces)
+	out.VMConfigStorageVolumes = append([]models.ProxmoxVMStorageVolume(nil), in.VMConfigStorageVolumes...)
 	out.DockerCheckedAt = cloneTimePtr(in.DockerCheckedAt)
 	out.TemperatureMonitoringEnabled = cloneBoolPtr(in.TemperatureMonitoringEnabled)
 	out.PendingUpdatesCheckedAt = cloneTimePtr(in.PendingUpdatesCheckedAt)

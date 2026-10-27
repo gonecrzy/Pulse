@@ -316,6 +316,9 @@ export interface ResourceRelationshipContextResource {
   type: ResourceType;
   name: string;
   status: ResourceStatus;
+  parentId?: string;
+  distance?: number;
+  path?: string[];
   lastSeen?: string | number;
   sources?: string[];
   sourceStatus?: Record<string, ResourceSourceStatus>;
@@ -328,9 +331,27 @@ export interface ResourceRelationshipContextResource {
   incidentSummary?: string;
 }
 
+export interface ResourceRelationshipContextEdge {
+  relationship: ResourceRelationship;
+  scope: 'direct' | 'indirect' | string;
+  classification:
+    | 'direct_relationship'
+    | 'direct_dependency'
+    | 'verified_hardware_backing'
+    | 'service_monitoring'
+    | 'shared_infrastructure'
+    | 'indirect_dependency'
+    | 'indirect_graph_neighbor'
+    | string;
+  distance: number;
+  traversalPath: string[];
+  impactAssessment?: string;
+}
+
 export interface ResourceRelationshipContext {
   resources: ResourceRelationshipContextResource[];
   relationships: ResourceRelationship[];
+  relationshipDetails?: ResourceRelationshipContextEdge[];
   truncated?: boolean;
 }
 

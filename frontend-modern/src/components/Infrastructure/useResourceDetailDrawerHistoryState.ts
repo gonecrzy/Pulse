@@ -72,6 +72,9 @@ export const useResourceDetailDrawerHistoryState = (
   const resourceRelationshipContextRelationships = createMemo(
     () => resourceDetailState.value()?.relationshipContext?.relationships ?? [],
   );
+  const resourceRelationshipContextDetails = createMemo(
+    () => resourceDetailState.value()?.relationshipContext?.relationshipDetails ?? [],
+  );
 
   const resourceFacetsState = createNonSuspendingQuery<ResourceFacetBundle, { id: string }>({
     source: resourceFacetRequest,
@@ -274,6 +277,7 @@ export const useResourceDetailDrawerHistoryState = (
     resourceTimeline,
     resourceRelationshipContextResources,
     resourceRelationshipContextRelationships,
+    resourceRelationshipContextDetails,
     resourceFacetCapabilities,
     resourceFacetRelationships,
     historyFacetCounts,

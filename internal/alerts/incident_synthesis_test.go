@@ -105,6 +105,46 @@ func TestInfrastructureIncidentSynthesisPreservesContradictionAsObservationSet(t
 	}
 }
 
+func TestPhysicalDiskFailureDoesNotInferImpactAcrossSharedHost(t *testing.T) {
+	manager := newTestManager(t)
+	startedAt := time.Date(2026, 10, 27, 10, 0, 0, 0, time.UTC)
+	const hostID = "pve-host-1"
+	const diskID = "pve-disk-samsung-a"
+	const vmAID = "pve-vm-www-dmz"
+	const vmBID = "pve-vm-alfheim"
+	resources := map[string]unifiedresources.Resource{
+		hostID: {ID: hostID, Type: unifiedresources.ResourceTypeAgent, Name: "pve1", Status: unifiedresources.StatusOnline},
+		diskID: {
+			ID: diskID, Type: unifiedresources.ResourceTypePhysicalDisk, Name: "Samsung SSD", Status: unifiedresources.StatusOffline,
+			Relationships: []unifiedresources.ResourceRelationship{{SourceID: diskID, TargetID: hostID, Type: unifiedresources.RelMountedTo, Confidence: 1, Active: true, EvidenceSource: unifiedresources.SourceProxmox, EvidenceFreshness: unifiedresources.RelationshipFreshnessCurrent}},
+		},
+		vmAID: {
+			ID: vmAID, Type: unifiedresources.ResourceTypeVM, Name: "www-DMZ", Status: unifiedresources.StatusOnline,
+			Relationships: []unifiedresources.ResourceRelationship{{SourceID: vmAID, TargetID: hostID, Type: unifiedresources.RelRunsOn, Confidence: 1, Active: true, EvidenceSource: unifiedresources.SourceProxmox, EvidenceFreshness: unifiedresources.RelationshipFreshnessCurrent}},
+		},
+		vmBID: {
+			ID: vmBID, Type: unifiedresources.ResourceTypeVM, Name: "alfheim", Status: unifiedresources.StatusOnline,
+			Relationships: []unifiedresources.ResourceRelationship{{SourceID: vmBID, TargetID: hostID, Type: unifiedresources.RelRunsOn, Confidence: 1, Active: true, EvidenceSource: unifiedresources.SourceProxmox, EvidenceFreshness: unifiedresources.RelationshipFreshnessCurrent}},
+		},
+	}
+	diskAlert := &Alert{ID: "disk-failed", Type: "disk-health", Level: AlertLevelCritical, ResourceID: diskID, ResourceName: "Samsung SSD", StartTime: startedAt}
+	vmAAlert := &Alert{ID: "www-dmz-offline", Type: "offline", Level: AlertLevelCritical, ResourceID: vmAID, ResourceName: "www-DMZ", StartTime: startedAt.Add(time.Minute)}
+	vmBAlert := &Alert{ID: "alfheim-offline", Type: "offline", Level: AlertLevelCritical, ResourceID: vmBID, ResourceName: "alfheim", StartTime: startedAt.Add(time.Minute)}
+	manager.mu.Lock()
+	manager.applyInfrastructureIncidentSynthesisNoLock(resources, map[string]*Alert{
+		"disk": diskAlert, "vm-a": vmAAlert, "vm-b": vmBAlert,
+	})
+	manager.mu.Unlock()
+	for name, alert := range map[string]*Alert{"www-DMZ": vmAAlert, "alfheim": vmBAlert} {
+		if alert.Correlation != nil && alert.Correlation.Inference == AlertCorrelationInferenceSupportedCause {
+			t.Fatalf("disk failure was inferred to cause %s failure through shared host: %+v", name, alert.Correlation)
+		}
+		if isSupportedInfrastructureSymptom(alert) {
+			t.Fatalf("shared-host topology suppressed the independent %s alert", name)
+		}
+	}
+}
+
 func TestInfrastructureIncidentSynthesisRequiresOrderedBoundedTiming(t *testing.T) {
 	manager := newTestManager(t)
 	startedAt := time.Date(2026, 8, 30, 18, 0, 0, 0, time.UTC)

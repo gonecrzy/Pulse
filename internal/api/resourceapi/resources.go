@@ -375,7 +375,7 @@ func (h *QueryService) HandleGetResource(w http.ResponseWriter, r *http.Request)
 		RelationshipContext resourceRelationshipContextResponse `json:"relationshipContext"`
 	}{
 		Resource:            resourceCopy,
-		RelationshipContext: canonicalResourceRelationshipNeighborhood(registry, resourceCopy, 2, 25, 50),
+		RelationshipContext: canonicalResourceRelationshipNeighborhood(registry, resourceCopy, 2, 100, 200),
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -442,16 +442,13 @@ func canonicalResourceRelationshipContext(registry *unified.ResourceRegistry, re
 		if sourceID != resourceID && targetID != resourceID {
 			return
 		}
-		key := relationship.ID
-		if key == "" {
-			key = string(relationship.Type) + "\x00" + sourceID + "\x00" + targetID
-		}
+		relationship.SourceID = sourceID
+		relationship.TargetID = targetID
+		key := unified.RelationshipPresentationKey(relationship)
 		if _, exists := seen[key]; exists {
 			return
 		}
 		seen[key] = struct{}{}
-		relationship.SourceID = sourceID
-		relationship.TargetID = targetID
 		relationships = append(relationships, relationship)
 	}
 	if registry != nil {
@@ -473,7 +470,10 @@ func canonicalResourceRelationshipContext(registry *unified.ResourceRegistry, re
 		if relationships[i].TargetID != relationships[j].TargetID {
 			return relationships[i].TargetID < relationships[j].TargetID
 		}
-		return relationships[i].Type < relationships[j].Type
+		if relationships[i].Type != relationships[j].Type {
+			return relationships[i].Type < relationships[j].Type
+		}
+		return unified.RelationshipPresentationKey(relationships[i]) < unified.RelationshipPresentationKey(relationships[j])
 	})
 	return relationships
 }
@@ -519,10 +519,13 @@ func canonicalResourceRelationshipNeighborhood(
 	type graphNode struct {
 		id    string
 		depth int
+		path  []string
 	}
-	visited := map[string]struct{}{rootID: {}}
-	queue := []graphNode{{id: rootID}}
-	seenRelationships := make(map[string]struct{})
+	pathsByID := map[string][]string{rootID: {rootID}}
+	depthsByID := map[string]int{rootID: 0}
+	queue := []graphNode{{id: rootID, path: []string{rootID}}}
+	relationshipsByKey := make(map[string]unified.ResourceRelationship)
+	pathsByRelationship := make(map[string][]string)
 	for len(queue) > 0 {
 		current := queue[0]
 		queue = queue[1:]
@@ -547,33 +550,32 @@ func canonicalResourceRelationshipNeighborhood(
 			if _, exists := resourcesByID[neighborID]; !exists {
 				continue
 			}
-			key := relationship.ID
-			if key == "" {
-				key = string(relationship.Type) + "\x00" + sourceID + "\x00" + targetID
+			relationship.SourceID = sourceID
+			relationship.TargetID = targetID
+			key := unified.RelationshipPresentationKey(relationship)
+			traversalPath := append(append([]string(nil), current.path...), neighborID)
+			if previousPath, exists := pathsByRelationship[key]; !exists || unified.RelationshipPathLess(traversalPath, previousPath) {
+				pathsByRelationship[key] = traversalPath
+				relationshipsByKey[key] = relationship
 			}
-			if _, exists := seenRelationships[key]; !exists {
-				seenRelationships[key] = struct{}{}
-				relationship.SourceID = sourceID
-				relationship.TargetID = targetID
-				context.Relationships = append(context.Relationships, relationship)
-			}
-			if _, exists := visited[neighborID]; exists {
+			if _, exists := pathsByID[neighborID]; exists {
 				continue
 			}
-			if len(visited) >= maxResources {
+			if len(pathsByID) >= maxResources {
 				context.Truncated = true
 				continue
 			}
-			visited[neighborID] = struct{}{}
-			queue = append(queue, graphNode{id: neighborID, depth: current.depth + 1})
+			nextPath := append(append([]string(nil), current.path...), neighborID)
+			pathsByID[neighborID] = nextPath
+			depthsByID[neighborID] = current.depth + 1
+			queue = append(queue, graphNode{id: neighborID, depth: current.depth + 1, path: nextPath})
 		}
 	}
-	if len(context.Relationships) > maxRelationships {
-		context.Truncated = true
-		context.Relationships = context.Relationships[:maxRelationships]
+	for _, relationship := range relationshipsByKey {
+		context.Relationships = append(context.Relationships, relationship)
 	}
-	ids := make([]string, 0, len(visited))
-	for id := range visited {
+	ids := make([]string, 0, len(pathsByID))
+	for id := range pathsByID {
 		ids = append(ids, id)
 	}
 	sort.Strings(ids)
@@ -594,6 +596,9 @@ func canonicalResourceRelationshipNeighborhood(
 			Incidents:          append([]unified.ResourceIncident(nil), resource.Incidents...),
 			IncidentCount:      resource.IncidentCount,
 			IncidentSummary:    resource.IncidentSummary,
+			ParentID:           canonicalParentID(resource),
+			Distance:           depthsByID[id],
+			Path:               append([]string(nil), pathsByID[id]...),
 		})
 	}
 	sort.Slice(context.Relationships, func(i, j int) bool {
@@ -603,9 +608,39 @@ func canonicalResourceRelationshipNeighborhood(
 		if context.Relationships[i].TargetID != context.Relationships[j].TargetID {
 			return context.Relationships[i].TargetID < context.Relationships[j].TargetID
 		}
-		return context.Relationships[i].Type < context.Relationships[j].Type
+		if context.Relationships[i].Type != context.Relationships[j].Type {
+			return context.Relationships[i].Type < context.Relationships[j].Type
+		}
+		return unified.RelationshipPresentationKey(context.Relationships[i]) < unified.RelationshipPresentationKey(context.Relationships[j])
 	})
+	if len(context.Relationships) > maxRelationships {
+		context.Truncated = true
+		context.Relationships = context.Relationships[:maxRelationships]
+	}
+	context.RelationshipDetails = make([]resourceRelationshipContextEdge, 0, len(context.Relationships))
+	for _, relationship := range context.Relationships {
+		key := unified.RelationshipPresentationKey(relationship)
+		path := pathsByRelationship[key]
+		if len(path) == 0 {
+			continue
+		}
+		context.RelationshipDetails = append(context.RelationshipDetails, resourceRelationshipContextEdge{
+			Relationship:     relationship,
+			Scope:            unified.ResourceRelationshipScope(rootID, relationship),
+			Classification:   unified.ClassifyResourceRelationshipContext(rootID, relationship, path, resourcesByID),
+			Distance:         len(path) - 1,
+			TraversalPath:    append([]string(nil), path...),
+			ImpactAssessment: unified.AssessResourceRelationshipImpact(rootID, relationship, path, resourcesByID),
+		})
+	}
 	return context
+}
+
+func canonicalParentID(resource unified.Resource) string {
+	if resource.ParentID == nil {
+		return ""
+	}
+	return unified.CanonicalResourceID(*resource.ParentID)
 }
 
 func presentationResourceByID(registry *unified.ResourceRegistry, resourceID string) (*unified.Resource, bool) {
@@ -660,9 +695,10 @@ type resourceFacetBundleResponse struct {
 // resource state to explain a relationship without changing edge ownership or
 // treating topology as causal evidence.
 type resourceRelationshipContextResponse struct {
-	Resources     []resourceRelationshipContextNode `json:"resources"`
-	Relationships []unified.ResourceRelationship    `json:"relationships"`
-	Truncated     bool                              `json:"truncated,omitempty"`
+	Resources           []resourceRelationshipContextNode `json:"resources"`
+	Relationships       []unified.ResourceRelationship    `json:"relationships"`
+	RelationshipDetails []resourceRelationshipContextEdge `json:"relationshipDetails"`
+	Truncated           bool                              `json:"truncated,omitempty"`
 }
 
 type resourceRelationshipContextNode struct {
@@ -680,6 +716,18 @@ type resourceRelationshipContextNode struct {
 	Incidents          []unified.ResourceIncident                  `json:"incidents,omitempty"`
 	IncidentCount      int                                         `json:"incidentCount,omitempty"`
 	IncidentSummary    string                                      `json:"incidentSummary,omitempty"`
+	ParentID           string                                      `json:"parentId,omitempty"`
+	Distance           int                                         `json:"distance"`
+	Path               []string                                    `json:"path"`
+}
+
+type resourceRelationshipContextEdge struct {
+	Relationship     unified.ResourceRelationship `json:"relationship"`
+	Scope            string                       `json:"scope"`
+	Classification   string                       `json:"classification"`
+	Distance         int                          `json:"distance"`
+	TraversalPath    []string                     `json:"traversalPath"`
+	ImpactAssessment string                       `json:"impactAssessment"`
 }
 
 type resourceTimelineQueryOptions struct {

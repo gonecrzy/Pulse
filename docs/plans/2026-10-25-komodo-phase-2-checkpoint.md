@@ -820,3 +820,80 @@ following its detail link.
 
 The Phase 2H feature-branch image qualification and digest are recorded after
 the GitHub Actions workflow publishes and verifies the pushed source revision.
+
+## Phase 2I — Hierarchical infrastructure topology (2026-10-27)
+
+### Canonical hierarchy and graph relationships
+
+Resource details now render the verified parent/child hierarchy from the
+existing canonical resource registry: Proxmox physical host → Proxmox VM /
+operator-confirmed Komodo Server identity → Komodo Stack → linked availability
+check. A confirmed Komodo Server remains one canonical machine with both
+providers' identities and observations. Host hardware and host storage stay
+under the host; QEMU guest statistics and guest-reported devices stay on the
+VM. Direct hosting, monitoring, and verified storage associations are shown
+separately from expandable shared-host and cross-branch context. The hierarchy
+rows include resource health, active incident count, source freshness, and
+navigation to resource details.
+
+The Proxmox QEMU config API is now read by the regular VM observation path.
+Attached disk slots are parsed only when their value includes a native Proxmox
+volume ID. The canonical graph projects one `stores_on` edge from VM to the
+matching same-instance storage resource, preserving each configured device and
+volume ID as edge evidence. Exact node-local storage matches are preferred;
+shared storage requires provider shared-storage metadata. Ambiguous matches,
+empty slots, unused volumes, CD-ROMs, and generic guest devices do not create
+backing edges. Host SSDs are never treated as VM backing from proximity alone.
+The Proxmox config endpoint and volume-ID form are documented in the upstream
+[QEMU configuration reference](https://github.com/proxmox/pve-docs/blob/master/qm.conf.adoc)
+and [storage administration reference](https://pve.proxmox.com/pve-docs-7/pvesm.1.html).
+
+Sindri retains bounded bidirectional traversal through the same graph. Results
+distinguish direct dependencies, service monitoring, verified hardware
+backing, cross-branch routes, shared infrastructure, and incidental neighbors.
+Shared-host paths indicate potential impact only; a failed SSD does not imply
+that every VM on the host is affected. Stale Proxmox config evidence remains
+visible as stale context. Same-owner duplicate edges collapse while distinct
+provider/manual evidence retains its provenance.
+
+### Regression coverage and audit boundary
+
+Synthetic API fixtures cover `www-DMZ` VMID 50110, the explicit Komodo Server
+identity, `kristi-www` Stack and HTTPS check, several Stacks/checks on two VMs,
+host-local and shared storage, two same-name Samsung disks with different
+native IDs, and an unrelated sibling VM. Representative fixture evidence is:
+
+| Source | Target | Edge | Provenance | Traversal from `www-DMZ` |
+|---|---|---|---|---|
+| `komodo:connection-a:stack:kristi-www` | canonical VM from `pve:cluster-a:vmid:50110` | `hosted_by` | Komodo / `komodo_adapter` | VM → Stack |
+| `https-kristi-www` | `kristi-www` Stack | `checks` | Availability / `availability_attachment` | VM → Stack → HTTPS check |
+| `pve:cluster-a:vmid:50110` | the exact PVE `local-zfs` storage resource | `stores_on` | Proxmox config / `proxmox_vm_config`; device `scsi0`, volume `local-zfs:vm-50110-disk-0` | VM → storage |
+| each PVE disk source ID | Proxmox physical host | `mounted_to` | Proxmox / registry parent projection | VM → host → disk |
+| sibling VM source ID | same Proxmox physical host | `runs_on` | Proxmox / registry parent projection | VM → host → sibling |
+
+The checked-in repository does not contain a live registry snapshot for the
+operator's reported 32 relationships, so those live source IDs and provenance
+cannot be replayed or represented as verified findings here. Fixture IDs above
+are synthetic. No provider was contacted and no valid infrastructure edge was
+deleted. The feature workflow result is recorded in the completion report
+after the push; this checkpoint does not claim a pre-push image digest.
+
+The detail API remains depth-two and is capped at 100 resources and 200 edges
+so a host with multiple VMs, Stacks, and checks can be represented in the
+hierarchy. The UI keeps that hierarchy and its sibling/shared-host branches
+collapsed until expanded.
+
+### Validation
+
+| Check | Result |
+|---|---|
+| Focused Go regressions | Passed: 9 tests across `internal/api/resourceapi`, `internal/unifiedresources`, `internal/monitoring`, `internal/ai/tools`, and `internal/alerts`. |
+| `go test ./...` | 6,442 tests passed across 51 packages. The command exits nonzero only for the existing `internal/alerts.TestLoadHistory_PermissionError`: its mode-000-file assertion cannot deny reads to UID 0; reproduced in isolation. |
+| Focused frontend topology tests | Passed: 34 tests across the hierarchy, detail history, and relationship presentation suites. |
+| Full frontend suite | Passed: 22,191 tests; 3 skipped across 1,269 passing files and 1 skipped file. |
+| Frontend TypeScript check | Passed: `npx tsc --noEmit`. |
+| Go formatting and diff validation | Passed: `gofmt -d` reports no changes; `git diff --check` is clean. |
+
+The feature-branch image workflow and digest are recorded in the completion
+report after publication and digest verification. No merge to `sindri` or
+deployment is part of this phase.

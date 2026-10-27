@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -630,7 +631,10 @@ func TestExecuteGetTopologyReturnsScopedCanonicalIncidentNeighborhood(t *testing
 	registry := unifiedresources.NewRegistry(store)
 	registry.IngestRecords(unifiedresources.SourceProxmox, []unifiedresources.IngestRecord{{
 		SourceID: pveSourceID,
-		Resource: unifiedresources.Resource{Type: unifiedresources.ResourceTypeVM, Name: "www-DMZ", Status: unifiedresources.StatusOnline, LastSeen: now},
+		Resource: unifiedresources.Resource{
+			Type: unifiedresources.ResourceTypeVM, Name: "www-DMZ", Status: unifiedresources.StatusOnline, LastSeen: now,
+			Proxmox: &unifiedresources.ProxmoxData{SourceID: pveSourceID, VMID: 50110, Instance: "cluster-test", NodeName: "pve1", CPUs: 4, RuntimeStatus: "running", OSName: "Debian", OSVersion: "12", GuestAgentStatus: "available", Disks: []unifiedresources.DiskInfo{{Device: "/dev/vda", Mountpoint: "/", Total: 1024, Used: 256}}, DiskObservation: models.GuestDiskObservation{Source: "guest-agent", ObservedAt: now}},
+		},
 	}})
 	registry.IngestRecords(unifiedresources.SourceKomodo, []unifiedresources.IngestRecord{
 		{SourceID: serverSourceID, Resource: unifiedresources.Resource{Type: unifiedresources.ResourceTypeKomodoServer, Name: "www-DMZ", Status: unifiedresources.StatusOnline, LastSeen: now}},
@@ -667,6 +671,9 @@ func TestExecuteGetTopologyReturnsScopedCanonicalIncidentNeighborhood(t *testing
 	host, ok := byID[pveID]
 	if !ok || host.Type != string(unifiedresources.ResourceTypeVM) || host.Status != string(unifiedresources.StatusOnline) || !containsSource(host.Sources, unifiedresources.SourceProxmox) || !containsSource(host.Sources, unifiedresources.SourceKomodo) {
 		t.Fatalf("merged host topology resource = %+v, want both provider observations", host)
+	}
+	if host.ProxmoxGuest == nil || host.ProxmoxGuest.Source != unifiedresources.SourceProxmox || host.ProxmoxGuest.VMID != 50110 || host.ProxmoxGuest.OSName != "Debian" || len(host.ProxmoxGuest.GuestReportedDisks) != 1 || host.ProxmoxGuest.GuestReportedDisks[0].Device != "/dev/vda" || host.ProxmoxGuest.GuestDiskObservation != "guest-agent" {
+		t.Fatalf("canonical VM guest observations = %+v, want Proxmox OS and guest disk evidence on the merged identity", host.ProxmoxGuest)
 	}
 	if host.SourceStatus[unifiedresources.SourceProxmox].Status != "online" || host.SourceStatus[unifiedresources.SourceKomodo].Status != "online" {
 		t.Fatalf("host source freshness = %+v, want current observations from both providers", host.SourceStatus)
@@ -770,6 +777,166 @@ func TestExecuteGetTopologyReturnsScopedCanonicalIncidentNeighborhood(t *testing
 	}
 	if len(vmNeighborhood.Relationships) != 2 {
 		t.Fatalf("VM-started topology relationships = %+v, want the two verified edges", vmNeighborhood.Relationships)
+	}
+	var classifiedTopology struct {
+		Relationships []struct {
+			SourceID         string   `json:"sourceId"`
+			TargetID         string   `json:"targetId"`
+			Type             string   `json:"type"`
+			Scope            string   `json:"scope"`
+			Classification   string   `json:"classification"`
+			Distance         int      `json:"distance"`
+			TraversalPath    []string `json:"traversal_path"`
+			ImpactAssessment string   `json:"impact_assessment"`
+		} `json:"relationships"`
+	}
+	if err := json.Unmarshal([]byte(vmTopologyResult.Content[0].Text), &classifiedTopology); err != nil {
+		t.Fatalf("decode annotated VM topology: %v", err)
+	}
+	classified := map[string]struct {
+		scope, kind, impact string
+		distance            int
+		path                []string
+	}{}
+	for _, edge := range classifiedTopology.Relationships {
+		classified[edge.SourceID+"\x00"+edge.TargetID] = struct {
+			scope, kind, impact string
+			distance            int
+			path                []string
+		}{edge.Scope, edge.Classification, edge.ImpactAssessment, edge.Distance, edge.TraversalPath}
+	}
+	stackTopologyEdge, stackEdgeFound := classified[stackCanonicalID+"\x00"+pveID]
+	if !stackEdgeFound || stackTopologyEdge.scope != "direct" || stackTopologyEdge.distance != 1 || !reflect.DeepEqual(stackTopologyEdge.path, []string{pveID, stackCanonicalID}) {
+		t.Fatalf("direct Stack hosting topology = %+v, found=%t", stackTopologyEdge, stackEdgeFound)
+	}
+	checkTopologyEdge, checkEdgeFound := classified[probeCanonicalID+"\x00"+stackCanonicalID]
+	if !checkEdgeFound || checkTopologyEdge.scope != "indirect" || checkTopologyEdge.kind != "service_monitoring" || checkTopologyEdge.distance != 2 || !reflect.DeepEqual(checkTopologyEdge.path, []string{pveID, stackCanonicalID, probeCanonicalID}) {
+		t.Fatalf("service monitoring topology = %+v, found=%t", checkTopologyEdge, checkEdgeFound)
+	}
+}
+
+func TestCanonicalTopologyDistinguishesSharedInfrastructureAndCrossBranchEdges(t *testing.T) {
+	now := time.Date(2026, 10, 27, 11, 0, 0, 0, time.UTC)
+	const (
+		rootID       = "vm-www-dmz"
+		hostID       = "pve-host-1"
+		siblingID    = "vm-alfheim"
+		stackID      = "stack-kristi-www"
+		checkID      = "check-kristi-www-https"
+		diskID       = "disk-samsung-1"
+		storageID    = "storage-local-zfs"
+		remoteHostID = "pve-host-remote"
+		remoteID     = "service-remote-database"
+		proxyID      = "service-reverse-proxy"
+	)
+	parent := func(id string) *string { return &id }
+	currentSource := func(source unifiedresources.DataSource) map[unifiedresources.DataSource]unifiedresources.SourceStatus {
+		return map[unifiedresources.DataSource]unifiedresources.SourceStatus{source: {Status: "online", LastSeen: now}}
+	}
+	registry := unifiedresources.NewRegistry(nil)
+	registry.IngestResources([]unifiedresources.Resource{
+		{
+			ID: hostID, Type: unifiedresources.ResourceTypeAgent, Name: "pve1", Status: unifiedresources.StatusOnline, LastSeen: now,
+			Sources: []unifiedresources.DataSource{unifiedresources.SourceProxmox}, SourceStatus: currentSource(unifiedresources.SourceProxmox),
+			Proxmox: &unifiedresources.ProxmoxData{SourceID: "cluster-a-pve1", Instance: "cluster-a", NodeName: "pve1"},
+		},
+		{
+			ID: rootID, Type: unifiedresources.ResourceTypeVM, Name: "www-DMZ", Status: unifiedresources.StatusOnline, LastSeen: now, ParentID: parent(hostID),
+			Sources: []unifiedresources.DataSource{unifiedresources.SourceProxmox, unifiedresources.SourceKomodo},
+			SourceStatus: map[unifiedresources.DataSource]unifiedresources.SourceStatus{
+				unifiedresources.SourceProxmox: {Status: "stale", LastSeen: now.Add(-time.Hour)}, unifiedresources.SourceKomodo: {Status: "online", LastSeen: now},
+			},
+			Proxmox: &unifiedresources.ProxmoxData{
+				SourceID: "pve:cluster-a:vmid:50110", Instance: "cluster-a", NodeName: "pve1", VMID: 50110, CPUs: 4,
+				OSName: "Debian", OSVersion: "12", GuestAgentStatus: "available",
+				NetworkInterfaces: []unifiedresources.NetworkInterface{{Name: "ens18", MAC: "02:00:00:00:00:10", Addresses: []string{"10.0.0.10"}}},
+				Disks:             []unifiedresources.DiskInfo{{Device: "/dev/vda", Mountpoint: "/", Total: 10_000, Used: 2_500}},
+				DiskObservation:   models.GuestDiskObservation{Source: "qemu-guest-agent", ObservedAt: now.Add(-time.Minute)},
+				Memory:            &models.Memory{Total: 8_000, Used: 3_000}, SwapUsed: 128, SwapTotal: 1_024,
+			},
+		},
+		{ID: siblingID, Type: unifiedresources.ResourceTypeVM, Name: "alfheim", Status: unifiedresources.StatusOnline, LastSeen: now, ParentID: parent(hostID), Sources: []unifiedresources.DataSource{unifiedresources.SourceProxmox}, SourceStatus: currentSource(unifiedresources.SourceProxmox)},
+		{ID: stackID, Type: unifiedresources.ResourceTypeKomodoStack, Name: "kristi-www", Status: unifiedresources.StatusOnline, LastSeen: now, ParentID: parent(rootID), Sources: []unifiedresources.DataSource{unifiedresources.SourceKomodo}, SourceStatus: currentSource(unifiedresources.SourceKomodo)},
+		{
+			ID: checkID, Type: unifiedresources.ResourceTypeNetworkEndpoint, Name: "kristi-www HTTPS", Status: unifiedresources.StatusOffline, LastSeen: now,
+			Sources: []unifiedresources.DataSource{unifiedresources.SourceAvailability}, SourceStatus: currentSource(unifiedresources.SourceAvailability),
+			Availability:  &unifiedresources.AvailabilityData{TargetID: checkID, LinkedResourceID: stackID, Protocol: "https", Available: false, LastChecked: &now},
+			Incidents:     []unifiedresources.ResourceIncident{{Code: "availability_unreachable", Severity: storagehealth.RiskCritical, Summary: "HTTPS returned 503", StartedAt: now}},
+			Relationships: []unifiedresources.ResourceRelationship{{SourceID: checkID, TargetID: stackID, Type: unifiedresources.RelChecks, Confidence: 1, EvidenceSource: unifiedresources.SourceAvailability, EvidenceFreshness: unifiedresources.RelationshipFreshnessCurrent, Active: true, Discoverer: "availability_adapter", ObservedAt: now, LastSeenAt: now}},
+		},
+		{
+			ID: diskID, Type: unifiedresources.ResourceTypePhysicalDisk, Name: "Samsung SSD", Status: unifiedresources.StatusOffline, LastSeen: now, ParentID: parent(hostID),
+			Sources: []unifiedresources.DataSource{unifiedresources.SourceProxmox}, SourceStatus: currentSource(unifiedresources.SourceProxmox),
+			PhysicalDisk: &unifiedresources.PhysicalDiskMeta{Model: "Samsung SSD", Serial: "SYNTH-SERIAL-1", DevPath: "/dev/sda", Health: "FAILED"},
+			Incidents:    []unifiedresources.ResourceIncident{{Code: "physical_disk_failed", Severity: storagehealth.RiskCritical, Summary: "SMART reports failed", StartedAt: now}},
+		},
+		{ID: storageID, Type: unifiedresources.ResourceTypeStorage, Name: "local-zfs", Status: unifiedresources.StatusOnline, LastSeen: now, ParentID: parent(hostID), Sources: []unifiedresources.DataSource{unifiedresources.SourceProxmox}, SourceStatus: currentSource(unifiedresources.SourceProxmox)},
+		{ID: remoteHostID, Type: unifiedresources.ResourceTypeAgent, Name: "pve2", Status: unifiedresources.StatusOnline, LastSeen: now, Sources: []unifiedresources.DataSource{unifiedresources.SourceProxmox}, SourceStatus: currentSource(unifiedresources.SourceProxmox), Proxmox: &unifiedresources.ProxmoxData{SourceID: "cluster-b-pve2", Instance: "cluster-b", NodeName: "pve2"}},
+		{
+			ID: remoteID, Type: unifiedresources.ResourceTypeKomodoDeployment, Name: "remote-database", Status: unifiedresources.StatusOnline, LastSeen: now, ParentID: parent(remoteHostID),
+			Sources: []unifiedresources.DataSource{unifiedresources.SourceKomodo}, SourceStatus: currentSource(unifiedresources.SourceKomodo),
+		},
+		{
+			ID: proxyID, Type: unifiedresources.ResourceTypeKomodoDeployment, Name: "reverse-proxy", Status: unifiedresources.StatusOnline, LastSeen: now,
+			Sources: []unifiedresources.DataSource{unifiedresources.SourceKomodo}, SourceStatus: currentSource(unifiedresources.SourceKomodo),
+		},
+	})
+	stack, ok := registry.Get(stackID)
+	if !ok {
+		t.Fatal("Komodo Stack missing from canonical registry")
+	}
+	stack.Relationships = append(stack.Relationships, unifiedresources.ResourceRelationship{
+		SourceID: stackID, TargetID: remoteID, Type: unifiedresources.RelDependsOn, Confidence: 1,
+		EvidenceSource: unifiedresources.SourceKomodo, EvidenceFreshness: unifiedresources.RelationshipFreshnessCurrent,
+		Active: true, Discoverer: "operator_store", ObservedAt: now, LastSeenAt: now,
+	}, unifiedresources.ResourceRelationship{
+		SourceID: stackID, TargetID: proxyID, Type: unifiedresources.RelRoutesTo, Confidence: 1,
+		EvidenceSource: unifiedresources.SourceKomodo, EvidenceFreshness: unifiedresources.RelationshipFreshnessCurrent,
+		Active: true, Discoverer: "komodo_adapter", ObservedAt: now, LastSeenAt: now,
+	})
+	registry.IngestResources([]unifiedresources.Resource{*stack})
+
+	response := BuildTopologyResponseFromReadState(registry, TopologyBuildOptions{Include: "all"})
+	if err := attachCanonicalTopologyContext(&response, registry, unifiedresources.NewUnifiedAIAdapter(registry), rootID, 2, 50); err != nil {
+		t.Fatalf("attach topology context: %v", err)
+	}
+	if response.RootResourceID != rootID {
+		t.Fatalf("topology root = %q, want %q", response.RootResourceID, rootID)
+	}
+	resourcesByID := make(map[string]CanonicalTopologyResource, len(response.CanonicalResources))
+	for _, resource := range response.CanonicalResources {
+		resourcesByID[resource.ID] = resource
+	}
+	if len(resourcesByID) != 9 {
+		t.Fatalf("topology resources = %+v, want root, host, sibling, Stack, check, disk, storage, cross-branch dependency and routing target", response.CanonicalResources)
+	}
+	vm := resourcesByID[rootID]
+	if vm.ProxmoxGuest == nil || vm.ProxmoxGuest.VMID != 50110 || vm.ProxmoxGuest.OSName != "Debian" || vm.ProxmoxGuest.Source != unifiedresources.SourceProxmox || vm.ProxmoxGuest.Freshness != "stale" || !vm.ProxmoxGuest.ObservedAt.Equal(now.Add(-time.Hour)) || len(vm.ProxmoxGuest.GuestReportedDisks) != 1 || vm.ProxmoxGuest.GuestDiskObservation != "qemu-guest-agent" || len(vm.ProxmoxGuest.NetworkInterfaces) != 1 || vm.ProxmoxGuest.Memory == nil || vm.ProxmoxGuest.SwapTotal != 1_024 {
+		t.Fatalf("canonical VM guest facts = %+v, want PVE identity, OS and guest device provenance", vm.ProxmoxGuest)
+	}
+	if len(resourcesByID[diskID].Incidents) != 1 || len(vm.Incidents) != 0 || len(resourcesByID[siblingID].Incidents) != 0 {
+		t.Fatalf("confirmed failure leaked across shared infrastructure: disk=%+v VM=%+v sibling=%+v", resourcesByID[diskID].Incidents, vm.Incidents, resourcesByID[siblingID].Incidents)
+	}
+	byEdge := make(map[string]CanonicalTopologyRelationship, len(response.Relationships))
+	for _, edge := range response.Relationships {
+		byEdge[edge.SourceID+"\x00"+edge.TargetID] = edge
+	}
+	assert := func(sourceID, targetID, scope, classification, impact string, path []string) {
+		t.Helper()
+		edge, found := byEdge[sourceID+"\x00"+targetID]
+		if !found || edge.Scope != scope || edge.Classification != classification || edge.ImpactAssessment != impact || !reflect.DeepEqual(edge.TraversalPath, path) {
+			t.Fatalf("topology edge %s -> %s = %+v, found=%t; want scope=%s class=%s impact=%s path=%v", sourceID, targetID, edge, found, scope, classification, impact, path)
+		}
+	}
+	assert(rootID, hostID, "direct", "direct_relationship", "potential_only", []string{rootID, hostID})
+	assert(stackID, rootID, "direct", "direct_relationship", "potential_only", []string{rootID, stackID})
+	assert(checkID, stackID, "indirect", "service_monitoring", "service_observation", []string{rootID, stackID, checkID})
+	assert(diskID, hostID, "indirect", "shared_infrastructure", "shared_failure_domain_candidate", []string{rootID, hostID, diskID})
+	assert(siblingID, hostID, "indirect", "shared_infrastructure", "shared_failure_domain_candidate", []string{rootID, hostID, siblingID})
+	assert(stackID, remoteID, "indirect", "indirect_dependency", "potential_only", []string{rootID, stackID, remoteID})
+	assert(stackID, proxyID, "indirect", "cross_branch_relationship", "potential_only", []string{rootID, stackID, proxyID})
+	if resourcesByID[remoteID].ParentID != remoteHostID {
+		t.Fatalf("cross-host service parent = %q, want its independently observed Proxmox host %q", resourcesByID[remoteID].ParentID, remoteHostID)
 	}
 }
 

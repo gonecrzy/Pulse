@@ -827,17 +827,26 @@ describe('ResourceDetailDrawer change history section', () => {
     expect(screen.queryByText('Quick links')).toBeNull();
     const relationshipMap = within(screen.getByTestId('resource-relationship-map-section'));
     expect(screen.getByText('Relationship map')).toBeInTheDocument();
-    expect(relationshipMap.getByText('Canonical relationships')).toBeInTheDocument();
+    expect(relationshipMap.getByText('Direct relationships')).toBeInTheDocument();
     // Legacy /infrastructure?resource=... cross-jumps were retired; the
     // relationship map renders resource labels as plain text now.
     expect(relationshipMap.queryAllByRole('link')).toHaveLength(0);
     expect(relationshipMap.getByText('PVE Node 1')).toBeInTheDocument();
     expect(relationshipMap.getByText('Runs On')).toBeInTheDocument();
-    expect(screen.getByText('Depends on')).toBeInTheDocument();
-    expect(screen.getByText('Used by')).toBeInTheDocument();
     expect(screen.getByText('Correlations')).toBeInTheDocument();
-    expect(screen.getByText('Storage 1 alias')).toBeInTheDocument();
-    expect(screen.getByText('VM Child')).toBeInTheDocument();
+    const aiSuggestions = screen.getByText('AI relationship suggestions (2)');
+    expect(aiSuggestions).toBeInTheDocument();
+    expect(screen.getByText('Suggested dependencies')).not.toBeVisible();
+    fireEvent.click(aiSuggestions);
+    expect(
+      screen.getByText(
+        'These analysis results are candidate paths. They are not provider-verified dependencies or confirmed impact.',
+      ),
+    ).toBeVisible();
+    expect(screen.getByText('Suggested dependencies')).toBeVisible();
+    expect(screen.getByText('Potentially used by')).toBeVisible();
+    expect(screen.getByText('Storage 1 alias')).toBeVisible();
+    expect(screen.getByText('VM Child')).toBeVisible();
     // Platform context sits inside the Overview's Details, opened by render().
     await screen.findByText('Platform details');
     expect(screen.getByText('Context')).toBeInTheDocument();

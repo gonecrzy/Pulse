@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"testing"
 	"time"
 
@@ -293,6 +294,274 @@ func TestProxmoxDetailsProjectRelatedKomodoChainAtTwoHops(t *testing.T) {
 	}
 	if !hosting || !checks {
 		t.Fatalf("relationship context direction/provenance = %+v", payload.RelationshipContext.Relationships)
+	}
+}
+
+func TestResourceDetailsSeparateServiceMonitoringFromSharedHostContext(t *testing.T) {
+	const orgID = "default"
+	now := time.Date(2026, 10, 27, 12, 0, 0, 0, time.UTC)
+	const (
+		instance              = "cluster-a"
+		nodeName              = "pve1"
+		vmSourceID            = "pve:cluster-a:vmid:50110"
+		siblingSource         = "pve:cluster-a:vmid:50111"
+		serverSourceID        = "komodo:connection-a:server:www-dmz"
+		siblingServerSourceID = "komodo:connection-a:server:alfheim"
+		stackSourceID         = "komodo:connection-a:stack:kristi-www"
+		stack2SourceID        = "komodo:connection-a:stack:metrics"
+		siblingStackSourceID  = "komodo:connection-a:stack:alfheim-main"
+		siblingStack2SourceID = "komodo:connection-a:stack:alfheim-worker"
+		checkSourceID         = "https-kristi-www"
+		check2SourceID        = "https-metrics"
+		siblingCheckSourceID  = "https-alfheim-main"
+		siblingCheck2SourceID = "https-alfheim-worker"
+	)
+	stackLinkID := unifiedresources.SourceSpecificID(unifiedresources.ResourceTypeKomodoStack, unifiedresources.SourceKomodo, stackSourceID)
+	stack2LinkID := unifiedresources.SourceSpecificID(unifiedresources.ResourceTypeKomodoStack, unifiedresources.SourceKomodo, stack2SourceID)
+	serverLinkID := unifiedresources.SourceSpecificID(unifiedresources.ResourceTypeKomodoServer, unifiedresources.SourceKomodo, serverSourceID)
+	siblingServerLinkID := unifiedresources.SourceSpecificID(unifiedresources.ResourceTypeKomodoServer, unifiedresources.SourceKomodo, siblingServerSourceID)
+	siblingStackLinkID := unifiedresources.SourceSpecificID(unifiedresources.ResourceTypeKomodoStack, unifiedresources.SourceKomodo, siblingStackSourceID)
+	siblingStack2LinkID := unifiedresources.SourceSpecificID(unifiedresources.ResourceTypeKomodoStack, unifiedresources.SourceKomodo, siblingStack2SourceID)
+	checkedAt := now.Add(-time.Minute)
+	state := models.StateSnapshot{
+		LastUpdate: now,
+		Nodes:      []models.Node{{ID: instance + "-" + nodeName, Name: nodeName, Instance: instance, Status: "online", Type: "node", LastSeen: now}},
+		VMs: []models.VM{
+			{ID: vmSourceID, VMID: 50110, Name: "www-DMZ", Node: nodeName, Instance: instance, Status: "running", Type: "qemu", OSName: "Debian", OSVersion: "12", NetworkInterfaces: []models.GuestNetworkInterface{{Name: "ens18", MAC: "02:00:00:00:00:10", Addresses: []string{"10.0.0.10"}}}, Disks: []models.Disk{{Device: "/dev/vda", Mountpoint: "/", Total: 1000, Used: 250}}, ConfigStorageVolumes: []models.ProxmoxVMStorageVolume{{DeviceKey: "scsi0", VolumeID: "local-zfs:vm-50110-disk-0", StorageID: "local-zfs"}}, ConfigObservedAt: now, ConfigObservationStatus: "current", LastSeen: now},
+			{ID: siblingSource, VMID: 50111, Name: "alfheim", Node: nodeName, Instance: instance, Status: "running", Type: "qemu", LastSeen: now},
+		},
+		Storage: []models.Storage{{ID: instance + "-" + nodeName + "-local-zfs", Name: "local-zfs", Node: nodeName, Instance: instance, Type: "zfspool", Status: "available", Pool: "rpool", Active: true, LastSeen: now}},
+		PhysicalDisks: []models.PhysicalDisk{
+			{ID: instance + "-" + nodeName + "-disk-a", Node: nodeName, Instance: instance, DevPath: "/dev/sda", Model: "Samsung SSD", Serial: "SYNTH-DISK-A", Type: "sata", Size: 1000, Health: "PASSED", LastChecked: now},
+			{ID: instance + "-" + nodeName + "-disk-b", Node: nodeName, Instance: instance, DevPath: "/dev/sdb", Model: "Samsung SSD", Serial: "SYNTH-DISK-B", Type: "sata", Size: 2000, Health: "PASSED", LastChecked: now},
+		},
+	}
+	h := NewQueryService(&config.Config{DataPath: t.TempDir()})
+	h.SetStateProvider(resourceStateProvider{snapshot: state})
+	h.SetSupplementalRecordsProvider(unifiedresources.SourceKomodo, operatorRelationshipRecordProvider{records: []unifiedresources.IngestRecord{
+		{SourceID: serverSourceID, Resource: unifiedresources.Resource{ID: serverSourceID, Name: "www-DMZ", Type: unifiedresources.ResourceTypeKomodoServer, Status: unifiedresources.StatusOnline, LastSeen: now}},
+		{SourceID: siblingServerSourceID, Resource: unifiedresources.Resource{ID: siblingServerSourceID, Name: "alfheim", Type: unifiedresources.ResourceTypeKomodoServer, Status: unifiedresources.StatusOnline, LastSeen: now}},
+		{SourceID: stackSourceID, ParentSourceID: serverSourceID, Resource: unifiedresources.Resource{ID: stackSourceID, Name: "kristi-www", Type: unifiedresources.ResourceTypeKomodoStack, Status: unifiedresources.StatusOnline, LastSeen: now, Relationships: []unifiedresources.ResourceRelationship{{SourceID: stackLinkID, TargetID: serverLinkID, Type: unifiedresources.RelHostedBy, Confidence: 1, EvidenceSource: unifiedresources.SourceKomodo, Active: true, Discoverer: "komodo_adapter", ObservedAt: now, LastSeenAt: now}}}},
+		{SourceID: stack2SourceID, ParentSourceID: serverSourceID, Resource: unifiedresources.Resource{ID: stack2SourceID, Name: "metrics", Type: unifiedresources.ResourceTypeKomodoStack, Status: unifiedresources.StatusOnline, LastSeen: now, Relationships: []unifiedresources.ResourceRelationship{{SourceID: stack2LinkID, TargetID: serverLinkID, Type: unifiedresources.RelHostedBy, Confidence: 1, EvidenceSource: unifiedresources.SourceKomodo, Active: true, Discoverer: "komodo_adapter", ObservedAt: now, LastSeenAt: now}}}},
+		{SourceID: siblingStackSourceID, ParentSourceID: siblingServerSourceID, Resource: unifiedresources.Resource{ID: siblingStackSourceID, Name: "alfheim-main", Type: unifiedresources.ResourceTypeKomodoStack, Status: unifiedresources.StatusOnline, LastSeen: now, Relationships: []unifiedresources.ResourceRelationship{{SourceID: siblingStackLinkID, TargetID: siblingServerLinkID, Type: unifiedresources.RelHostedBy, Confidence: 1, EvidenceSource: unifiedresources.SourceKomodo, Active: true, Discoverer: "komodo_adapter", ObservedAt: now, LastSeenAt: now}}}},
+		{SourceID: siblingStack2SourceID, ParentSourceID: siblingServerSourceID, Resource: unifiedresources.Resource{ID: siblingStack2SourceID, Name: "alfheim-worker", Type: unifiedresources.ResourceTypeKomodoStack, Status: unifiedresources.StatusOnline, LastSeen: now, Relationships: []unifiedresources.ResourceRelationship{{SourceID: siblingStack2LinkID, TargetID: siblingServerLinkID, Type: unifiedresources.RelHostedBy, Confidence: 1, EvidenceSource: unifiedresources.SourceKomodo, Active: true, Discoverer: "komodo_adapter", ObservedAt: now, LastSeenAt: now}}}},
+	}})
+	h.SetSupplementalRecordsProvider(unifiedresources.SourceAvailability, availabilityRelationshipRecordProvider{records: []unifiedresources.IngestRecord{
+		{SourceID: checkSourceID, Resource: unifiedresources.Resource{ID: checkSourceID, Name: "kristi-www HTTPS", Type: unifiedresources.ResourceTypeNetworkEndpoint, Status: unifiedresources.StatusOffline, LastSeen: now, Availability: &unifiedresources.AvailabilityData{TargetID: checkSourceID, LinkedResourceID: stackLinkID, Protocol: "https", Enabled: true, Available: false, LastChecked: &checkedAt}}},
+		{SourceID: check2SourceID, Resource: unifiedresources.Resource{ID: check2SourceID, Name: "metrics HTTPS", Type: unifiedresources.ResourceTypeNetworkEndpoint, Status: unifiedresources.StatusOnline, LastSeen: now, Availability: &unifiedresources.AvailabilityData{TargetID: check2SourceID, LinkedResourceID: stack2LinkID, Protocol: "https", Enabled: true, Available: true, LastChecked: &checkedAt}}},
+		{SourceID: siblingCheckSourceID, Resource: unifiedresources.Resource{ID: siblingCheckSourceID, Name: "alfheim-main HTTPS", Type: unifiedresources.ResourceTypeNetworkEndpoint, Status: unifiedresources.StatusOnline, LastSeen: now, Availability: &unifiedresources.AvailabilityData{TargetID: siblingCheckSourceID, LinkedResourceID: siblingStackLinkID, Protocol: "https", Enabled: true, Available: true, LastChecked: &checkedAt}}},
+		{SourceID: siblingCheck2SourceID, Resource: unifiedresources.Resource{ID: siblingCheck2SourceID, Name: "alfheim-worker HTTPS", Type: unifiedresources.ResourceTypeNetworkEndpoint, Status: unifiedresources.StatusOnline, LastSeen: now, Availability: &unifiedresources.AvailabilityData{TargetID: siblingCheck2SourceID, LinkedResourceID: siblingStack2LinkID, Protocol: "https", Enabled: true, Available: true, LastChecked: &checkedAt}}},
+	}})
+	store, err := h.getStore(orgID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	registry, err := h.BuildRegistry(orgID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	canonicalID := func(reference string) string {
+		t.Helper()
+		_, id, ok := registry.GetByReference(reference)
+		if !ok {
+			t.Fatalf("fixture reference %q did not resolve", reference)
+		}
+		return id
+	}
+	vmID := canonicalID(vmSourceID)
+	serverID := canonicalID(serverSourceID)
+	siblingID := canonicalID(siblingSource)
+	siblingServerID := canonicalID(siblingServerSourceID)
+	if err := store.AddLink(unifiedresources.ResourceLink{ResourceA: vmID, ResourceB: serverID, PrimaryID: vmID, Reason: "operator confirmed same machine", CreatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.AddLink(unifiedresources.ResourceLink{ResourceA: siblingID, ResourceB: siblingServerID, PrimaryID: siblingID, Reason: "operator confirmed same machine", CreatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	h.cacheMu.Lock()
+	delete(h.registryCache, cacheKey(orgID))
+	h.cacheMu.Unlock()
+	registry, err = h.BuildRegistry(orgID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	vmID = canonicalID(vmSourceID)
+	siblingID = canonicalID(siblingSource)
+	hostID := canonicalID(instance + "-" + nodeName)
+	serverID = canonicalID(serverSourceID)
+	if serverID != vmID {
+		t.Fatalf("operator-confirmed Komodo Server identity resolved to %q, want canonical Proxmox VM %q", serverID, vmID)
+	}
+	stackID := canonicalID(stackSourceID)
+	stack2ID := canonicalID(stack2SourceID)
+	checkID := canonicalID(checkSourceID)
+	check2ID := canonicalID(check2SourceID)
+	disk1ID := canonicalID(instance + "-" + nodeName + "-disk-a")
+	disk2ID := canonicalID(instance + "-" + nodeName + "-disk-b")
+	storageID := canonicalID(instance + "-" + nodeName + "-local-zfs")
+	request := httptest.NewRequest(http.MethodGet, "/api/resources/"+vmID, nil)
+	request = request.WithContext(context.WithValue(request.Context(), apicontext.OrgIDContextKey, orgID))
+	response := httptest.NewRecorder()
+	h.HandleResourceRoutes(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("GET VM details status=%d body=%s", response.Code, response.Body.String())
+	}
+	var payload struct {
+		unifiedresources.Resource
+		RelationshipContext struct {
+			Resources []struct {
+				ID       string   `json:"id"`
+				Name     string   `json:"name"`
+				ParentID string   `json:"parentId"`
+				Distance int      `json:"distance"`
+				Path     []string `json:"path"`
+			} `json:"resources"`
+			Relationships []unifiedresources.ResourceRelationship `json:"relationships"`
+			Details       []struct {
+				Relationship     unifiedresources.ResourceRelationship `json:"relationship"`
+				Scope            string                                `json:"scope"`
+				Classification   string                                `json:"classification"`
+				Distance         int                                   `json:"distance"`
+				TraversalPath    []string                              `json:"traversalPath"`
+				ImpactAssessment string                                `json:"impactAssessment"`
+			} `json:"relationshipDetails"`
+		} `json:"relationshipContext"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.ID != vmID || payload.Proxmox == nil || payload.Proxmox.VMID != 50110 || payload.Proxmox.OSName != "Debian" || len(payload.Proxmox.Disks) != 1 || payload.Proxmox.Disks[0].Device != "/dev/vda" || len(payload.Proxmox.NetworkInterfaces) != 1 || payload.Proxmox.NetworkInterfaces[0].Name != "ens18" {
+		var disk models.Disk
+		if payload.Proxmox != nil && len(payload.Proxmox.Disks) > 0 {
+			disk = models.Disk{Device: payload.Proxmox.Disks[0].Device, Mountpoint: payload.Proxmox.Disks[0].Mountpoint}
+		}
+		var vmid int
+		var osName string
+		var diskCount int
+		if payload.Proxmox != nil {
+			vmid, osName, diskCount = payload.Proxmox.VMID, payload.Proxmox.OSName, len(payload.Proxmox.Disks)
+		}
+		t.Fatalf("canonical VM observations = id:%s wantID:%s vmid:%d os:%q disks:%d first:%+v, want Proxmox VM identity, OS and guest-reported disk on the VM", payload.ID, vmID, vmid, osName, diskCount, disk)
+	}
+	if !containsDataSource(payload.Sources, unifiedresources.SourceKomodo) || !containsDataSource(payload.Sources, unifiedresources.SourceProxmox) {
+		t.Fatalf("canonical VM providers = %v, want confirmed Komodo and Proxmox observations", payload.Sources)
+	}
+	for _, id := range []string{hostID, stackID, stack2ID, checkID, check2ID, siblingID, storageID, disk1ID, disk2ID} {
+		found := false
+		for _, resource := range payload.RelationshipContext.Resources {
+			found = found || resource.ID == id
+		}
+		if !found {
+			t.Fatalf("topology omitted %s from bounded context: %+v", id, payload.RelationshipContext.Resources)
+		}
+	}
+	if len(payload.Relationships) != 4 {
+		t.Fatalf("default resource relationship list = %+v, want VM hosting, verified storage backing and two directly hosted Stacks", payload.Relationships)
+	}
+	classifications := make(map[string]struct {
+		scope            string
+		classification   string
+		distance         int
+		path             []string
+		impactAssessment string
+	})
+	for _, edge := range payload.RelationshipContext.Details {
+		classifications[edge.Relationship.SourceID+"\x00"+edge.Relationship.TargetID] = struct {
+			scope            string
+			classification   string
+			distance         int
+			path             []string
+			impactAssessment string
+		}{edge.Scope, edge.Classification, edge.Distance, edge.TraversalPath, edge.ImpactAssessment}
+	}
+	assertEdge := func(sourceID, targetID, class string, distance int, path []string) unifiedresources.ResourceRelationship {
+		t.Helper()
+		got, ok := classifications[sourceID+"\x00"+targetID]
+		if !ok {
+			t.Fatalf("topology omitted classified edge %s -> %s: %+v", sourceID, targetID, payload.RelationshipContext.Details)
+		}
+		if got.classification != class || got.distance != distance || !reflect.DeepEqual(got.path, path) {
+			t.Fatalf("classified edge %s -> %s = %+v, want class=%s distance=%d path=%v", sourceID, targetID, got, class, distance, path)
+		}
+		for _, edge := range payload.RelationshipContext.Relationships {
+			if edge.SourceID == sourceID && edge.TargetID == targetID {
+				return edge
+			}
+		}
+		t.Fatalf("raw graph omitted edge %s -> %s", sourceID, targetID)
+		return unifiedresources.ResourceRelationship{}
+	}
+	stackEdge := assertEdge(stackID, vmID, "direct_relationship", 1, []string{vmID, stackID})
+	if stackEdge.Type != unifiedresources.RelHostedBy || stackEdge.EvidenceSource != unifiedresources.SourceKomodo || stackEdge.Discoverer != "komodo_adapter" {
+		t.Fatalf("Stack hosting evidence = %+v", stackEdge)
+	}
+	backingEdge := assertEdge(vmID, storageID, "verified_hardware_backing", 1, []string{vmID, storageID})
+	volumeEvidence, _ := backingEdge.Metadata["configVolumes"].([]any)
+	var volume map[string]any
+	if len(volumeEvidence) > 0 {
+		volume, _ = volumeEvidence[0].(map[string]any)
+	}
+	if backingEdge.Type != unifiedresources.RelStoresOn || backingEdge.EvidenceSource != unifiedresources.SourceProxmox || backingEdge.Discoverer != "proxmox_vm_config" || volume["deviceKey"] != "scsi0" || volume["volumeId"] != "local-zfs:vm-50110-disk-0" {
+		t.Fatalf("VM virtual disk backing evidence = %+v", backingEdge)
+	}
+	checkEdge := assertEdge(checkID, stackID, "service_monitoring", 2, []string{vmID, stackID, checkID})
+	if checkEdge.Type != unifiedresources.RelChecks || checkEdge.EvidenceSource != unifiedresources.SourceAvailability {
+		t.Fatalf("HTTPS monitoring edge = %+v", checkEdge)
+	}
+	diskEdge := assertEdge(disk1ID, hostID, "shared_infrastructure", 2, []string{vmID, hostID, disk1ID})
+	if diskEdge.Type != unifiedresources.RelMountedTo || diskEdge.EvidenceSource != unifiedresources.SourceProxmox {
+		t.Fatalf("host disk edge = %+v", diskEdge)
+	}
+	storageEdge := assertEdge(storageID, hostID, "shared_infrastructure", 2, []string{vmID, hostID, storageID})
+	if storageEdge.Type != unifiedresources.RelMountedTo || storageEdge.EvidenceSource != unifiedresources.SourceProxmox {
+		t.Fatalf("host storage edge = %+v", storageEdge)
+	}
+	siblingEdge := assertEdge(siblingID, hostID, "shared_infrastructure", 2, []string{vmID, hostID, siblingID})
+	if siblingEdge.Type != unifiedresources.RelRunsOn || siblingEdge.EvidenceSource != unifiedresources.SourceProxmox {
+		t.Fatalf("sibling placement edge = %+v", siblingEdge)
+	}
+	if _, exists := classifications[vmID+"\x00"+disk1ID]; exists {
+		t.Fatal("guest-reported /dev/vda or shared host SSD was incorrectly promoted to VM backing")
+	}
+	if disk1ID == disk2ID {
+		t.Fatal("same-name Samsung drives with distinct Proxmox native identities collapsed")
+	}
+
+	siblingRequest := httptest.NewRequest(http.MethodGet, "/api/resources/"+siblingID, nil)
+	siblingRequest = siblingRequest.WithContext(context.WithValue(siblingRequest.Context(), apicontext.OrgIDContextKey, orgID))
+	siblingResponse := httptest.NewRecorder()
+	h.HandleResourceRoutes(siblingResponse, siblingRequest)
+	if siblingResponse.Code != http.StatusOK {
+		t.Fatalf("GET sibling VM details status=%d body=%s", siblingResponse.Code, siblingResponse.Body.String())
+	}
+	var siblingPayload struct {
+		Relationships       []unifiedresources.ResourceRelationship `json:"relationships"`
+		RelationshipContext struct {
+			Details []struct {
+				Relationship   unifiedresources.ResourceRelationship `json:"relationship"`
+				Classification string                                `json:"classification"`
+			} `json:"relationshipDetails"`
+		} `json:"relationshipContext"`
+	}
+	if err := json.NewDecoder(siblingResponse.Body).Decode(&siblingPayload); err != nil {
+		t.Fatal(err)
+	}
+	if len(siblingPayload.Relationships) != 3 {
+		t.Fatalf("sibling VM direct relationships = %+v, want its host and two directly hosted Stacks", siblingPayload.Relationships)
+	}
+	stackHosting, checkCount := 0, 0
+	for _, relationship := range siblingPayload.Relationships {
+		if relationship.Type == unifiedresources.RelHostedBy && relationship.EvidenceSource == unifiedresources.SourceKomodo && relationship.Discoverer == "komodo_adapter" {
+			stackHosting++
+		}
+	}
+	for _, edge := range siblingPayload.RelationshipContext.Details {
+		if edge.Relationship.Type == unifiedresources.RelChecks && edge.Classification == "service_monitoring" && edge.Relationship.EvidenceSource == unifiedresources.SourceAvailability {
+			checkCount++
+		}
+	}
+	if stackHosting != 2 || checkCount != 2 {
+		t.Fatalf("sibling VM Stack and check associations = direct Komodo Stack edges %d, indirect availability checks %d; want two of each", stackHosting, checkCount)
 	}
 }
 

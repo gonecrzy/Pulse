@@ -146,6 +146,28 @@ describe('resourceCorrelationPresentation utils', () => {
     ]);
   });
 
+  it('prioritizes the selected resource parent and workloads before dependency context', () => {
+    const selected = 'vm:www-dmz';
+    const sorted = sortResourceRelationships(
+      [
+        { ...relationship, sourceId: 'check:https', targetId: selected, type: 'checks' },
+        { ...relationship, sourceId: selected, targetId: 'storage:local-zfs', type: 'stores_on' },
+        { ...relationship, sourceId: 'stack:kristi-www', targetId: selected, type: 'hosted_by' },
+        { ...relationship, sourceId: selected, targetId: 'database', type: 'depends_on' },
+        { ...relationship, sourceId: selected, targetId: 'host:pve1', type: 'runs_on' },
+      ],
+      selected,
+    );
+
+    expect(sorted.map((item) => item.type)).toEqual([
+      'runs_on',
+      'hosted_by',
+      'depends_on',
+      'stores_on',
+      'checks',
+    ]);
+  });
+
   it('formats canonical correlation summary text', () => {
     expect(
       formatResourceCorrelationSummaryText({

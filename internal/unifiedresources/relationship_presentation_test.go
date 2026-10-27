@@ -3,7 +3,93 @@ package unifiedresources
 import (
 	"testing"
 	"time"
+
+	"github.com/rcourtman/pulse-go-rewrite/internal/models"
 )
+
+func TestProxmoxVMConfigProjectsOnlyVerifiedStorageBacking(t *testing.T) {
+	now := time.Date(2026, 10, 27, 12, 0, 0, 0, time.UTC)
+	vm := Resource{
+		ID: "vm-www-dmz", Type: ResourceTypeVM, Sources: []DataSource{SourceProxmox},
+		Proxmox: &ProxmoxData{
+			VMID: 50110, Instance: "cluster-a", NodeName: "pve01", VMConfigObservedAt: now,
+			VMConfigStorageVolumes: []models.ProxmoxVMStorageVolume{
+				{DeviceKey: "scsi0", VolumeID: "local-zfs:vm-50110-disk-0", StorageID: "local-zfs"},
+				{DeviceKey: "scsi1", VolumeID: "local-zfs:vm-50110-disk-1", StorageID: "local-zfs"},
+				{DeviceKey: "virtio0", VolumeID: "ceph-rbd:vm-50110-disk-1", StorageID: "ceph-rbd"},
+			},
+		},
+		SourceStatus: map[DataSource]SourceStatus{SourceProxmox: {Status: "stale"}},
+	}
+	resources := []Resource{
+		vm,
+		{ID: "store-pve01", Type: ResourceTypeStorage, Name: "local-zfs", Sources: []DataSource{SourceProxmox},
+			Proxmox: &ProxmoxData{Instance: "cluster-a", NodeName: "pve01"}, Storage: &StorageMeta{}},
+		{ID: "store-pve02", Type: ResourceTypeStorage, Name: "local-zfs", Sources: []DataSource{SourceProxmox},
+			Proxmox: &ProxmoxData{Instance: "cluster-a", NodeName: "pve02"}, Storage: &StorageMeta{}},
+		{ID: "store-ceph", Type: ResourceTypeStorage, Name: "ceph-rbd", Sources: []DataSource{SourceProxmox},
+			Proxmox: &ProxmoxData{Instance: "cluster-a", NodeName: "cluster"}, Storage: &StorageMeta{Shared: true, Nodes: []string{"pve01", "pve02"}}},
+		{ID: "wrong-instance", Type: ResourceTypeStorage, Name: "local-zfs", Sources: []DataSource{SourceProxmox},
+			Proxmox: &ProxmoxData{Instance: "cluster-b", NodeName: "pve01"}, Storage: &StorageMeta{}},
+		{ID: "host-ssd", Type: ResourceTypePhysicalDisk, Name: "Samsung SSD", Sources: []DataSource{SourceProxmox},
+			Proxmox: &ProxmoxData{Instance: "cluster-a", NodeName: "pve01"}},
+	}
+
+	got := ProxmoxVMStorageBackingRelationships(resources)
+	if len(got) != 2 {
+		t.Fatalf("verified VM storage relationships = %+v, want two config-backed stores_on edges", got)
+	}
+	wantTargets := map[string]bool{"store-pve01": true, "store-ceph": true}
+	for _, relationship := range got {
+		if relationship.SourceID != "vm-www-dmz" || relationship.Type != RelStoresOn || relationship.EvidenceSource != SourceProxmox || relationship.Discoverer != "proxmox_vm_config" {
+			t.Errorf("relationship provenance or direction = %+v", relationship)
+		}
+		if !wantTargets[relationship.TargetID] {
+			t.Errorf("unexpected backing target %q", relationship.TargetID)
+		}
+		delete(wantTargets, relationship.TargetID)
+		if relationship.EvidenceFreshness != RelationshipFreshnessStale {
+			t.Errorf("relationship freshness = %q, want stale", relationship.EvidenceFreshness)
+		}
+	}
+	if len(wantTargets) != 0 {
+		t.Errorf("missing verified storage targets %v", wantTargets)
+	}
+	for _, relationship := range got {
+		if relationship.TargetID == "store-pve01" {
+			volumes, ok := relationship.Metadata["configVolumes"].([]models.ProxmoxVMStorageVolume)
+			if !ok || len(volumes) != 2 {
+				t.Fatalf("same-store virtual disk evidence = %#v, want both device volume IDs on one canonical edge", relationship.Metadata["configVolumes"])
+			}
+		}
+	}
+	failedVM := vm
+	failedVM.Proxmox = cloneProxmoxData(vm.Proxmox)
+	failedVM.Proxmox.VMConfigObservationStatus = "unavailable"
+	failedVM.SourceStatus = map[DataSource]SourceStatus{SourceProxmox: {Status: "online"}}
+	failedResources := append([]Resource(nil), resources...)
+	failedResources[0] = failedVM
+	failedRelationships := ProxmoxVMStorageBackingRelationships(failedResources)
+	if len(failedRelationships) != 2 || failedRelationships[0].EvidenceFreshness != RelationshipFreshnessStale {
+		t.Fatalf("last-known backing evidence after failed config refresh = %+v, want both stale edges retained", failedRelationships)
+	}
+}
+
+func TestDirectDependencyAndCrossBranchEdgesKeepDistinctClassifications(t *testing.T) {
+	resources := map[string]Resource{
+		"vm-www-dmz": {ID: "vm-www-dmz", Type: ResourceTypeVM},
+		"proxy":      {ID: "proxy", Type: ResourceTypeAppContainer},
+		"database":   {ID: "database", Type: ResourceTypeAppContainer},
+	}
+	route := ResourceRelationship{SourceID: "vm-www-dmz", TargetID: "proxy", Type: RelRoutesTo}
+	if got := ClassifyResourceRelationshipContext("vm-www-dmz", route, []string{"vm-www-dmz", "proxy"}, resources); got != "cross_branch_relationship" {
+		t.Fatalf("direct route classification = %q, want cross-branch relationship", got)
+	}
+	dependency := ResourceRelationship{SourceID: "vm-www-dmz", TargetID: "database", Type: RelDependsOn}
+	if got := ClassifyResourceRelationshipContext("vm-www-dmz", dependency, []string{"vm-www-dmz", "database"}, resources); got != "direct_dependency" {
+		t.Fatalf("direct dependency classification = %q, want direct dependency", got)
+	}
+}
 
 func TestRelationshipTypeLabel(t *testing.T) {
 	cases := map[RelationshipType]string{
@@ -220,6 +306,46 @@ func TestNormalizeResourceRelationshipAddsStableAuditIdentity(t *testing.T) {
 	normalizeResourceRelationship(&relationship)
 	if relationship.ID != firstID {
 		t.Fatalf("relationship ID changed: got %q want %q", relationship.ID, firstID)
+	}
+}
+
+func TestCanonicalRelationshipPresentationDeduplicatesByOwnerAndPreservesParallelEvidence(t *testing.T) {
+	base := ResourceRelationship{
+		SourceID: " vm:www ", TargetID: " komodo-server:www ", Type: RelHostedBy,
+		Discoverer: "komodo_adapter", EvidenceSource: SourceKomodo, EvidenceID: "stack-server-map",
+		Active: true, LastSeenAt: time.Date(2026, 10, 27, 12, 0, 0, 0, time.UTC),
+	}
+	duplicate := base
+	duplicate.SourceID = "vm:www"
+	duplicate.TargetID = "komodo-server:www"
+	duplicate.LastSeenAt = base.LastSeenAt.Add(time.Minute)
+	providerParallel := base
+	providerParallel.EvidenceSource = SourceProxmox
+	manualParallel := base
+	manualParallel.Discoverer = "operator"
+	manualParallel.CreatedBy = "operator@example.test"
+
+	merged := mergeResourceRelationships([]ResourceRelationship{base}, []ResourceRelationship{duplicate, providerParallel, manualParallel})
+	if len(merged) != 3 {
+		t.Fatalf("canonical relationships = %+v, want one deduplicated Komodo edge plus distinct Proxmox and manual edges", merged)
+	}
+	owners := make(map[string]ResourceRelationship, len(merged))
+	ids := make(map[string]struct{}, len(merged))
+	for _, relationship := range merged {
+		owners[RelationshipPresentationKey(relationship)] = relationship
+		if _, exists := ids[relationship.ID]; exists {
+			t.Fatalf("parallel relationship ID %q collided: %+v", relationship.ID, merged)
+		}
+		ids[relationship.ID] = struct{}{}
+	}
+	if got := owners[RelationshipPresentationKey(base)]; got.LastSeenAt != duplicate.LastSeenAt {
+		t.Fatalf("same-owner duplicate = %+v, want newest observation at %s", got, duplicate.LastSeenAt)
+	}
+	if _, ok := owners[RelationshipPresentationKey(providerParallel)]; !ok {
+		t.Fatal("distinct Proxmox provider observation was discarded")
+	}
+	if _, ok := owners[RelationshipPresentationKey(manualParallel)]; !ok {
+		t.Fatal("distinct manual relationship was discarded")
 	}
 }
 

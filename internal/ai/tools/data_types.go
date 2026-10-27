@@ -3,6 +3,7 @@ package tools
 import (
 	"time"
 
+	"github.com/rcourtman/pulse-go-rewrite/internal/models"
 	"github.com/rcourtman/pulse-go-rewrite/internal/recovery"
 	"github.com/rcourtman/pulse-go-rewrite/internal/unifiedresources"
 	"github.com/rcourtman/pulse-go-rewrite/pkg/agents/filesystem"
@@ -429,14 +430,27 @@ type PaginationInfo struct {
 // TopologyResponse provides a fully hierarchical view of infrastructure
 // This is the recommended tool for understanding infrastructure relationships
 type TopologyResponse struct {
-	Proxmox                     ProxmoxTopology                         `json:"proxmox"`
-	Docker                      DockerTopology                          `json:"docker"`
-	Kubernetes                  KubernetesTopology                      `json:"kubernetes"`
-	CanonicalResources          []CanonicalTopologyResource             `json:"canonical_resources"`
-	CanonicalResourcesTruncated bool                                    `json:"canonical_resources_truncated,omitempty"`
-	Relationships               []unifiedresources.ResourceRelationship `json:"relationships"`
-	RelationshipsTruncated      bool                                    `json:"relationships_truncated,omitempty"`
-	Summary                     TopologySummary                         `json:"summary"`
+	Proxmox                     ProxmoxTopology                 `json:"proxmox"`
+	Docker                      DockerTopology                  `json:"docker"`
+	Kubernetes                  KubernetesTopology              `json:"kubernetes"`
+	RootResourceID              string                          `json:"root_resource_id,omitempty"`
+	CanonicalResources          []CanonicalTopologyResource     `json:"canonical_resources"`
+	CanonicalResourcesTruncated bool                            `json:"canonical_resources_truncated,omitempty"`
+	Relationships               []CanonicalTopologyRelationship `json:"relationships"`
+	RelationshipsTruncated      bool                            `json:"relationships_truncated,omitempty"`
+	Summary                     TopologySummary                 `json:"summary"`
+}
+
+// CanonicalTopologyRelationship annotates an existing canonical edge with
+// traversal scope and a root-to-neighbor path. Impact is an assessment prompt,
+// not a claim that a related failure has affected another resource.
+type CanonicalTopologyRelationship struct {
+	unifiedresources.ResourceRelationship
+	Scope            string   `json:"scope"`
+	Classification   string   `json:"classification"`
+	Distance         int      `json:"distance,omitempty"`
+	TraversalPath    []string `json:"traversal_path,omitempty"`
+	ImpactAssessment string   `json:"impact_assessment"`
 }
 
 // CanonicalTopologyResource is a compact read-only projection of one node in
@@ -453,9 +467,36 @@ type CanonicalTopologyResource struct {
 	IncidentSummary string                                                     `json:"incident_summary,omitempty"`
 	ParentID        string                                                     `json:"parent_id,omitempty"`
 	ParentName      string                                                     `json:"parent_name,omitempty"`
+	Distance        int                                                        `json:"distance,omitempty"`
+	Path            []string                                                   `json:"path,omitempty"`
 	Sources         []unifiedresources.DataSource                              `json:"sources"`
 	SourceStatus    map[unifiedresources.DataSource]CanonicalSourceObservation `json:"source_status,omitempty"`
 	Availability    *TopologyAvailabilityObservation                           `json:"availability,omitempty"`
+	ProxmoxGuest    *TopologyProxmoxGuestObservation                           `json:"proxmox_guest,omitempty"`
+}
+
+// TopologyProxmoxGuestObservation carries source-owned guest details on the
+// canonical VM node without adding new identity or backing relationships.
+type TopologyProxmoxGuestObservation struct {
+	Source               unifiedresources.DataSource         `json:"source"`
+	ObservedAt           time.Time                           `json:"observed_at,omitempty"`
+	Freshness            string                              `json:"freshness,omitempty"`
+	VMID                 int                                 `json:"vmid,omitempty"`
+	Instance             string                              `json:"instance,omitempty"`
+	NodeName             string                              `json:"node_name,omitempty"`
+	CPUs                 int                                 `json:"cpus,omitempty"`
+	RuntimeStatus        string                              `json:"runtime_status,omitempty"`
+	OSName               string                              `json:"os_name,omitempty"`
+	OSVersion            string                              `json:"os_version,omitempty"`
+	GuestAgentStatus     string                              `json:"guest_agent_status,omitempty"`
+	GuestAgentExpected   bool                                `json:"guest_agent_expected,omitempty"`
+	NetworkInterfaces    []unifiedresources.NetworkInterface `json:"network_interfaces,omitempty"`
+	GuestReportedDisks   []unifiedresources.DiskInfo         `json:"guest_reported_disks,omitempty"`
+	GuestDiskObservation string                              `json:"guest_disk_observation,omitempty"`
+	GuestDiskObservedAt  time.Time                           `json:"guest_disk_observed_at,omitempty"`
+	Memory               *models.Memory                      `json:"memory,omitempty"`
+	SwapUsed             int64                               `json:"swap_used,omitempty"`
+	SwapTotal            int64                               `json:"swap_total,omitempty"`
 }
 
 // TopologyAvailabilityObservation keeps the endpoint result and its explicit
@@ -482,7 +523,7 @@ func (r TopologyResponse) NormalizeCollections() TopologyResponse {
 	r.Docker = r.Docker.NormalizeCollections()
 	r.Kubernetes = r.Kubernetes.NormalizeCollections()
 	if r.Relationships == nil {
-		r.Relationships = []unifiedresources.ResourceRelationship{}
+		r.Relationships = []CanonicalTopologyRelationship{}
 	}
 	if r.CanonicalResources == nil {
 		r.CanonicalResources = []CanonicalTopologyResource{}

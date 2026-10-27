@@ -71,9 +71,9 @@ provider snapshot was available in this audit. The actual `www-DMZ`, `Alfheim`,
 `Jellyfin-DMZ`, and `Public-DMZ` operator links therefore require the isolated
 live acceptance checklist below. No verified Traefik or other reverse-proxy
 dependency was present in fixtures, so no affected services are inferred from
-proxy failure. Scoped graph data is available through existing AI query tools;
-a full interactive topology visualization and dependency-aware notification
-routing remain future work.
+proxy failure. Scoped graph data is available through existing AI query tools.
+The Phase 2I hierarchy below adds navigable resource detail topology;
+dependency-aware notification routing remains future work.
 
 **Image result:** [Workflow run #22](https://github.com/gonecrzy/Pulse/actions/runs/40405935417)
 passed for source commit `ffb76e771e0fafc579d95409bb40d5b0ce861cb5`. It built
@@ -85,6 +85,34 @@ The workflow then pulled and smoke-tested
 `ghcr.io/gonecrzy/pulse@sha256:af50282ca9d0e3909bbce72b9212b9488f2a46287e904c360222d1bd196056be`,
 including architecture, source label, startup, health, and `/data` restart
 persistence. No merge to `sindri` or deployment is authorized by this checkpoint.
+
+### Phase 2I — Hierarchical infrastructure topology
+
+The resource registry now presents a branching hierarchy rooted at verified
+physical infrastructure. PVE VMs nest below their Proxmox host; an
+operator-confirmed Komodo Server folds into that VM identity; verified Stacks
+nest under the canonical machine; availability checks attach to their Stack or
+service. Host disks remain owned by the host. The regular Proxmox QEMU config
+observation supplies native virtual-disk volume IDs, which produce
+`stores_on` relationships only after exact storage-ID and instance matching.
+No disk-to-SSD or routing relationships are inferred from proximity.
+
+Resource detail keeps direct hosting, monitoring, and provider-verified
+backing visible, with shared-host resources and cross-branch graph links in
+expandable context. Patrol uses the same canonical graph and labels direct
+dependency, verified backing, cross-branch relationship, shared infrastructure,
+and potential impact separately. Canonical graph reads deduplicate repeated
+same-owner edges while preserving separate provider/manual provenance.
+
+The regression fixture covers two VMs on one physical host, multiple Stacks
+and HTTPS checks per VM, same-name disks with separate native IDs, exact and
+shared PVE storage IDs, a cross-host service route, stale config evidence, and
+organization isolation. The operator-reported live 32-edge snapshot was not
+available in this workspace; fixture IDs are synthetic and no production
+provider was contacted. Resource detail traversal stays at two hops and caps
+its context at 100 resources / 200 relationships; the UI keeps shared-host
+branches collapsed. The immutable image reference is reported after the
+feature branch publication workflow completes.
 
 ## Workspace and baseline
 

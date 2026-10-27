@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"sort"
 	"strings"
 	"time"
 
@@ -413,10 +414,18 @@ func (m *Monitor) buildVMFromClusterResource(
 		state.diskObservation.ObservedAt = guestDiskObservationTime(prevVM)
 	}
 
+	vmConfig, vmConfigObservedAt, vmConfigStatus := m.fetchVMConfig(ctx, client, res.Node, res.VMID)
+	var configStorageVolumes []models.ProxmoxVMStorageVolume
+	if !vmConfigObservedAt.IsZero() {
+		configStorageVolumes = parseProxmoxVMStorageVolumes(vmConfig)
+	}
+
 	if res.Status != "running" {
 		state.memorySource = "powered-off"
 		state.memUsed = 0
-		state.onBoot = m.fetchVMOnBoot(ctx, client, res.Node, res.VMID)
+		if !vmConfigObservedAt.IsZero() {
+			state.onBoot = parseProxmoxOnBoot(vmConfig)
+		}
 	}
 
 	var snapshotNotes []string
@@ -542,27 +551,30 @@ func (m *Monitor) buildVMFromClusterResource(
 			Free:  int64(state.diskFree),
 			Usage: state.diskUsage,
 		},
-		Disks:              state.individualDisks,
-		DiskStatusReason:   state.diskStatusReason,
-		DiskObservation:    state.diskObservation,
-		GuestAgentStatus:   state.guestAgentStatus,
-		Lock:               res.Lock,
-		GuestAgentExpected: state.guestAgentExpected,
-		GuestAgentEvidence: state.guestAgentEvidence,
-		IPAddresses:        state.ipAddresses,
-		OSName:             state.osName,
-		OSVersion:          state.osVersion,
-		AgentVersion:       state.agentVersion,
-		NetworkInterfaces:  state.networkInterfaces,
-		NetworkIn:          networkInValue,
-		NetworkOut:         networkOutValue,
-		DiskRead:           diskReadValue,
-		DiskWrite:          diskWriteValue,
-		IORateValidity:     rateValidity,
-		Uptime:             int64(res.Uptime),
-		Template:           res.Template == 1,
-		OnBoot:             state.onBoot,
-		LastSeen:           sampleTime,
+		Disks:                   state.individualDisks,
+		DiskStatusReason:        state.diskStatusReason,
+		DiskObservation:         state.diskObservation,
+		GuestAgentStatus:        state.guestAgentStatus,
+		Lock:                    res.Lock,
+		GuestAgentExpected:      state.guestAgentExpected,
+		GuestAgentEvidence:      state.guestAgentEvidence,
+		IPAddresses:             state.ipAddresses,
+		OSName:                  state.osName,
+		OSVersion:               state.osVersion,
+		AgentVersion:            state.agentVersion,
+		NetworkInterfaces:       state.networkInterfaces,
+		NetworkIn:               networkInValue,
+		NetworkOut:              networkOutValue,
+		DiskRead:                diskReadValue,
+		DiskWrite:               diskWriteValue,
+		IORateValidity:          rateValidity,
+		Uptime:                  int64(res.Uptime),
+		Template:                res.Template == 1,
+		OnBoot:                  state.onBoot,
+		ConfigStorageVolumes:    configStorageVolumes,
+		ConfigObservedAt:        vmConfigObservedAt,
+		ConfigObservationStatus: vmConfigStatus,
+		LastSeen:                sampleTime,
 	}
 
 	// Parse tags
@@ -598,27 +610,87 @@ func (m *Monitor) buildVMFromClusterResource(
 	return vm, state.guestRaw, state.memorySource, snapshotNotes, sampleTime, true
 }
 
-// fetchVMOnBoot retrieves the onboot (autostart) setting for a stopped VM by
-// fetching its config. Returns nil only when the config is unavailable or the
-// value is unrecognised. When onboot is absent from a valid config, returns
-// false because Proxmox's default is "do not start on boot". Uses a type assertion because PVEClientInterface does not include
-// GetVMConfig (it is only on the concrete client, matching the pattern in
-// guest_config.go).
-func (m *Monitor) fetchVMOnBoot(ctx context.Context, client PVEClientInterface, node string, vmid int) *bool {
+// fetchVMConfig retrieves the provider-owned VM configuration used for
+// verified virtual disk backing and, for stopped guests, the onboot setting.
+// PVEClientInterface intentionally keeps this optional for test and alternate
+// clients that do not implement the QEMU config endpoint.
+func (m *Monitor) fetchVMConfig(ctx context.Context, client PVEClientInterface, node string, vmid int) (map[string]interface{}, time.Time, string) {
 	type vmConfigClient interface {
 		GetVMConfig(ctx context.Context, node string, vmid int) (map[string]interface{}, error)
 	}
 	vmClient, ok := client.(vmConfigClient)
 	if !ok {
-		return nil
+		return nil, time.Time{}, "unavailable"
 	}
 	configCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	configData, err := vmClient.GetVMConfig(configCtx, node, vmid)
-	if err != nil || len(configData) == 0 {
+	if err != nil || configData == nil {
+		if err != nil {
+			log.Debug().Err(err).Str("node", node).Int("vmid", vmid).Msg("VM configuration metadata unavailable")
+		}
+		return nil, time.Time{}, "unavailable"
+	}
+	return configData, time.Now().UTC(), "current"
+}
+
+// parseProxmoxVMStorageVolumes extracts only active QEMU disk slots with a
+// native Proxmox storage volume ID. It deliberately skips CD-ROMs, empty
+// slots, unused volumes, and unqualified device paths.
+func parseProxmoxVMStorageVolumes(config map[string]interface{}) []models.ProxmoxVMStorageVolume {
+	if len(config) == 0 {
 		return nil
 	}
-	return parseProxmoxOnBoot(configData)
+	keys := make([]string, 0, len(config))
+	for key := range config {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	volumes := make([]models.ProxmoxVMStorageVolume, 0)
+	seen := make(map[string]struct{})
+	for _, key := range keys {
+		if !isProxmoxQEMUDiskSlot(key) {
+			continue
+		}
+		value := strings.TrimSpace(fmt.Sprint(config[key]))
+		if value == "" || strings.EqualFold(value, "none") || strings.Contains(strings.ToLower(value), "media=cdrom") {
+			continue
+		}
+		volumeID, _, _ := strings.Cut(value, ",")
+		volumeID = strings.TrimSpace(volumeID)
+		storageID, volumeName, ok := strings.Cut(volumeID, ":")
+		storageID = strings.TrimSpace(storageID)
+		volumeName = strings.TrimSpace(volumeName)
+		if !ok || storageID == "" || volumeName == "" {
+			continue
+		}
+		keyID := key + "\x00" + volumeID
+		if _, exists := seen[keyID]; exists {
+			continue
+		}
+		seen[keyID] = struct{}{}
+		volumes = append(volumes, models.ProxmoxVMStorageVolume{DeviceKey: key, VolumeID: volumeID, StorageID: storageID})
+	}
+	return volumes
+}
+
+func isProxmoxQEMUDiskSlot(key string) bool {
+	for _, prefix := range []string{"ide", "sata", "scsi", "virtio"} {
+		if !strings.HasPrefix(key, prefix) || len(key) == len(prefix) {
+			continue
+		}
+		valid := true
+		for _, character := range key[len(prefix):] {
+			if character < '0' || character > '9' {
+				valid = false
+				break
+			}
+		}
+		if valid {
+			return true
+		}
+	}
+	return false
 }
 
 type vmFSInfoSummary struct {

@@ -366,7 +366,13 @@ type VM struct {
 	Uptime             int64                   `json:"uptime"`
 	Template           bool                    `json:"template"`
 	OnBoot             *bool                   `json:"onBoot,omitempty"`
-	LastBackup         time.Time               `json:"lastBackup,omitempty"`
+	// ConfigStorageVolumes are the storage volume IDs named by the VM's
+	// Proxmox QEMU configuration. They are provider evidence, not guest disk
+	// usage observations.
+	ConfigStorageVolumes    []ProxmoxVMStorageVolume `json:"-"`
+	ConfigObservedAt        time.Time                `json:"-"`
+	ConfigObservationStatus string                   `json:"-"`
+	LastBackup              time.Time                `json:"lastBackup,omitempty"`
 	// BackupInProgress reports that a backup of this guest is running right
 	// now (a live vzdump task, or an in-flight PBS snapshot). LastBackup
 	// still points at the most recent COMPLETED backup while this is set.
@@ -374,6 +380,14 @@ type VM struct {
 	Tags             []string  `json:"tags,omitempty"`
 	Lock             string    `json:"lock,omitempty"`
 	LastSeen         time.Time `json:"lastSeen"`
+}
+
+// ProxmoxVMStorageVolume identifies one configured virtual disk volume using
+// the native Proxmox storage volume ID and device key.
+type ProxmoxVMStorageVolume struct {
+	DeviceKey string `json:"deviceKey"`
+	VolumeID  string `json:"volumeId"`
+	StorageID string `json:"storageId"`
 }
 
 func (v VM) NormalizeCollections() VM {
