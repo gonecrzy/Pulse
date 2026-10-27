@@ -46,6 +46,7 @@ func TestServicePatrolAutopilotPolicyProviderControlsRuntimeVersion(t *testing.T
 	svc.cfg.PatrolAutonomyLevel = config.PatrolAutonomyFull
 	svc.cfg.PatrolAutopilotAcknowledgements = []unifiedresources.PatrolAutopilotAcknowledgement{v1, v2}
 	svc.cfg.PatrolAutopilotActivation = &activation
+	svc.SetLicenseChecker(&mockLicenseChecker{hasFeature: true})
 	svc.SetPatrolAutopilotServerPolicyProvider(func() unifiedresources.PatrolAutopilotServerPolicy { return v2Policy })
 	if effective := svc.GetEffectivePatrolAutonomyLevel(); effective != config.PatrolAutonomyFull {
 		t.Fatalf("V2 runtime activation effective=%q", effective)
@@ -277,7 +278,16 @@ func TestGetPatrolSystemPrompt_ModeSwitch(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			svc := &Service{cfg: tt.cfg, orgID: "default"}
+			svc := &Service{
+				cfg:   tt.cfg,
+				orgID: "default",
+			}
+			// Explicitly selected modes exercise the licensed Patrol path. The
+			// legacy autofix-only case deliberately has no entitlement so it
+			// continues to prove that the old boolean cannot unlock investigation.
+			if tt.name != "legacy autofix flag does not overstate autonomy" {
+				svc.licenseChecker = &mockLicenseChecker{hasFeature: true}
+			}
 			ps := NewPatrolService(svc, nil)
 			prompt := ps.getPatrolSystemPrompt()
 

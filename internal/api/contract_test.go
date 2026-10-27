@@ -2304,7 +2304,7 @@ func TestContract_AISettingsUpdateProviderResolutionJSONSnapshot(t *testing.T) {
 		"patrol_interval_minutes":360,
 		"patrol_enabled":true,
 		"patrol_auto_fix":false,
-		"alert_triggered_analysis":true,
+		"alert_triggered_analysis":false,
 		"patrol_event_triggers_enabled":true,
 		"patrol_finding_notifications_enabled":true,
 		"patrol_finding_notify_min_severity":"warning",
@@ -2534,7 +2534,7 @@ func TestContract_AISettingsBYOKOverrideDoesNotExposeQuickstartInventoryJSONSnap
 		"patrol_interval_minutes":360,
 		"patrol_enabled":true,
 		"patrol_auto_fix":false,
-		"alert_triggered_analysis":true,
+		"alert_triggered_analysis":false,
 		"patrol_event_triggers_enabled":true,
 		"patrol_finding_notifications_enabled":true,
 		"patrol_finding_notify_min_severity":"warning",
@@ -4778,7 +4778,7 @@ func TestContract_HostedAISettingsDoesNotAutoBootstrapQuickstartJSONSnapshot(t *
 		"patrol_interval_minutes":360,
 		"patrol_enabled":true,
 		"patrol_auto_fix":false,
-		"alert_triggered_analysis":true,
+		"alert_triggered_analysis":false,
 		"patrol_event_triggers_enabled":true,
 		"patrol_finding_notifications_enabled":true,
 		"patrol_finding_notify_min_severity":"warning",
@@ -4846,7 +4846,7 @@ func TestContract_AISettingsRetiredQuickstartAliasJSONSnapshot(t *testing.T) {
 		"patrol_interval_minutes":360,
 		"patrol_enabled":true,
 		"patrol_auto_fix":false,
-		"alert_triggered_analysis":true,
+		"alert_triggered_analysis":false,
 		"patrol_event_triggers_enabled":true,
 		"patrol_finding_notifications_enabled":true,
 		"patrol_finding_notify_min_severity":"warning",
@@ -4919,7 +4919,7 @@ func TestContract_AISettingsOllamaAuthJSONSnapshot(t *testing.T) {
 		"patrol_interval_minutes":360,
 		"patrol_enabled":true,
 		"patrol_auto_fix":false,
-		"alert_triggered_analysis":true,
+		"alert_triggered_analysis":false,
 		"patrol_event_triggers_enabled":true,
 		"patrol_finding_notifications_enabled":true,
 		"patrol_finding_notify_min_severity":"warning",
@@ -6189,7 +6189,7 @@ func TestContract_HostedTenantAISettingsDoesNotAutoBootstrapQuickstartJSONSnapsh
 		"patrol_interval_minutes":360,
 		"patrol_enabled":true,
 		"patrol_auto_fix":false,
-		"alert_triggered_analysis":true,
+		"alert_triggered_analysis":false,
 		"patrol_event_triggers_enabled":true,
 		"patrol_finding_notifications_enabled":true,
 		"patrol_finding_notify_min_severity":"warning",
@@ -8650,6 +8650,7 @@ func TestContract_EntitlementPayloadMonitoredSystemUsageJSONSnapshot(t *testing.
 		"upgrade_reasons":[],
 		"tier":"pro",
 		"hosted_mode":false,
+		"commercial_services_enabled":false,
 		"valid":true,
 		"is_lifetime":false,
 		"days_remaining":0,
@@ -8689,24 +8690,16 @@ func TestContract_SelfHostedCommunityEntitlementsJSONSnapshot(t *testing.T) {
 	const want = `{
 		"capabilities":["update_alerts","sso","advanced_sso","ai_patrol"],
 		"limits":[],
-		"subscription_state":"active",
-		"upgrade_reasons":[
-			{"key":"long_term_metrics","reason":"Upgrade to Pro for 90 days of metric history, so you can see what changed before and after an incident.","action_url":"https://pulserelay.pro/pricing?utm_source=pulse\u0026utm_medium=app\u0026utm_campaign=upgrade\u0026feature=long_term_metrics"},
-			{"key":"ai_autofix","reason":"Upgrade to Pro so Patrol can investigate issues, apply safe fixes within Patrol mode, and verify the result.","action_url":"https://pulserelay.pro/pricing?utm_source=pulse\u0026utm_medium=app\u0026utm_campaign=upgrade\u0026feature=ai_autofix"},
-			{"key":"ai_alerts","reason":"Upgrade to Pro so Patrol can investigate issues instead of handing you a stack of symptoms.","action_url":"https://pulserelay.pro/pricing?utm_source=pulse\u0026utm_medium=app\u0026utm_campaign=upgrade\u0026feature=ai_alerts"},
-			{"key":"rbac","reason":"Upgrade to Pro when more than one operator needs safe access boundaries around infrastructure changes.","action_url":"https://pulserelay.pro/pricing?utm_source=pulse\u0026utm_medium=app\u0026utm_campaign=upgrade\u0026feature=rbac"},
-			{"key":"agent_profiles","reason":"Upgrade to Pro to standardize agent behavior across systems without reconfiguring every install by hand.","action_url":"https://pulserelay.pro/pricing?utm_source=pulse\u0026utm_medium=app\u0026utm_campaign=upgrade\u0026feature=agent_profiles"},
-			{"key":"external_probe","reason":"Upgrade to Pro to run availability checks from an agent outside the monitored site and report the results back to Pulse for alerting.","action_url":"https://pulserelay.pro/pricing?utm_source=pulse\u0026utm_medium=app\u0026utm_campaign=upgrade\u0026feature=external_probe"},{"key":"audit_logging","reason":"Upgrade to Pro to keep a trustworthy action trail for incident review, accountability, and compliance.","action_url":"https://pulserelay.pro/pricing?utm_source=pulse\u0026utm_medium=app\u0026utm_campaign=upgrade\u0026feature=audit_logging"},
-			{"key":"advanced_reporting","reason":"Upgrade to Pro to turn live infrastructure state into shareable reports without manual screenshot work.","action_url":"https://pulserelay.pro/pricing?utm_source=pulse\u0026utm_medium=app\u0026utm_campaign=upgrade\u0026feature=advanced_reporting"}
-		],
+		"subscription_state":"",
+		"upgrade_reasons":[],
 		"tier":"free",
 		"hosted_mode":false,
+		"commercial_services_enabled":false,
 		"valid":false,
 		"is_lifetime":false,
 		"days_remaining":0,
 		"trial_eligible":false,
 		"max_history_days":7,
-		"overflow_days_remaining":14,
 			"legacy_connections":{"proxmox_nodes":0,"docker_hosts":0,"kubernetes_clusters":0},
 			"has_migration_gap":false,
 			"runtime":{"build":"community","label":"Pulse Community runtime"}
@@ -8748,6 +8741,7 @@ func TestContract_SelfHostedCommunityRuntimeCapabilitiesJSONSnapshot(t *testing.
 		"capabilities":["update_alerts","sso","advanced_sso","ai_patrol"],
 			"limits":[],
 			"hosted_mode":false,
+		"commercial_services_enabled":false,
 			"max_history_days":7,
 			"runtime":{"build":"community","label":"Pulse Community runtime"}
 		}`
@@ -8789,6 +8783,7 @@ func TestContract_EntitlementPayloadMonitoredSystemUsageUnavailableJSONSnapshot(
 		"plan_version":"cloud_starter",
 		"tier":"cloud",
 		"hosted_mode":false,
+		"commercial_services_enabled":false,
 		"valid":true,
 		"is_lifetime":false,
 		"days_remaining":0,
@@ -8831,6 +8826,7 @@ func TestContract_EntitlementPayloadLifetimeJSONSnapshot(t *testing.T) {
 		"plan_version":"v5_lifetime_grandfathered",
 		"tier":"lifetime",
 		"hosted_mode":false,
+		"commercial_services_enabled":false,
 		"valid":true,
 		"is_lifetime":true,
 		"days_remaining":0,
@@ -9019,7 +9015,7 @@ func TestContract_LegacyMigrationFallbackStaysUncappedJSONSnapshot(t *testing.T)
 		t.Fatalf("save legacy jwt: %v", err)
 	}
 
-	handlers := NewLicenseHandlers(mtp, false)
+	handlers := NewLicenseHandlers(mtp, false, &config.Config{UpstreamCommercialServicesEnabled: true})
 	handlers.SetRuntimeVersion(expectedClientVersion)
 	handlers.SetMonitors(buildGrandfatherFloorMonitor(23), nil)
 	t.Cleanup(handlers.StopAllBackgroundLoops)
@@ -9985,7 +9981,7 @@ func TestContract_SelfHostedPurchaseHandoffWebsiteFinishJSON(t *testing.T) {
 
 func TestContract_SelfHostedPurchaseHandoffJSONSnapshot(t *testing.T) {
 	handler := createTestHandler(t)
-	handler.SetConfig(&config.Config{PublicURL: "https://pulse.example.com"})
+	handler.SetConfig(&config.Config{PublicURL: "https://pulse.example.com", UpstreamCommercialServicesEnabled: true})
 	var capturedReq struct {
 		Feature           string `json:"feature"`
 		SuccessURL        string `json:"success_url"`
@@ -10121,7 +10117,7 @@ func TestContract_SelfHostedPurchaseHandoffJSONSnapshot(t *testing.T) {
 
 func TestContract_SelfHostedPurchaseHandoffUnavailableJSONSnapshot(t *testing.T) {
 	handler := createTestHandler(t)
-	handler.SetConfig(&config.Config{PublicURL: "https://pulse.example.com"})
+	handler.SetConfig(&config.Config{PublicURL: "https://pulse.example.com", UpstreamCommercialServicesEnabled: true})
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/checkout/portal-handoff" {
@@ -12182,11 +12178,7 @@ func TestContract_PublicSecurityStatusIncludesDemoPresentationPolicy(t *testing.
 }
 
 func TestContract_SecurityStatusPresentationPolicyHidesUpgradeByDefault(t *testing.T) {
-	// Ordinary free self-hosted sessions run the community binary and stay
-	// opt-in. The billing route remains directly reachable, but the served
-	// policy suppresses upgrade prompts and navigation until there is hosted,
-	// paid, activation, or recovery context — which includes the compiled Pro
-	// edition, covered by the ProEditionCommercialContext contract test below.
+	// Standalone defaults do not expose Pulse billing or activation surfaces.
 	cfg := newTestConfigWithTokens(t)
 	cfg.DemoMode = false
 
@@ -12211,7 +12203,7 @@ func TestContract_SecurityStatusPresentationPolicyHidesUpgradeByDefault(t *testi
 	for key, want := range map[string]bool{
 		"demoMode":       false,
 		"readOnly":       false,
-		"hideCommercial": false,
+		"hideCommercial": true,
 		"hideUpgrade":    true,
 	} {
 		if got, _ := presentationPolicy[key].(bool); got != want {
@@ -12247,19 +12239,15 @@ func TestContract_SecurityStatusPresentationPolicySuppressionInputs(t *testing.T
 	}
 }
 
-// The compiled Pro binary is only distributed through the paid broker flow, so
-// a Pro-edition session is commercial context even before a license activates.
-// Without this the Plans & Billing navigation entry — the only one holding the
-// activation form — is hidden exactly while the install is unlicensed
-// (support case 2026-08-09: a fresh Pro install could not find where to enter
-// its activation key). Community binaries keep the opt-in default, and demo
-// mode keeps every commercial surface suppressed regardless of edition.
+// Commercial navigation follows the explicit standalone compatibility opt-in,
+// independent of the compiled edition. Demo mode continues to suppress it.
 func TestContract_SecurityStatusPresentationPolicyProEditionCommercialContext(t *testing.T) {
-	servePresentationPolicy := func(t *testing.T, demoMode bool) map[string]any {
+	servePresentationPolicy := func(t *testing.T, demoMode, upstreamEnabled bool) map[string]any {
 		t.Helper()
 
 		cfg := newTestConfigWithTokens(t)
 		cfg.DemoMode = demoMode
+		cfg.UpstreamCommercialServicesEnabled = upstreamEnabled
 
 		router := NewRouter(cfg, nil, nil, nil, nil, "1.0.0")
 
@@ -12290,15 +12278,15 @@ func TestContract_SecurityStatusPresentationPolicyProEditionCommercialContext(t 
 		}
 	}
 
-	t.Run("pro edition exposes commercial navigation before activation", func(t *testing.T) {
+	t.Run("pro edition stays standalone without compatibility opt-in", func(t *testing.T) {
 		edition.SetEdition(edition.Pro)
 		t.Cleanup(func() { edition.SetEdition(edition.Community) })
 
-		assertPolicy(t, servePresentationPolicy(t, false), map[string]bool{
+		assertPolicy(t, servePresentationPolicy(t, false, false), map[string]bool{
 			"demoMode":       false,
 			"readOnly":       false,
-			"hideCommercial": false,
-			"hideUpgrade":    false,
+			"hideCommercial": true,
+			"hideUpgrade":    true,
 		})
 	})
 
@@ -12306,7 +12294,7 @@ func TestContract_SecurityStatusPresentationPolicyProEditionCommercialContext(t 
 		edition.SetEdition(edition.Pro)
 		t.Cleanup(func() { edition.SetEdition(edition.Community) })
 
-		assertPolicy(t, servePresentationPolicy(t, true), map[string]bool{
+		assertPolicy(t, servePresentationPolicy(t, true, true), map[string]bool{
 			"demoMode":       true,
 			"readOnly":       true,
 			"hideCommercial": true,
@@ -12314,13 +12302,24 @@ func TestContract_SecurityStatusPresentationPolicyProEditionCommercialContext(t 
 		})
 	})
 
-	t.Run("community edition keeps the opt-in default", func(t *testing.T) {
+	t.Run("community edition exposes navigation with compatibility opt-in", func(t *testing.T) {
 		edition.SetEdition(edition.Community)
 
-		assertPolicy(t, servePresentationPolicy(t, false), map[string]bool{
+		assertPolicy(t, servePresentationPolicy(t, false, true), map[string]bool{
 			"demoMode":       false,
 			"readOnly":       false,
 			"hideCommercial": false,
+			"hideUpgrade":    false,
+		})
+	})
+
+	t.Run("community edition remains hidden by default", func(t *testing.T) {
+		edition.SetEdition(edition.Community)
+
+		assertPolicy(t, servePresentationPolicy(t, false, false), map[string]bool{
+			"demoMode":       false,
+			"readOnly":       false,
+			"hideCommercial": true,
 			"hideUpgrade":    true,
 		})
 	})

@@ -144,7 +144,7 @@ func TestV5PaidLicenseUpgrade_CommercialMigrationFailureMatrix(t *testing.T) {
 			t.Setenv("PULSE_LICENSE_SERVER_URL", exchangeServer.URL)
 
 			mtp := config.NewMultiTenantPersistence(dataDir)
-			handlers := api.NewLicenseHandlers(mtp, false)
+			handlers := newCommercialMigrationLicenseHandlers(mtp)
 			t.Cleanup(handlers.StopAllBackgroundLoops)
 
 			ctx := context.WithValue(context.Background(), api.OrgIDContextKey, "default")
@@ -276,7 +276,7 @@ func TestV5PaidLicenseUpgrade_CommercialMigrationClearsAfterLocalRetry(t *testin
 
 	ctx := context.WithValue(context.Background(), api.OrgIDContextKey, "default")
 	mtp := config.NewMultiTenantPersistence(dataDir)
-	handlers := api.NewLicenseHandlers(mtp, false)
+	handlers := newCommercialMigrationLicenseHandlers(mtp)
 
 	svc := handlers.Service(ctx)
 	require.NotNil(t, svc)
@@ -306,7 +306,7 @@ func TestV5PaidLicenseUpgrade_CommercialMigrationClearsAfterLocalRetry(t *testin
 	handlers.StopAllBackgroundLoops()
 	exchangeAvailable.Store(true)
 
-	handlers = api.NewLicenseHandlers(config.NewMultiTenantPersistence(dataDir), false)
+	handlers = newCommercialMigrationLicenseHandlers(config.NewMultiTenantPersistence(dataDir))
 	t.Cleanup(handlers.StopAllBackgroundLoops)
 
 	svc = handlers.Service(ctx)

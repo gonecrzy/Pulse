@@ -997,7 +997,7 @@ func TestSaveHistory_HardensFilePermissions(t *testing.T) {
 	}
 }
 
-func TestLoadHistory_PermissionError(t *testing.T) {
+func TestLoadHistory_UnreadableBackupError(t *testing.T) {
 	// t.Parallel()
 
 	tempDir := t.TempDir()
@@ -1010,11 +1010,11 @@ func TestLoadHistory_PermissionError(t *testing.T) {
 		stopChan:     make(chan struct{}),
 	}
 
-	// Create backup file and make it unreadable
-	if err := os.WriteFile(hm.backupFile, []byte("[]"), 0000); err != nil {
-		t.Fatalf("Failed to create file: %v", err)
+	// A directory at the backup path makes it unreadable even when tests run as
+	// root, which can bypass chmod-based permission fixtures.
+	if err := os.Mkdir(hm.backupFile, 0700); err != nil {
+		t.Fatalf("Failed to create unreadable backup fixture: %v", err)
 	}
-	defer func() { _ = os.Chmod(hm.backupFile, 0644) }()
 
 	// An unreadable backup is still user data. Loading must fail closed so
 	// startup cannot overwrite or retire it as an empty history.

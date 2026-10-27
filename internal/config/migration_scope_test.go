@@ -16,6 +16,7 @@ import (
 // Exercise the actual archive, not a fabricated ExportData value: the migration
 // warnings must match what a fresh destination can recover with a different key.
 func TestConfigurationMigrationArchiveScope(t *testing.T) {
+	isolateLegacyKeyLookupForTest(t)
 	t.Setenv("PULSE_DATA_DIR", t.TempDir())
 	sourceDir, targetDir := t.TempDir(), t.TempDir()
 	source, target := NewConfigPersistence(sourceDir), NewConfigPersistence(targetDir)

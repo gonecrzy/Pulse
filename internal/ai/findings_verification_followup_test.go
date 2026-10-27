@@ -49,6 +49,9 @@ func TestUnknownVerificationFollowupSurvivesRestartAndWaitsForWatchHandoff(t *te
 	}
 	service := NewService(persistence, nil)
 	service.cfg = &config.AIConfig{Enabled: true, PatrolAutonomyLevel: config.PatrolAutonomyApproval}
+	// This exercises the Pulse Pro ai_autofix follow-up workflow. Standalone
+	// investigation admission is owned by the centralized fork policy.
+	service.SetLicenseChecker(&mockLicenseChecker{hasFeature: true})
 	patrol := NewPatrolService(service, nil)
 	patrol.findings = restored
 	orchestrator := newIntegrationOrchestrator(true)

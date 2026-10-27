@@ -3681,6 +3681,7 @@ func TestAuditWebhookRequiresLicenseFeature(t *testing.T) {
 	rawToken := "audit-webhook-license-token-123.12345678"
 	record := newTokenRecord(t, rawToken, []string{config.ScopeSettingsRead}, nil)
 	cfg := newTestConfigWithTokens(t, record)
+	cfg.UpstreamCommercialServicesEnabled = true
 	router := NewRouter(cfg, nil, nil, nil, nil, "1.0.0")
 
 	req := httptest.NewRequest(http.MethodGet, "/api/admin/webhooks/audit", nil)
@@ -3758,12 +3759,12 @@ func TestAILicensedEndpointsRequireLicenseFeature(t *testing.T) {
 	rawToken := "ai-license-token-123.12345678"
 	record := newTokenRecord(t, rawToken, []string{config.ScopeAIExecute}, nil)
 	cfg := newTestConfigWithTokens(t, record)
+	cfg.UpstreamCommercialServicesEnabled = true
 	router := NewRouter(cfg, nil, nil, nil, nil, "1.0.0")
 
 	paths := []string{
 		"/api/ai/kubernetes/analyze",
 		"/api/ai/investigate-alert",
-		"/api/ai/findings/f-1/reinvestigate",
 		"/api/ai/findings/f-1/reapprove",
 	}
 

@@ -12,6 +12,7 @@ func TestReconcileActionableFindingBacklogIsBoundedAndPrioritizesCriticalFinding
 	persistence := config.NewConfigPersistence(t.TempDir())
 	service := NewService(persistence, nil)
 	service.cfg = &config.AIConfig{Enabled: true, PatrolAutonomyLevel: config.PatrolAutonomyApproval}
+	service.SetLicenseChecker(&mockLicenseChecker{hasFeature: true})
 	patrol := NewPatrolService(service, nil)
 	orchestrator := newIntegrationOrchestrator(true)
 	patrol.SetInvestigationOrchestrator(orchestrator)
@@ -74,6 +75,7 @@ func TestReconcileActionableFindingBacklogUsesRemainingAdmissionCapacity(t *test
 	persistence := config.NewConfigPersistence(t.TempDir())
 	service := NewService(persistence, nil)
 	service.cfg = &config.AIConfig{Enabled: true, PatrolAutonomyLevel: config.PatrolAutonomyApproval}
+	service.SetLicenseChecker(&mockLicenseChecker{hasFeature: true})
 	patrol := NewPatrolService(service, nil)
 	orchestrator := newIntegrationOrchestrator(true)
 	atomic.StoreInt32(&orchestrator.runningCount, maxPatrolActivationBacklogInvestigations-1)

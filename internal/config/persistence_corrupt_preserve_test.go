@@ -98,6 +98,7 @@ func TestLoadAIChatSessions_CorruptFilePreservedBeforeRewrite(t *testing.T) {
 // undecryptable here: Decrypt fails, the ciphertext fails to parse as JSON,
 // and the file must be preserved exactly like an unparseable one.
 func TestLoadAIFindings_UndecryptableFilePreserved(t *testing.T) {
+	isolateLegacyKeyLookupForTest(t)
 	cp := NewConfigPersistence(t.TempDir())
 
 	otherCrypto, err := crypto.NewCryptoManagerAt(t.TempDir())
@@ -121,6 +122,7 @@ func TestLoadAIFindings_UndecryptableFilePreserved(t *testing.T) {
 }
 
 func TestLoadAIChatSessions_UndecryptableFilePreserved(t *testing.T) {
+	isolateLegacyKeyLookupForTest(t)
 	cp := NewConfigPersistence(t.TempDir())
 
 	otherCrypto, err := crypto.NewCryptoManagerAt(t.TempDir())

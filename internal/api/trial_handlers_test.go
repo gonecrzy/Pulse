@@ -64,7 +64,7 @@ func TestTrialStartRoute_RetiredFromSelfHostedRouter(t *testing.T) {
 func TestTrialEntitlements_TrialDaysRemainingFromBillingState(t *testing.T) {
 	baseDir := t.TempDir()
 	mtp := config.NewMultiTenantPersistence(baseDir)
-	h := NewLicenseHandlers(mtp, false)
+	h := NewLicenseHandlers(mtp, false, &config.Config{UpstreamCommercialServicesEnabled: true})
 
 	orgID := "default"
 	store := config.NewFileBillingStore(baseDir)

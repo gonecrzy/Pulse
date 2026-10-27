@@ -376,18 +376,17 @@ func TestTelemetryUpdate_NoMutationOnPersistFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Make the config directory read-only so SaveSystemSettings fails.
+	// Replace system.json with a directory. Rename-over-directory fails even
+	// when the test process is privileged, unlike chmod-based unwritable-file
+	// fixtures that root can bypass.
 	systemFile := filepath.Join(tempDir, "system.json")
-	if err := os.Chmod(systemFile, 0400); err != nil {
+	if err := os.Remove(systemFile); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Chmod(tempDir, 0500); err != nil {
+	if err := os.Mkdir(systemFile, 0700); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() {
-		_ = os.Chmod(tempDir, 0700)    // restore so TempDir cleanup works
-		_ = os.Chmod(systemFile, 0600) // restore so TempDir cleanup works
-	})
+	t.Cleanup(func() { _ = os.RemoveAll(systemFile) })
 
 	body, _ := json.Marshal(map[string]interface{}{"telemetryEnabled": false})
 	req := httptest.NewRequest(http.MethodPost, "/api/system-settings", bytes.NewReader(body))

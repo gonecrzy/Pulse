@@ -29,6 +29,9 @@ func withDefaultDataDir(t *testing.T, dir string) {
 
 func withLegacyKeyPath(t *testing.T, path string) {
 	t.Helper()
+	// Ignore a process-wide suite override so each test's explicit fixture path
+	// controls legacy migration. An empty override falls back to legacyKeyPath.
+	t.Setenv("PULSE_LEGACY_KEY_PATH", "")
 	orig := legacyKeyPath
 	legacyKeyPath = path
 	t.Cleanup(func() { legacyKeyPath = orig })

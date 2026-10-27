@@ -1,6 +1,12 @@
 # Pulse Intelligence
 
-Pulse Patrol is available to everyone on the Community plan with BYOK (your own AI provider). Pro adds hands-on Patrol modes, issue investigation, governed fixes, verified outcomes, and 90-day history, while hosted Cloud carries those capabilities for hosted environments. Learn more at <https://pulserelay.pro> or see [PULSE_PRO.md](PULSE_PRO.md).
+The upstream Pulse plans described in [Plans and entitlements](PULSE_PRO.md)
+remain separate from this fork's local capability policy. Standalone Sindri
+builds report supported local capabilities in **Settings → Fork Capabilities**;
+that availability does not claim a Pulse Pro or hosted entitlement and does not
+grant approval or action execution authority.
+
+In upstream Pulse, Patrol's Community plan supports BYOK (your own AI provider), while Pro adds hands-on modes, issue investigation, governed fixes, verified outcomes, and 90-day history. Hosted Cloud carries those capabilities for hosted environments. This standalone fork uses the separate local capability policy above and does not infer Pulse Pro or hosted state. See [PULSE_PRO.md](PULSE_PRO.md) for upstream plan details.
 
 ---
 
@@ -871,7 +877,7 @@ Use this only in trusted environments.
 
 ## Privacy
 
-Patrol runs on your server and only sends the minimal context needed for analysis to the configured provider (when AI is enabled). Outbound usage telemetry (a rotating pseudonymous install ID, counts, feature flags, and coarse Patrol mode and governed Pulse Intelligence operations adoption flags and counters only; no hostnames, credentials, prompts, chat messages, command text, action output, token values, IP addresses, or resource identifiers in the payload) is enabled by default and can be disabled any time. See [Privacy](PRIVACY.md) for details.
+Patrol runs on your server and only sends the minimal context needed for analysis to the configured provider (when AI is enabled). Outbound usage telemetry is off by default; if explicitly enabled, it sends a rotating pseudonymous install ID, counts, feature flags, and coarse Patrol mode and governed Pulse Intelligence operations adoption flags and counters. It does not send hostnames, credentials, prompts, chat messages, command text, action output, token values, IP addresses, or resource identifiers. See [Privacy](PRIVACY.md) for details.
 
 ---
 

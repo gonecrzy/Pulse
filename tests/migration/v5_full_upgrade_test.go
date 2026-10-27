@@ -173,11 +173,12 @@ func newMigrationTestServer(t *testing.T, dataDir string) *httptest.Server {
 	require.NoError(t, mock.SetEnabled(true), "enable mock mode")
 
 	cfg := &config.Config{
-		ConfigPath:     dataDir,
-		DataPath:       dataDir,
-		DemoMode:       false,
-		AllowedOrigins: "*",
-		EnvOverrides:   make(map[string]bool),
+		ConfigPath:                        dataDir,
+		DataPath:                          dataDir,
+		DemoMode:                          false,
+		AllowedOrigins:                    "*",
+		EnvOverrides:                      make(map[string]bool),
+		UpstreamCommercialServicesEnabled: true,
 	}
 
 	var monitor *monitoring.Monitor
@@ -500,7 +501,7 @@ func TestV5FullUpgradeScenario(t *testing.T) {
 		t.Setenv("PULSE_LICENSE_SERVER_URL", exchangeServer.URL)
 
 		mtp := config.NewMultiTenantPersistence(dataDir)
-		handlers := api.NewLicenseHandlers(mtp, false)
+		handlers := newCommercialMigrationLicenseHandlers(mtp)
 		ctx := context.WithValue(context.Background(), api.OrgIDContextKey, "default")
 
 		svc := handlers.Service(ctx)
@@ -644,7 +645,7 @@ func TestV5FullUpgradeScenario(t *testing.T) {
 				t.Setenv("PULSE_LICENSE_SERVER_URL", exchangeServer.URL)
 
 				mtp := config.NewMultiTenantPersistence(dataDir)
-				handlers := api.NewLicenseHandlers(mtp, false)
+				handlers := newCommercialMigrationLicenseHandlers(mtp)
 				ctx := context.WithValue(context.Background(), api.OrgIDContextKey, "default")
 
 				svc := handlers.Service(ctx)

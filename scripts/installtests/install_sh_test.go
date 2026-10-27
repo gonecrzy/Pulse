@@ -8428,14 +8428,25 @@ func TestInstallSHUninstallRetainsCredentialsWhenSavedURLIsMissing(t *testing.T)
 		"test_noninteractive_input_token_survives_unconfirmed_removal",
 		"test_confirmed_removal_retains_caller_owned_input_token",
 		"test_confirmed_removal_deletes_runtime_token_only_with_authorised_state",
-		"test_noninteractive_input_token_survives_root_refusal",
 		"test_interactive_input_token_is_read_only_at_ingress",
 	} {
 		if !strings.Contains(string(output), name+" (__main__.UnixUninstallState."+name+") ... ok") {
 			t.Fatalf("Unix removal control %s did not pass:\n%s", name, output)
 		}
 	}
-	if !strings.Contains(string(output), "\nRan 12 tests in ") || !strings.Contains(string(output), "\nOK\n") {
+	rootRefusal := "test_noninteractive_input_token_survives_root_refusal (__main__.UnixUninstallState.test_noninteractive_input_token_survives_root_refusal) ... "
+	if os.Geteuid() == 0 {
+		if !strings.Contains(string(output), rootRefusal+"skipped 'root refusal must be exercised by an unprivileged test runner'") {
+			t.Fatalf("root-only refusal test was not explicitly skipped:\n%s", output)
+		}
+	} else if !strings.Contains(string(output), rootRefusal+"ok") {
+		t.Fatalf("root refusal test did not pass:\n%s", output)
+	}
+	wantVerdict := "\nOK\n"
+	if os.Geteuid() == 0 {
+		wantVerdict = "\nOK (skipped=1)\n"
+	}
+	if !strings.Contains(string(output), "\nRan 12 tests in ") || !strings.Contains(string(output), wantVerdict) {
 		t.Fatalf("incomplete Unix removal state verdict:\n%s", output)
 	}
 	t.Logf("%s", output)

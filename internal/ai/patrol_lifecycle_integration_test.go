@@ -24,6 +24,7 @@ func TestLifecycle_FindingToInvestigationToApproval(t *testing.T) {
 		PatrolModel:         "mock:model",
 		PatrolAutonomyLevel: "approval",
 	}
+	svc.SetLicenseChecker(&mockLicenseChecker{hasFeature: true})
 	svc.provider = &mockProvider{}
 
 	executor := tools.NewPulseToolExecutor(tools.ExecutorConfig{})

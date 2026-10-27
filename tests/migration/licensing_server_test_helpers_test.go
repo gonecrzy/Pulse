@@ -4,8 +4,14 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"github.com/rcourtman/pulse-go-rewrite/internal/api"
+	"github.com/rcourtman/pulse-go-rewrite/internal/config"
 	pkglicensing "github.com/rcourtman/pulse-go-rewrite/pkg/licensing"
 )
+
+func newCommercialMigrationLicenseHandlers(mtp *config.MultiTenantPersistence) *api.LicenseHandlers {
+	return api.NewLicenseHandlers(mtp, false, &config.Config{UpstreamCommercialServicesEnabled: true})
+}
 
 func handleMigrationInstallationStatus(w http.ResponseWriter, r *http.Request) bool {
 	if r.URL.Path != "/v1/grants/status" {

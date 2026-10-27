@@ -73,7 +73,7 @@ describe('WelcomeStep', () => {
     ).toBeInTheDocument();
     expect(screen.getByText('Usage statistics')).toBeInTheDocument();
     expect(
-      screen.getByText(/You choose on the next step and can change it at any time in Settings/),
+      screen.getByText(/Choose on the next step and change it at any time in Settings/),
     ).toBeInTheDocument();
     expect(screen.queryByText(/PULSE_TELEMETRY=false/)).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Full details' })).toHaveAttribute(

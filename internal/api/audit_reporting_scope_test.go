@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/rcourtman/pulse-go-rewrite/internal/config"
+	"github.com/rcourtman/pulse-go-rewrite/internal/forkfeatures"
 )
 
 func TestAuditEndpointsRequireAuditReadScope(t *testing.T) {
@@ -16,6 +17,7 @@ func TestAuditEndpointsRequireAuditReadScope(t *testing.T) {
 	record := newTokenRecord(t, rawToken, []string{config.ScopeMonitoringRead}, nil)
 	cfg := newTestConfigWithTokens(t, record)
 	router := NewRouter(cfg, nil, nil, nil, nil, "1.0.0")
+	enableRouterForkCapabilitiesForTest(t, router, forkfeatures.FeatureAuditLogging)
 
 	paths := []string{
 		"/api/audit",
@@ -45,6 +47,7 @@ func TestReportingEndpointsRequireSettingsReadScope(t *testing.T) {
 	record := newTokenRecord(t, rawToken, []string{config.ScopeMonitoringRead}, nil)
 	cfg := newTestConfigWithTokens(t, record)
 	router := NewRouter(cfg, nil, nil, nil, nil, "1.0.0")
+	enableRouterForkCapabilitiesForTest(t, router, forkfeatures.FeatureAdvancedReporting)
 
 	paths := []string{
 		"/api/admin/reports/catalog",
@@ -75,6 +78,7 @@ func TestReportScheduleMutationEndpointsRequireSettingsWriteScope(t *testing.T) 
 	record := newTokenRecord(t, rawToken, []string{config.ScopeSettingsRead}, nil)
 	cfg := newTestConfigWithTokens(t, record)
 	router := NewRouter(cfg, nil, nil, nil, nil, "1.0.0")
+	enableRouterForkCapabilitiesForTest(t, router, forkfeatures.FeatureAdvancedReporting)
 
 	cases := []struct {
 		method string
@@ -109,6 +113,7 @@ func TestAuditWebhooksRequireSettingsScopes(t *testing.T) {
 		record := newTokenRecord(t, rawToken, []string{config.ScopeMonitoringRead}, nil)
 		cfg := newTestConfigWithTokens(t, record)
 		router := NewRouter(cfg, nil, nil, nil, nil, "1.0.0")
+		enableRouterForkCapabilitiesForTest(t, router, forkfeatures.FeatureAuditLogging)
 
 		req := httptest.NewRequest(http.MethodGet, "/api/admin/webhooks/audit", nil)
 		req.Header.Set("X-API-Token", rawToken)
@@ -127,6 +132,7 @@ func TestAuditWebhooksRequireSettingsScopes(t *testing.T) {
 		record := newTokenRecord(t, rawToken, []string{config.ScopeSettingsRead}, nil)
 		cfg := newTestConfigWithTokens(t, record)
 		router := NewRouter(cfg, nil, nil, nil, nil, "1.0.0")
+		enableRouterForkCapabilitiesForTest(t, router, forkfeatures.FeatureAuditLogging)
 
 		req := httptest.NewRequest(http.MethodPost, "/api/admin/webhooks/audit", strings.NewReader(`{"urls":[]}`))
 		req.Header.Set("X-API-Token", rawToken)

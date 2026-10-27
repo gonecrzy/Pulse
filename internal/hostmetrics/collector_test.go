@@ -308,14 +308,16 @@ func TestCollectSplitsReclaimableCache(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Collect failed: %v", err)
 	}
+	arcSize, _ := readARCSize() // Collection subtracts any host ZFS ARC from pressure.
+	arcAdjustment := min(arcSize, uint64(6*gib))
 
 	if got, want := snapshot.Memory.CacheBytes, int64(6*gib); got != want {
 		t.Fatalf("CacheBytes = %d, want %d", got, want)
 	}
-	if got, want := snapshot.Memory.UsedBytes, int64(6*gib); got != want {
+	if got, want := snapshot.Memory.UsedBytes, int64(6*gib)-int64(arcAdjustment); got != want {
 		t.Fatalf("UsedBytes = %d, want %d", got, want)
 	}
-	if got, want := snapshot.Memory.FreeBytes, int64(4*gib); got != want {
+	if got, want := snapshot.Memory.FreeBytes, int64(4*gib)+int64(arcAdjustment); got != want {
 		t.Fatalf("FreeBytes = %d, want %d", got, want)
 	}
 	sum := snapshot.Memory.UsedBytes + snapshot.Memory.CacheBytes + snapshot.Memory.FreeBytes
@@ -345,17 +347,20 @@ func TestCollectDerivesMemoryPressureFromAvailableMemory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Collect failed: %v", err)
 	}
+	arcSize, _ := readARCSize() // Collection subtracts any host ZFS ARC from pressure.
+	arcAdjustment := min(arcSize, uint64(8*gib))
 
-	if got, want := snapshot.Memory.UsedBytes, int64(8*gib); got != want {
+	if got, want := snapshot.Memory.UsedBytes, int64(8*gib)-int64(arcAdjustment); got != want {
 		t.Fatalf("UsedBytes = %d, want %d", got, want)
 	}
 	if got, want := snapshot.Memory.CacheBytes, int64(7*gib); got != want {
 		t.Fatalf("CacheBytes = %d, want %d", got, want)
 	}
-	if got, want := snapshot.Memory.FreeBytes, int64(1*gib); got != want {
+	if got, want := snapshot.Memory.FreeBytes, int64(1*gib)+int64(arcAdjustment); got != want {
 		t.Fatalf("FreeBytes = %d, want %d", got, want)
 	}
-	if got, want := snapshot.Memory.Usage, 50.0; got != want {
+	wantUsage := float64(uint64(8*gib)-arcAdjustment) / float64(16*gib) * 100.0
+	if got, want := snapshot.Memory.Usage, wantUsage; got != want {
 		t.Fatalf("Usage = %.2f, want %.2f", got, want)
 	}
 	sum := snapshot.Memory.UsedBytes + snapshot.Memory.CacheBytes + snapshot.Memory.FreeBytes

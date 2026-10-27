@@ -200,7 +200,7 @@ describe('SetupCompletionPanel guardrails', () => {
     expect(setupCompletionPanelSource).toContain('min-h-10 min-w-10');
   });
 
-  it('keeps the Pro activation pointer on the direct billing route behind an explicit license gate', () => {
+  it('keeps the Pro activation pointer behind explicit commercial and license gates', () => {
     expect(setupCompletionPanelSource).toContain(
       "import { SELF_HOSTED_PRO_BILLING_PLAN_ROUTE } from '@/utils/pricingHandoff';",
     );
@@ -215,7 +215,9 @@ describe('SetupCompletionPanel guardrails', () => {
     expect(setupCompletionPanelSource).toContain('setup.completion.proActivation.description');
     expect(setupCompletionPanelSource).toContain('setup.completion.proActivation.action');
     expect(setupCompletionModelSource).toContain(
-      "state.runtimeBuild === 'pro' && state.licenseValid === false",
+      'state.commercialServicesEnabled === true',
     );
+    expect(setupCompletionModelSource).toContain("state.runtimeBuild === 'pro'");
+    expect(setupCompletionModelSource).toContain('state.licenseValid === false');
   });
 });

@@ -32,7 +32,7 @@ func createTestHandler(t *testing.T) *LicenseHandlers {
 
 func issuePurchaseReturnToken(t *testing.T, handler *LicenseHandlers, orgID, feature string) string {
 	t.Helper()
-	handler.SetConfig(&config.Config{PublicURL: "https://pulse.example.com"})
+	handler.SetConfig(&config.Config{PublicURL: "https://pulse.example.com", UpstreamCommercialServicesEnabled: true})
 	signingKey, err := handler.purchaseReturnSigningKey()
 	if err != nil {
 		t.Fatalf("purchaseReturnSigningKey: %v", err)
@@ -736,7 +736,7 @@ func TestHandleActivateLicense_ValidKey(t *testing.T) {
 
 func TestHandleCheckoutStart_RedirectsToPulseAccountWithSignedReturnState(t *testing.T) {
 	handler := createTestHandler(t)
-	handler.SetConfig(&config.Config{PublicURL: "https://pulse.example.com"})
+	handler.SetConfig(&config.Config{PublicURL: "https://pulse.example.com", UpstreamCommercialServicesEnabled: true})
 	var capturedReq struct {
 		Feature           string `json:"feature"`
 		SuccessURL        string `json:"success_url"`
@@ -909,7 +909,7 @@ func TestHandleCheckoutStart_InsecureNonLoopbackFinishesOnWebsite(t *testing.T) 
 
 func TestHandleCheckoutActivation_GETRendersAutoSubmitBridge(t *testing.T) {
 	handler := createTestHandler(t)
-	handler.SetConfig(&config.Config{PublicURL: "https://pulse.example.com"})
+	handler.SetConfig(&config.Config{PublicURL: "https://pulse.example.com", UpstreamCommercialServicesEnabled: true})
 
 	returnToken := issuePurchaseReturnToken(t, handler, "default", "max_monitored_systems")
 	req := httptest.NewRequest(
@@ -1200,7 +1200,7 @@ func TestHandleCheckoutActivation_AllowsRetryAfterActivationFailure(t *testing.T
 
 func TestHandleCheckoutActivation_RejectsMissingPurchaseReturnToken(t *testing.T) {
 	handler := createTestHandler(t)
-	handler.SetConfig(&config.Config{PublicURL: "https://pulse.example.com"})
+	handler.SetConfig(&config.Config{PublicURL: "https://pulse.example.com", UpstreamCommercialServicesEnabled: true})
 
 	req := httptest.NewRequest(
 		http.MethodPost,

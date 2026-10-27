@@ -150,8 +150,9 @@ describe('useSystemSettingsState branch coverage', () => {
   // to drive the *Locked accessors is to seed it through initializeSystemSettingsState.
   const mountWithEnvOverrides = async (
     envOverrides: Record<string, boolean>,
+    initialSettings: Record<string, unknown> = {},
   ): Promise<{ dispose: () => void; hookState: HookState }> => {
-    mocks.getSystemSettingsMock.mockResolvedValue({ envOverrides });
+    mocks.getSystemSettingsMock.mockResolvedValue({ ...initialSettings, envOverrides });
     const mounted = mountHook();
     await mounted.hookState.initializeSystemSettingsState();
     await flushAsync();
@@ -515,7 +516,12 @@ describe('useSystemSettingsState branch coverage', () => {
 
   describe('handleTelemetryEnabledChange', () => {
     it('is a no-op when the setting is locked by an env override', async () => {
-      const { hookState, dispose } = await mountWithEnvOverrides({ PULSE_TELEMETRY: true });
+      const { hookState, dispose } = await mountWithEnvOverrides(
+        { PULSE_TELEMETRY: true },
+        { telemetryEnabled: true },
+      );
+      await hookState.initializeSystemSettingsState();
+      await flushAsync();
       await hookState.handleTelemetryEnabledChange(true);
       await flushAsync();
       expect(mocks.updateSystemSettingsMock).not.toHaveBeenCalled();
@@ -553,7 +559,10 @@ describe('useSystemSettingsState branch coverage', () => {
 
     it('forwards the backend error message and reverts the toggle on API failure', async () => {
       mocks.updateSystemSettingsMock.mockRejectedValueOnce(new Error('telemetry failed'));
+      mocks.getSystemSettingsMock.mockResolvedValue({ telemetryEnabled: true });
       const { hookState, dispose } = mountHook();
+      await hookState.initializeSystemSettingsState();
+      await flushAsync();
       await hookState.handleTelemetryEnabledChange(false);
       await flushAsync();
       expect(hookState.telemetryEnabled()).toBe(true);
@@ -564,7 +573,10 @@ describe('useSystemSettingsState branch coverage', () => {
 
     it('falls back to the default message for non-Error failures', async () => {
       mocks.updateSystemSettingsMock.mockRejectedValueOnce('unknown fault' as unknown as Error);
+      mocks.getSystemSettingsMock.mockResolvedValue({ telemetryEnabled: true });
       const { hookState, dispose } = mountHook();
+      await hookState.initializeSystemSettingsState();
+      await flushAsync();
       await hookState.handleTelemetryEnabledChange(false);
       await flushAsync();
       expect(hookState.telemetryEnabled()).toBe(true);

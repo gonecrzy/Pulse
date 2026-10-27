@@ -11,7 +11,7 @@ import (
 
 func TestHandleCheckoutStart_ReopensOwnedBillingWhenPulseAccountHandoffIsUnavailable(t *testing.T) {
 	handler := createTestHandler(t)
-	handler.SetConfig(&config.Config{PublicURL: "https://pulse.example.com"})
+	handler.SetConfig(&config.Config{PublicURL: "https://pulse.example.com", UpstreamCommercialServicesEnabled: true})
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/checkout/portal-handoff" {

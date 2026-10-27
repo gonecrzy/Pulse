@@ -441,8 +441,10 @@ func TestPrepareTenantRuntimeMountSourcesAlignsOwnershipAndPermissions(t *testin
 		}
 	}
 
-	uid := os.Getuid()
-	gid := os.Getgid()
+	// Tenant bind mounts are owned by the tenant runtime identity, which can
+	// differ from the test process identity when tests run as root.
+	uid := tenantRuntimeUIDFor(ManagerConfig{})
+	gid := tenantRuntimeGIDFor(ManagerConfig{})
 	if err := prepareTenantRuntimeMountSources(tenantDataDir, uid, gid); err != nil {
 		t.Fatalf("prepareTenantRuntimeMountSources: %v", err)
 	}

@@ -74,6 +74,7 @@ func newPatrolAutopilotTestHandler(t *testing.T, orgID string, now *time.Time) (
 	handler := newTestAISettingsHandler(&config.Config{DataPath: dir}, persistence, nil)
 	if handler.defaultAIService != nil {
 		handler.defaultAIService.SetOrgID(orgID)
+		handler.defaultAIService.SetLicenseChecker(stubLicenseChecker{allow: true})
 	}
 	handler.SetPatrolAutopilotServerPolicyProvider(func() unifiedresources.PatrolAutopilotServerPolicy {
 		return unifiedresources.CurrentPatrolAutopilotServerPolicy(*now)

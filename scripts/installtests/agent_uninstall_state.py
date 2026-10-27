@@ -282,6 +282,8 @@ rm() {
                 self.assertEqual(after["unrelated"], before["unrelated"])
 
     def test_noninteractive_input_token_survives_root_refusal(self):
+        if os.geteuid() == 0:
+            self.skipTest("root refusal must be exercised by an unprivileged test runner")
         for action in ("uninstall", "install", "update", "runner"):
             for kind in ("selected", "runtime", "legacy"):
                 with self.subTest(action=action, credential=kind):

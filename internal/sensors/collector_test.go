@@ -59,6 +59,7 @@ func TestCollectLocalMissingSensors(t *testing.T) {
 }
 
 func TestCollectLocalSensorsOutput(t *testing.T) {
+	useTestSysfsRoots(t)
 	dir := t.TempDir()
 	writeScript(t, dir, "sensors", "#!/bin/sh\necho '{\"chip\":{\"temp\":{\"temp1_input\":42}}}'\n")
 	t.Setenv("PATH", dir+":"+os.Getenv("PATH"))
@@ -73,6 +74,7 @@ func TestCollectLocalSensorsOutput(t *testing.T) {
 }
 
 func TestCollectLocalSensorsOutputWithNonZeroExit(t *testing.T) {
+	useTestSysfsRoots(t)
 	dir := t.TempDir()
 	writeScript(t, dir, "sensors", "#!/bin/sh\necho '{\"chip\":{\"temp\":{\"temp1_input\":42}}}'\nexit 1\n")
 	t.Setenv("PATH", dir+":"+os.Getenv("PATH"))
@@ -121,6 +123,7 @@ func TestCollectLocalFallbackToArmadaHwmon(t *testing.T) {
 }
 
 func TestCollectLocalAcceptsNonZeroWithOutput(t *testing.T) {
+	useTestSysfsRoots(t)
 	dir := t.TempDir()
 	writeScript(t, dir, "sensors", "#!/bin/sh\necho '{\"chip\":{\"temp\":{\"temp1_input\":55}}}'\nexit 1\n")
 	t.Setenv("PATH", dir+":"+os.Getenv("PATH"))
@@ -135,6 +138,7 @@ func TestCollectLocalAcceptsNonZeroWithOutput(t *testing.T) {
 }
 
 func TestCollectLocalRejectsOversizedOutput(t *testing.T) {
+	useTestSysfsRoots(t)
 	dir := t.TempDir()
 	oversized := strings.Repeat("a", maxSensorsOutputSizeBytes+1)
 	writeScript(t, dir, "sensors", "#!/bin/sh\ncat <<'EOF'\n"+oversized+"\nEOF\n")

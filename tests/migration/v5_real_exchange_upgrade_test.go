@@ -115,7 +115,7 @@ func TestV5PaidLicenseUpgrade_RealLicenseServerExchange(t *testing.T) {
 			t.Setenv("PULSE_LICENSE_SERVER_URL", server.baseURL)
 
 			mtp := config.NewMultiTenantPersistence(dataDir)
-			handlers := api.NewLicenseHandlers(mtp, false)
+			handlers := newCommercialMigrationLicenseHandlers(mtp)
 			t.Cleanup(handlers.StopAllBackgroundLoops)
 
 			ctx := context.WithValue(context.Background(), api.OrgIDContextKey, "default")

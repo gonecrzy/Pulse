@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/rcourtman/pulse-go-rewrite/internal/config"
+	"github.com/rcourtman/pulse-go-rewrite/internal/forkfeatures"
 	"github.com/rcourtman/pulse-go-rewrite/pkg/auth"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -67,6 +68,7 @@ func TestSettingsCapabilitiesMatchRouteEnforcementWithoutRBAC(t *testing.T) {
 
 	cfg := newCapabilityConfig(t, "admin")
 	router := NewRouter(cfg, nil, nil, nil, nil, "1.0.0")
+	enableRouterForkCapabilitiesForTest(t, router, forkfeatures.FeatureAdvancedReporting)
 
 	caps := fetchSettingsCapabilities(t, router, capabilitySessionCookie(t, "sso:outsider@example.com"))
 	for _, key := range []string{
@@ -129,6 +131,7 @@ func TestSettingsCapabilitiesGrantConfiguredAdminWithoutRBAC(t *testing.T) {
 
 	cfg := newCapabilityConfig(t, "admin")
 	router := NewRouter(cfg, nil, nil, nil, nil, "1.0.0")
+	enableRouterForkCapabilitiesForTest(t, router, forkfeatures.FeatureAdvancedReporting)
 
 	caps := fetchSettingsCapabilities(t, router, capabilitySessionCookie(t, "admin"))
 	for _, key := range []string{

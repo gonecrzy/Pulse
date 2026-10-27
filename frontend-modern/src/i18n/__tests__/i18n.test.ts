@@ -295,17 +295,21 @@ describe('i18n foundation', () => {
     }
   });
 
-  it('keeps machine-facing identifiers unchanged in first-wave settings general catalog copy', () => {
+  it('keeps telemetry privacy details and opt-in defaults in localized settings copy', () => {
     const telemetryPrivacyTerms = {
       de: ['Lebenszyklus', 'Ergebniszahlen', 'URLs', 'Pfade', 'Browser-Ereignisse'],
       es: ['ciclo de vida', 'resultados', 'URLs', 'rutas', 'eventos del navegador'],
+    } as const;
+    const defaultOff = {
+      de: 'standardmaessig ausgeschaltet',
+      es: 'desactivada por defecto',
     } as const;
 
     for (const locale of FIRST_LOCALIZATION_LOCALES) {
       const telemetryDescription = I18N_MESSAGES[locale]['settings.general.telemetry.description'];
 
       expect(I18N_MESSAGES[locale]['settings.general.language.description']).toContain('API');
-      expect(telemetryDescription).toContain('Pulse');
+      expect(telemetryDescription).toContain(defaultOff[locale]);
       expect(telemetryDescription).toContain('IP');
       expect(telemetryDescription).toContain('90');
       expect(telemetryDescription).not.toMatch(/anonymous/i);
@@ -358,7 +362,7 @@ describe('i18n foundation', () => {
     }
   });
 
-  it('keeps machine-facing identifiers unchanged in first-session monitoring catalog copy', () => {
+  it('keeps telemetry opt-in and privacy wording in first-session monitoring copy', () => {
     for (const locale of FIRST_LOCALIZATION_LOCALES) {
       const telemetryNotice = I18N_MESSAGES[locale]['setup.welcome.telemetryNotice.description'];
       const deploymentChoice = I18N_MESSAGES[locale]['setup.welcome.deploymentHint.choose'];
@@ -375,16 +379,25 @@ describe('i18n foundation', () => {
       // Both setup surfaces say what the summary is for before what it holds,
       // and neither tells the reader how to turn it off: the toggle is the
       // control, and the how-to-disable copy lives in Full details and Settings.
-      const purposeWording = { de: 'Prioritaet', es: 'prioridad' } as const;
+      const purposeWording = { de: 'Prioritaet', es: 'priorizar' } as const;
       expect(setupTelemetryChoice).toContain(purposeWording[locale]);
       expect(telemetryNotice).not.toMatch(/ausschalten|desactivarl/i);
-      // Every locale states what the summary is never used for, because
-      // "sold to someone" is the fear that turns a default-on switch off.
-      const neverSold = { de: 'verkauft', es: 'se vende' } as const;
-      expect(telemetryNotice).toContain(neverSold[locale]);
-      expect(setupTelemetryChoice).toContain(neverSold[locale]);
+      const defaultOff = {
+        de: {
+          welcome: 'standardmaessig ausgeschaltet',
+          security: 'standardmaessig ausgeschaltet',
+          settings: 'standardmaessig ausgeschaltet',
+        },
+        es: {
+          welcome: 'desactivadas por defecto',
+          security: 'desactivado por defecto',
+          settings: 'desactivada por defecto',
+        },
+      } as const;
+      expect(telemetryNotice).toContain(defaultOff[locale].welcome);
+      expect(setupTelemetryChoice).toContain(defaultOff[locale].security);
       expect(I18N_MESSAGES[locale]['settings.general.telemetry.description']).toContain(
-        neverSold[locale],
+        defaultOff[locale].settings,
       );
       expect(deploymentChoice).toContain('Pulse');
       expect(deploymentChoice).not.toContain('Docker');

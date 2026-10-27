@@ -236,7 +236,7 @@ Numeric intervals are **seconds** unless noted otherwise.
 | `allowedEmbedOrigins` | Comma-separated `frame-ancestors` allowlist |
 | `webhookAllowedPrivateCIDRs` | Allowlist for private webhook targets |
 | `updateChannel` | Update channel (`stable` or `rc`) |
-| `autoUpdateEnabled` | Allow unattended automatic updates from the systemd update timer (`stable` channel only) |
+| `autoUpdateEnabled` | Allow unattended automatic updates and startup/hourly update checks (`stable` channel only) |
 | `publicURL` | Public URL used in links/notifications |
 | `hideLocalLogin` | Hide username/password login form |
 | `temperatureMonitoringEnabled` | Enable temperature monitoring (where supported) |
@@ -439,8 +439,37 @@ When `allowEmbedding` is `false`, Pulse sends `X-Frame-Options: DENY` and `frame
 | `PULSE_ENABLE_PROXMOX_GUEST_DOCKER_DETECTION` | Allow Proxmox-side LXC Docker socket hinting with `pct exec` | `false` |
 | `PULSE_ENABLE_PROXMOX_GUEST_DOCKER_INVENTORY` | Allow Proxmox-side minimal LXC Docker inventory collection with `pct exec`; collects Docker host/container summary, not inspect/env/mount/process data. Admins can also toggle this in Settings → System → General; setting the env var locks the toggle | `false` |
 | `PULSE_PROXMOX_GUEST_DOCKER_INVENTORY_VMIDS` | Optional comma-separated VMID allowlist for Proxmox-side LXC Docker discovery; when set, only these guests are socket-probed and inventoried. Empty means all running LXCs are eligible when detection or inventory is enabled | *(unset)* |
-| `PULSE_TELEMETRY` | Outbound usage telemetry ([details](PRIVACY.md)); set `false` to disable | `true` |
+| `PULSE_TELEMETRY` | Opt in to outbound usage telemetry ([details](PRIVACY.md)); set `true` to enable. The default is off and no sender starts. | `false` |
+| `PULSE_UPSTREAM_COMMERCIAL_SERVICES` | Compatibility opt-in for standalone Pulse activation, checkout, and entitlement-refresh services. Existing activation/license/billing files are preserved when off. | `false` |
 | `PULSE_DEPLOYMENT_METHOD` | Optional closed telemetry label: `docker_compose`, `docker_run`, `container_other`, `systemd`, `binary_other`, or `other`; invalid values are reported only as the safe runtime fallback | Inferred as `container_other` or `binary_other` |
+
+### Standalone fork network defaults
+
+Standalone Sindri does not contact Pulse activation, entitlement-refresh,
+installation-status, checkout, or telemetry services unless the operator opts
+in. `PULSE_UPSTREAM_COMMERCIAL_SERVICES=true` restores the compatibility path
+for migrating persisted commercial state; restart the server after changing
+it. Hosted mode keeps its hosted entitlement behavior. With the switch off,
+legacy license and billing files remain on disk but are not loaded as current
+commercial state. `/api/license/entitlements` remains available for client
+compatibility and reports `commercial_services_enabled: false`; it does not
+invent a Pro, trial, or hosted subscription. Activation and checkout routes
+return `410 Gone`.
+
+Missing `telemetryEnabled` values in existing `system.json` files now resolve
+to off. An explicitly saved `true` remains an operator choice. Use the first-run
+or Settings toggle, or set `PULSE_TELEMETRY=true`, to opt in. When off, the
+telemetry runner starts no sender. Full payload details are in
+[Privacy](PRIVACY.md).
+
+Background release checks run only when `autoUpdateEnabled` is true on the
+stable channel. Settings **Check for updates** remains operator-triggered and
+contacts the configured update source: GitHub release endpoints by default,
+or `PULSE_UPDATE_SERVER` when configured. A compiled Pro runtime uses the Pulse
+download broker for manual Pro update checks. Agent installation and update
+downloads are also operator-triggered. Infrastructure polling, configured AI
+providers/gateways, probes, and notifications continue to contact their
+operator-configured destinations.
 
 ### Backup polling and guest safety
 
@@ -495,7 +524,7 @@ These are stored in `system.json` and managed via the UI.
 | Key | Description | Default |
 | ----- | ------------- | --------- |
 | `updateChannel` | Update channel (`stable` or `rc`) | `stable` |
-| `autoUpdateEnabled` | Allow unattended automatic updates from the systemd update timer (`stable` channel only) | `false` |
+| `autoUpdateEnabled` | Allow unattended automatic updates and startup/hourly update checks (`stable` channel only) | `false` |
 
 > **Note**: Update settings are stored in `system.json`. Legacy `.env` entries (`UPDATE_CHANNEL`, `AUTO_UPDATE_ENABLED`) are kept in sync for backwards compatibility but are not read at runtime. The former `autoUpdateCheckInterval` / `autoUpdateTime` fields were never consumed and are ignored if present; the update schedule lives in the systemd timer.
 >

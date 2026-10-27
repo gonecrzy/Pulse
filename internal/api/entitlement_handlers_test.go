@@ -327,7 +327,7 @@ func TestBuildEntitlementPayload_PreservesPlanVersionForSelfHostedJWT(t *testing
 	}
 }
 
-func TestEntitlementHandler_HostedEvaluatorKeepsCloudLimitsWhenNoLicense(t *testing.T) {
+func TestEntitlementHandler_HostedEvaluatorKeepsCloudLimitsFromBillingState(t *testing.T) {
 	baseDir := t.TempDir()
 	mtp := config.NewMultiTenantPersistence(baseDir)
 
@@ -367,11 +367,11 @@ func TestEntitlementHandler_HostedEvaluatorKeepsCloudLimitsWhenNoLicense(t *test
 		t.Fatalf("unmarshal payload failed: %v", err)
 	}
 
-	if payload.CommercialServicesEnabled {
-		t.Fatal("fresh standalone install reports Pulse commercial services enabled")
+	if !payload.CommercialServicesEnabled {
+		t.Fatal("hosted runtime must retain Pulse commercial service behavior")
 	}
-	if payload.SubscriptionState != "" {
-		t.Fatalf("subscription_state=%q, want empty because no subscription exists", payload.SubscriptionState)
+	if payload.SubscriptionState != string(license.SubStateActive) {
+		t.Fatalf("subscription_state=%q, want hosted billing state %q", payload.SubscriptionState, license.SubStateActive)
 	}
 	if payload.PlanVersion != "cloud_starter" {
 		t.Fatalf("plan_version=%q, want %q", payload.PlanVersion, "cloud_starter")
@@ -593,7 +593,7 @@ func TestHandleRuntimeCapabilities_CommunityRuntimeBlocksPrivateProCapabilities(
 		t.Fatalf("SaveBillingState failed: %v", err)
 	}
 
-	h := NewLicenseHandlers(mtp, false)
+	h := NewLicenseHandlers(mtp, false, &config.Config{UpstreamCommercialServicesEnabled: true})
 	ctx := context.WithValue(context.Background(), OrgIDContextKey, "default")
 
 	runtimeReq := httptest.NewRequest(http.MethodGet, "/api/license/runtime-capabilities", nil).
@@ -673,7 +673,7 @@ func TestHandleRuntimeCapabilities_ProRuntimePreservesPrivateProCapabilities(t *
 		t.Fatalf("SaveBillingState failed: %v", err)
 	}
 
-	h := NewLicenseHandlers(mtp, false)
+	h := NewLicenseHandlers(mtp, false, &config.Config{UpstreamCommercialServicesEnabled: true})
 	h.SetRuntimeIdentity(proRuntimeIdentityFromLicensing())
 
 	req := httptest.NewRequest(http.MethodGet, "/api/license/runtime-capabilities", nil).
@@ -719,8 +719,8 @@ func TestEntitlementHandler_SelfHostedTrialEligibilityRetiredForFreshOrg(t *test
 	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("unmarshal payload failed: %v", err)
 	}
-	if payload.SubscriptionState != string(license.SubStateActive) {
-		t.Fatalf("subscription_state=%q, want %q", payload.SubscriptionState, license.SubStateActive)
+	if payload.SubscriptionState != "" {
+		t.Fatalf("subscription_state=%q, want empty while standalone trial services are retired", payload.SubscriptionState)
 	}
 	if payload.TrialEligible {
 		t.Fatalf("trial_eligible=%v, want false", payload.TrialEligible)
