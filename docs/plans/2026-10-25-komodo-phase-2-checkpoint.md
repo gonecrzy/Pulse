@@ -845,8 +845,8 @@ shared storage requires provider shared-storage metadata. Ambiguous matches,
 empty slots, unused volumes, CD-ROMs, and generic guest devices do not create
 backing edges. Host SSDs are never treated as VM backing from proximity alone.
 The Proxmox config endpoint and volume-ID form are documented in the upstream
-[QEMU configuration reference](https://github.com/proxmox/pve-docs/blob/master/qm.conf.adoc)
-and [storage administration reference](https://pve.proxmox.com/pve-docs-7/pvesm.1.html).
+[QEMU configuration reference](https://pve.proxmox.com/pve-docs-8/qm.conf.5.html)
+and [storage administration reference](https://pve.proxmox.com/pve-docs-8/pvesm.1.html).
 
 Sindri retains bounded bidirectional traversal through the same graph. Results
 distinguish direct dependencies, service monitoring, verified hardware
