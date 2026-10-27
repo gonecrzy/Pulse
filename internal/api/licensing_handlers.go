@@ -18,6 +18,7 @@ import (
 
 	"github.com/rcourtman/pulse-go-rewrite/internal/config"
 	"github.com/rcourtman/pulse-go-rewrite/internal/crypto"
+	"github.com/rcourtman/pulse-go-rewrite/internal/forkfeatures"
 	"github.com/rcourtman/pulse-go-rewrite/internal/mock"
 	"github.com/rcourtman/pulse-go-rewrite/internal/monitoring"
 	"github.com/rcourtman/pulse-go-rewrite/internal/securityutil"
@@ -64,6 +65,7 @@ type LicenseHandlers struct {
 	purchaseReturnRedemptions *purchaseReturnRedemptionStore
 	monitor                   *monitoring.Monitor
 	mtMonitor                 *monitoring.MultiTenantMonitor
+	forkAccess                forkfeatures.AccessResolver
 	hostedLeaseRefresh        sync.Map // map[string]*hostedEntitlementRefreshLoop
 	runtimeVersion            string
 	runtimeIdentity           runtimeIdentityModel
@@ -107,11 +109,34 @@ func (h *LicenseHandlers) SetMonitors(monitor *monitoring.Monitor, mtMonitor *mo
 	h.mtMonitor = mtMonitor
 }
 
+func (h *LicenseHandlers) SetForkAccessResolver(resolver forkfeatures.AccessResolver) {
+	if h != nil {
+		h.forkAccess = resolver
+	}
+}
+
 func (h *LicenseHandlers) SetConfig(cfg *config.Config) {
 	if h == nil || cfg == nil {
 		return
 	}
 	h.cfg = cfg
+	if !h.upstreamCommercialServicesEnabled() {
+		h.StopAllBackgroundLoops()
+	}
+}
+
+// upstreamCommercialServicesEnabled reports whether this runtime may contact
+// Pulse activation, checkout, and grant-refresh services. Hosted runtimes keep
+// their server-managed behavior; every standalone build requires an explicit
+// compatibility opt-in, including builds containing Pro edition code.
+func (h *LicenseHandlers) upstreamCommercialServicesEnabled() bool {
+	if h == nil {
+		return false
+	}
+	if h.hostedMode {
+		return true
+	}
+	return h.cfg != nil && h.cfg.UpstreamCommercialServicesEnabled
 }
 
 func (h *LicenseHandlers) SetRuntimeVersion(version string) {
@@ -552,9 +577,11 @@ func (h *LicenseHandlers) getTenantComponents(ctx context.Context) (*licenseServ
 	service.SetClientVersion(h.runtimeVersion)
 	service.SetRuntimeIdentity(h.currentRuntimeIdentity())
 
-	// Wire license server client and persistence so activation / refresh can use them.
-	lsClient := newLicenseServerClientFromLicensing("")
-	service.SetLicenseServerClient(lsClient)
+	// Only wire the Pulse server client in hosted/Pro runtimes or after an
+	// explicit standalone compatibility opt-in.
+	if h.upstreamCommercialServicesEnabled() {
+		service.SetLicenseServerClient(newLicenseServerClientFromLicensing(""))
+	}
 	if persistence != nil {
 		service.SetPersistence(persistence)
 	}
@@ -563,8 +590,10 @@ func (h *LicenseHandlers) getTenantComponents(ctx context.Context) (*licenseServ
 		log.Warn().Str("org_id", orgID).Err(err).Msg("Failed to initialize license evaluator for org")
 	}
 
-	// Restore activation state from v6 grant persistence when present.
-	if persistence != nil {
+	// Standalone Community keeps old activation and legacy license files intact
+	// for rollback, but does not load them as current commercial state unless the
+	// operator explicitly enables the compatibility path.
+	if persistence != nil && h.upstreamCommercialServicesEnabled() {
 		activationState, loadErr := persistence.LoadActivationState()
 		if loadErr != nil {
 			log.Warn().Str("org_id", orgID).Err(loadErr).Msg("Failed to load activation state")
@@ -575,9 +604,10 @@ func (h *LicenseHandlers) getTenantComponents(ctx context.Context) (*licenseServ
 				if clearErr := h.setCommercialMigrationState(orgID, nil); clearErr != nil {
 					log.Warn().Str("org_id", orgID).Err(clearErr).Msg("Failed to clear commercial migration state after activation restore")
 				}
-				// Start the background refresh loop for the restored grant.
-				service.StartGrantRefresh(context.Background())
-				service.StartInstallationStatusPoll(context.Background())
+				if h.upstreamCommercialServicesEnabled() {
+					service.StartGrantRefresh(context.Background())
+					service.StartInstallationStatusPoll(context.Background())
+				}
 				log.Info().Str("org_id", orgID).Str("license_id", activationState.LicenseID).Msg("Restored license activation")
 			}
 		}
@@ -597,7 +627,7 @@ func (h *LicenseHandlers) getTenantComponents(ctx context.Context) (*licenseServ
 
 	// Strict v6 automatically exchanges persisted legacy JWT licenses into the
 	// activation/grant model on startup when no activation state exists yet.
-	if persistence != nil && !mockFixturesEnabled && !isLicenseValidationDevModeFromLicensing() && !service.IsActivated() {
+	if persistence != nil && h.upstreamCommercialServicesEnabled() && !mockFixturesEnabled && !isLicenseValidationDevModeFromLicensing() && !service.IsActivated() {
 		legacyJWT, loadErr := persistence.Load()
 		if loadErr != nil {
 			if !os.IsNotExist(loadErr) {
@@ -710,6 +740,13 @@ func (h *LicenseHandlers) ensureEvaluatorForOrg(orgID string, service *licenseSe
 	}
 	// Never override token-backed evaluator when a JWT license is present.
 	if service.Current() != nil {
+		return nil
+	}
+	if !h.upstreamCommercialServicesEnabled() {
+		// Standalone Community does not load persisted hosted trial/subscription
+		// snapshots as current entitlement state. The files remain intact for an
+		// explicit compatibility opt-in or rollback.
+		service.SetEvaluator(nil)
 		return nil
 	}
 
@@ -837,7 +874,12 @@ func (h *LicenseHandlers) FeatureService(ctx context.Context) licenseFeatureChec
 	if h == nil {
 		return nil
 	}
-	return h.Service(ctx)
+	return standaloneFeatureChecker{
+		base:       h.Service(ctx),
+		access:     h.forkAccess,
+		ctx:        ctx,
+		standalone: !h.upstreamCommercialServicesEnabled(),
+	}
 }
 
 type hostedTrialLeaseRefreshRequest struct {
@@ -973,6 +1015,9 @@ func userFriendlyActivationError(err error) string {
 // HandleActivateLicense handles POST /api/license/activate
 // Validates and activates a license key.
 func (h *LicenseHandlers) activateLicenseKey(ctx context.Context, licenseKey string) (ActivateLicenseResponse, error) {
+	if !h.upstreamCommercialServicesEnabled() {
+		return ActivateLicenseResponse{}, errors.New("Pulse commercial activation is disabled in this standalone runtime")
+	}
 	service, persistence, err := h.getTenantComponents(ctx)
 	if err != nil {
 		return ActivateLicenseResponse{}, fmt.Errorf("resolve tenant licensing components: %w", err)
@@ -1034,6 +1079,10 @@ func (h *LicenseHandlers) HandleActivateLicense(w http.ResponseWriter, r *http.R
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	if !h.upstreamCommercialServicesEnabled() {
+		writeErrorResponse(w, http.StatusGone, "upstream_commercial_services_disabled", "Pulse license activation is unavailable in this standalone runtime", nil)
+		return
+	}
 
 	var req ActivateLicenseRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -1078,6 +1127,10 @@ func (h *LicenseHandlers) HandleActivateLicense(w http.ResponseWriter, r *http.R
 func (h *LicenseHandlers) HandleCheckoutStart(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !h.upstreamCommercialServicesEnabled() {
+		http.Error(w, "Pulse commercial checkout is unavailable in this standalone runtime", http.StatusGone)
 		return
 	}
 
@@ -1213,6 +1266,10 @@ func (h *LicenseHandlers) purchaseHandoffTargets(r *http.Request, feature string
 // a completed Stripe redirect, while POST redeems the completed session into a
 // local activation and returns the operator to the canonical billing route.
 func (h *LicenseHandlers) HandleCheckoutActivation(w http.ResponseWriter, r *http.Request) {
+	if !h.upstreamCommercialServicesEnabled() {
+		http.Error(w, "Pulse commercial checkout is unavailable in this standalone runtime", http.StatusGone)
+		return
+	}
 	if r.Method == http.MethodGet {
 		sessionID := strings.TrimSpace(r.URL.Query().Get(licensePurchaseSessionIDField))
 		portalHandoffID := strings.TrimSpace(r.URL.Query().Get(pulseAccountPortalHandoffIDField))
@@ -1520,6 +1577,13 @@ func RequireLicenseFeature(resolver licenseFeatureServiceResolver, feature strin
 			return
 		}
 		if err := service.RequireFeature(feature); err != nil {
+			var localErr *localForkCapabilityUnavailableError
+			if errors.As(err, &localErr) {
+				writeErrorResponse(w, http.StatusForbidden, "fork_capability_unavailable", "Required local fork capability is unavailable", map[string]string{
+					"capability": string(localErr.Capability),
+				})
+				return
+			}
 			WriteLicenseRequired(w, feature, err.Error())
 			return
 		}
@@ -1545,11 +1609,22 @@ func LicenseGatedEmptyResponse(resolver licenseFeatureServiceResolver, feature s
 			return
 		}
 		service := resolver.FeatureService(r.Context())
-		if service == nil || service.RequireFeature(feature) != nil {
+		var accessErr error
+		if service == nil {
+			accessErr = errors.New("license service unavailable")
+		} else {
+			accessErr = service.RequireFeature(feature)
+		}
+		if accessErr != nil {
 			w.Header().Set("Content-Type", "application/json")
-			// Set header to indicate license is required (frontend can check this)
-			w.Header().Set("X-License-Required", "true")
-			w.Header().Set("X-License-Feature", feature)
+			var localErr *localForkCapabilityUnavailableError
+			if errors.As(accessErr, &localErr) {
+				w.Header().Set("X-Fork-Capability-Required", string(localErr.Capability))
+			} else {
+				// Set header to indicate license is required (frontend can check this)
+				w.Header().Set("X-License-Required", "true")
+				w.Header().Set("X-License-Feature", feature)
+			}
 			// Return 200 with empty array (compatible with frontend array expectations)
 			w.Write([]byte("[]"))
 			return

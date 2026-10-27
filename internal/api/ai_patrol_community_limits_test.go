@@ -27,7 +27,7 @@ func (c communityLicenseChecker) GetLicenseStateString() (string, bool) {
 	return "none", false
 }
 
-func TestReinvestigateCommunityReturns402(t *testing.T) {
+func TestReinvestigateSindriAdmissionDoesNotRequirePulseLicense(t *testing.T) {
 	rawToken := "ai-reinvestigate-community-123.12345678"
 	record := newTokenRecord(t, rawToken, []string{config.ScopeAIExecute}, nil)
 	cfg := newTestConfigWithTokens(t, record)
@@ -38,8 +38,8 @@ func TestReinvestigateCommunityReturns402(t *testing.T) {
 	rec := httptest.NewRecorder()
 	router.Handler().ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusPaymentRequired {
-		t.Fatalf("expected 402 for Community reinvestigate, got %d: %s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected runner-readiness 503 after local admission, got %d: %s", rec.Code, rec.Body.String())
 	}
 }
 

@@ -519,7 +519,7 @@ func Run(ctx context.Context, version string) (runErr error) {
 	router.WireAlertTriggeredAI()
 	startup.mark("relay and alert AI wired")
 
-	// Start pseudonymous telemetry (enabled by default; opt out via PULSE_TELEMETRY=false or Settings toggle).
+	// Start pseudonymous telemetry; the disabled-by-default runner creates no sender until explicitly enabled.
 	// Persistence is created once here (outside the closure) to avoid NewConfigPersistence's
 	// fatal-on-error path running inside the telemetry goroutine.
 	telemetryPersistence := config.NewConfigPersistence(baseDataDir)

@@ -13,6 +13,7 @@ import (
 
 func TestHandleGetRemediations_WithLog(t *testing.T) {
 	svc := newEnabledAIService(t)
+	svc.SetLicenseChecker(stubLicenseChecker{allow: true})
 	log := ai.NewRemediationLog(ai.RemediationLogConfig{MaxRecords: 10})
 	record := ai.RemediationRecord{
 		ResourceID:   "vm-1",
@@ -58,6 +59,7 @@ func TestHandleGetRemediations_WithLog(t *testing.T) {
 
 func TestHandleGetRemediations_FilterFinding(t *testing.T) {
 	svc := newEnabledAIService(t)
+	svc.SetLicenseChecker(stubLicenseChecker{allow: true})
 	log := ai.NewRemediationLog(ai.RemediationLogConfig{MaxRecords: 10})
 	record := ai.RemediationRecord{
 		ResourceID:   "vm-2",

@@ -38,6 +38,10 @@ type InvestigationRunRequest struct {
 	// validation (ultimately the tenant-bound action lifecycle path).
 	Catalog tools.ProposalCatalog
 	Planner tools.ProposalPlanner
+	// AdmissionCheck overrides the service default for this single request.
+	// Fork-owned admission therefore cannot change the shared runner policy
+	// used by Pulse-owned commercial callers.
+	AdmissionCheck func(context.Context) error
 }
 
 // InvestigationRunResult is the structured outcome of one investigation
@@ -83,6 +87,9 @@ func (s *Service) ExecuteInvestigationStream(ctx context.Context, req Investigat
 	effectiveControlLevel := s.effectiveControlLevelLocked()
 	admissionChecker := s.investigationAdmissionChecker
 	s.mu.RUnlock()
+	if req.AdmissionCheck != nil {
+		admissionChecker = req.AdmissionCheck
+	}
 	if admissionChecker == nil {
 		return nil, errors.New("investigation admission is not configured")
 	}

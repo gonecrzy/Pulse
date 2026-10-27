@@ -60,6 +60,7 @@ export interface LicenseRuntimeCapabilities {
   capabilities: string[];
   limits: EntitlementLimitStatus[];
   hosted_mode?: boolean;
+  commercial_services_enabled?: boolean;
   max_history_days?: number;
   runtime?: LicenseRuntimeIdentity;
   blocked_capabilities?: LicenseRuntimeCapabilityBlock[];
@@ -68,6 +69,7 @@ export interface LicenseRuntimeCapabilities {
 // Mirrors internal/api/subscription_entitlements.go:CommercialPosturePayload
 export interface LicenseCommercialPosture {
   subscription_state: string;
+  commercial_services_enabled?: boolean;
   upgrade_reasons: EntitlementUpgradeReason[];
   tier: string;
   trial_expires_at?: number;

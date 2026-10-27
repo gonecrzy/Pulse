@@ -6,6 +6,11 @@ export const FORK_FEATURE_IDS = [
   'fork.deterministic_triage',
   'fork.ai_investigation',
   'fork.governed_actions',
+  'fork.agent_profiles',
+  'fork.rbac',
+  'fork.audit_logging',
+  'fork.advanced_reporting',
+  'fork.external_probe',
   'fork.action_safety',
   'fork.operational_cases',
   'fork.long_term_metrics',
@@ -18,6 +23,8 @@ export interface ForkCapability {
   id: ForkFeatureID;
   available: boolean;
   implemented: boolean;
+  enabled: boolean;
+  status: 'supported' | 'experimental' | 'unavailable';
   source: 'fork_public' | 'unavailable';
 }
 

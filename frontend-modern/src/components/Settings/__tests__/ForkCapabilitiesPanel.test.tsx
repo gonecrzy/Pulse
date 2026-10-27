@@ -50,15 +50,26 @@ describe('ForkCapabilitiesPanel', () => {
             id: 'fork.ai_investigation',
             available: true,
             implemented: true,
+            enabled: true,
+            status: 'supported',
             source: 'fork_public',
           },
           {
             id: 'fork.governed_actions',
             available: false,
             implemented: true,
+            enabled: false,
+            status: 'supported',
             source: 'unavailable',
           },
-          { id: 'fork.action_safety', available: false, implemented: false, source: 'unavailable' },
+          {
+            id: 'fork.action_safety',
+            available: false,
+            implemented: false,
+            enabled: false,
+            status: 'experimental',
+            source: 'unavailable',
+          },
         ],
       })
       .mockResolvedValueOnce({
@@ -69,15 +80,26 @@ describe('ForkCapabilitiesPanel', () => {
             id: 'fork.ai_investigation',
             available: false,
             implemented: true,
+            enabled: false,
+            status: 'supported',
             source: 'unavailable',
           },
           {
             id: 'fork.governed_actions',
             available: true,
             implemented: true,
+            enabled: true,
+            status: 'supported',
             source: 'fork_public',
           },
-          { id: 'fork.action_safety', available: false, implemented: false, source: 'unavailable' },
+          {
+            id: 'fork.action_safety',
+            available: false,
+            implemented: false,
+            enabled: false,
+            status: 'experimental',
+            source: 'unavailable',
+          },
         ],
       });
     api.getProfile
@@ -102,7 +124,7 @@ describe('ForkCapabilitiesPanel', () => {
 
     expect(await screen.findByText('Personal fork capabilities')).toBeInTheDocument();
     expect(screen.getByText(/Public fork/)).toBeInTheDocument();
-    expect(screen.getByText(/Not implemented/)).toBeInTheDocument();
+    expect(screen.getByText(/not implemented/i)).toBeInTheDocument();
     expect(screen.getAllByRole('checkbox')).toHaveLength(2);
 
     fireEvent.click(screen.getByLabelText('Disabled in fork profile'));
@@ -125,7 +147,14 @@ describe('ForkCapabilitiesPanel', () => {
       profile_version: 1,
       revision: 1,
       capabilities: [
-        { id: 'fork.ai_investigation', available: true, implemented: true, source: 'fork_public' },
+        {
+          id: 'fork.ai_investigation',
+          available: true,
+          implemented: true,
+          enabled: true,
+          status: 'supported',
+          source: 'fork_public',
+        },
       ],
     });
 

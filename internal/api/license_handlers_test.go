@@ -27,7 +27,7 @@ func createTestHandler(t *testing.T) *LicenseHandlers {
 	if err != nil {
 		t.Fatalf("Failed to initialize default persistence: %v", err)
 	}
-	return NewLicenseHandlers(mtp, false)
+	return NewLicenseHandlers(mtp, false, &config.Config{UpstreamCommercialServicesEnabled: true})
 }
 
 func issuePurchaseReturnToken(t *testing.T, handler *LicenseHandlers, orgID, feature string) string {

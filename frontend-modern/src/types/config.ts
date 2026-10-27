@@ -55,7 +55,7 @@ export interface SystemConfig {
   disableDockerUpdateActions?: boolean; // Hide Docker update buttons while still detecting updates (server-wide)
   enableProxmoxGuestDockerInventory?: boolean; // Discover Docker inside Proxmox LXC guests via node agents (server-wide, admin opt-in)
   reduceProUpsellNoise?: boolean; // Legacy compatibility preference for proactive commercial prompts
-  telemetryEnabled?: boolean; // Outbound usage telemetry, enabled by default unless disabled
+  telemetryEnabled?: boolean; // Outbound usage telemetry, disabled by default unless enabled
   reportBranding?: ReportBrandSettings; // Entitlement-gated application and report branding
 }
 

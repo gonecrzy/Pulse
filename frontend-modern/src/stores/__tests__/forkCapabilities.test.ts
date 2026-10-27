@@ -50,8 +50,22 @@ describe('fork capability store', () => {
       profile_version: 1,
       revision: 2,
       capabilities: [
-        { id: 'fork.ai_investigation', available: true, implemented: true, source: 'fork_public' },
-        { id: 'fork.governed_actions', available: false, implemented: true, source: 'unavailable' },
+        {
+          id: 'fork.ai_investigation',
+          available: true,
+          implemented: true,
+          enabled: true,
+          status: 'supported',
+          source: 'fork_public',
+        },
+        {
+          id: 'fork.governed_actions',
+          available: false,
+          implemented: true,
+          enabled: false,
+          status: 'supported',
+          source: 'unavailable',
+        },
       ],
     });
     await loadForkCapabilities(true);
@@ -62,8 +76,22 @@ describe('fork capability store', () => {
       profile_version: 1,
       revision: 3,
       capabilities: [
-        { id: 'fork.ai_investigation', available: true, implemented: true, source: 'fork_public' },
-        { id: 'fork.governed_actions', available: true, implemented: true, source: 'fork_public' },
+        {
+          id: 'fork.ai_investigation',
+          available: true,
+          implemented: true,
+          enabled: true,
+          status: 'supported',
+          source: 'fork_public',
+        },
+        {
+          id: 'fork.governed_actions',
+          available: true,
+          implemented: true,
+          enabled: true,
+          status: 'supported',
+          source: 'fork_public',
+        },
       ],
     });
     await updateForkProfile({
@@ -110,7 +138,14 @@ describe('fork capability store', () => {
       profile_version: 1,
       revision: 2,
       capabilities: [
-        { id: 'fork.ai_investigation', available: true, implemented: true, source: 'fork_public' },
+        {
+          id: 'fork.ai_investigation',
+          available: true,
+          implemented: true,
+          enabled: true,
+          status: 'supported',
+          source: 'fork_public',
+        },
       ],
     });
     await loading;
@@ -132,7 +167,14 @@ describe('fork capability store', () => {
       profile_version: 1,
       revision: 5,
       capabilities: [
-        { id: 'fork.governed_actions', available: true, implemented: true, source: 'fork_public' },
+        {
+          id: 'fork.governed_actions',
+          available: true,
+          implemented: true,
+          enabled: true,
+          status: 'supported',
+          source: 'fork_public',
+        },
       ],
     });
 

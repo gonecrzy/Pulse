@@ -106,6 +106,7 @@ type ReportingHandlers struct {
 	settingsStore             reportingSystemSettingsStore
 	scheduleRunMu             sync.Mutex
 	commercialLicenseResolver func(ctx context.Context) *licenseService
+	featureCheckerResolver    func(ctx context.Context) licenseFeatureChecker
 	// patrolDigestResolver builds the Patrol digest for the request's tenant.
 	// Nil means the runtime has no AI service and digest schedules fail with a
 	// clear error instead of sending an empty email.
@@ -154,7 +155,21 @@ func (h *ReportingHandlers) SetCommercialLicenseResolver(resolver func(ctx conte
 	h.commercialLicenseResolver = resolver
 }
 
+func (h *ReportingHandlers) SetFeatureCheckerResolver(resolver func(ctx context.Context) licenseFeatureChecker) {
+	if h == nil {
+		return
+	}
+	h.featureCheckerResolver = resolver
+}
+
 func (h *ReportingHandlers) requireCommercialFeature(ctx context.Context, feature string) error {
+	if h != nil && h.featureCheckerResolver != nil {
+		service := h.featureCheckerResolver(ctx)
+		if service == nil {
+			return fmt.Errorf("feature policy unavailable")
+		}
+		return service.RequireFeature(feature)
+	}
 	if h == nil || h.commercialLicenseResolver == nil {
 		return nil
 	}

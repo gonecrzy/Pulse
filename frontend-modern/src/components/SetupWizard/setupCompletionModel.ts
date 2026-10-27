@@ -254,16 +254,18 @@ export function buildSetupCompletionViewModel(
 export interface SetupCompletionProActivationState {
   runtimeBuild?: string;
   licenseValid?: boolean;
+  commercialServicesEnabled?: boolean;
 }
 
-// The Pro build is only distributed to paying customers, and its Plans &
-// Billing navigation entry stays hidden until a license activates
-// (hideWhenUpgradeHidden), so the completion screen is the one guaranteed
-// in-product surface that can point a fresh Pro install at the activation
-// form. licenseValid must be explicitly false: a failed or missing probe keeps
-// the pointer hidden so community sessions can never see it by accident.
+// Standalone runtimes hide upstream activation prompts unless the operator
+// explicitly enabled Pulse commercial services. All three values must be
+// explicit; a failed or older capability probe keeps the prompt hidden.
 export function shouldShowSetupProActivationPointer(
   state: SetupCompletionProActivationState,
 ): boolean {
-  return state.runtimeBuild === 'pro' && state.licenseValid === false;
+  return (
+    state.commercialServicesEnabled === true &&
+    state.runtimeBuild === 'pro' &&
+    state.licenseValid === false
+  );
 }

@@ -256,10 +256,10 @@ export const ES_MESSAGE_OVERRIDES = {
   'setup.security.error.passwordRequired': 'Ingresa una contraseña',
   'setup.security.error.passwordTooShort': 'La contraseña debe tener al menos 12 caracteres',
   'setup.security.error.setupFailed': 'La configuración falló: {error}',
-  'setup.security.error.telemetryLockedOn':
-    'Tu cuenta de administrador se creó. Las estadísticas de uso siguen activadas porque este servidor define PULSE_TELEMETRY=true. Define PULSE_TELEMETRY=false y reinicia Pulse para desactivarlas.',
-  'setup.security.error.telemetryDisableFailed':
-    'Tu cuenta de administrador se creó, pero las estadísticas de uso no se pudieron desactivar. Puedes desactivarlas en Ajustes → Sistema → General.',
+  'setup.security.error.telemetryLockedOff':
+    'Tu cuenta de administrador se creó. Las estadísticas de uso siguen desactivadas porque este servidor define PULSE_TELEMETRY=false. Elimina esa configuración y reinicia Pulse para activarlas.',
+  'setup.security.error.telemetryEnableFailed':
+    'Tu cuenta de administrador se creó, pero las estadísticas de uso no se pudieron activar. Puedes activarlas en Ajustes → Sistema → General.',
   'setup.security.generatedPasswordHelp':
     'Se generará una contraseña segura de 20 caracteres y se mostrará en la siguiente pantalla.',
   'setup.security.label.confirmPassword': 'Confirmar contraseña',
@@ -276,14 +276,14 @@ export const ES_MESSAGE_OVERRIDES = {
   'setup.security.showPassword.hide': 'Ocultar',
   'setup.security.showPassword.show': 'Mostrar',
   'setup.security.telemetry.description':
-    'Enviar un pequeño resumen diario de uso para que las funciones y plataformas de las que dependes tengan prioridad. Contiene conteos y flags de activado/desactivado con un ID de instalación seudónimo rotativo, nunca hostnames, credenciales ni direcciones IP. Nunca se vende ni se comparte, y no está vinculado a una cuenta de Pulse. Puedes cambiarlo en cualquier momento en Ajustes.',
+    'Enviar opcionalmente un pequeño resumen diario de uso para priorizar las funciones y plataformas que utilizas. Contiene conteos y flags de activado/desactivado con un ID de instalación seudónimo rotativo, nunca hostnames, credenciales ni direcciones IP. Está desactivado por defecto y puedes cambiarlo en cualquier momento en Ajustes.',
   'setup.security.telemetry.title': 'Estadísticas de uso',
   'setup.security.title': 'Crear tu cuenta de administrador',
   'setup.step.firstSource': 'Primera fuente',
   'setup.step.security': 'Seguridad',
   'setup.step.unlockServer': 'Desbloquear servidor',
   'setup.welcome.telemetryNotice.description':
-    'Pulse envía un pequeño resumen diario de uso que muestra qué versiones están desplegadas y qué funciones y plataformas se usan, para que el desarrollo se centre donde Pulse se usa de verdad. Contiene conteos y flags de activado/desactivado con un ID de instalación seudónimo rotativo, nunca hostnames, credenciales, direcciones IP ni nada que escribas. Nunca se vende, se comparte ni se usa para publicidad, y no está vinculado a una cuenta o licencia de Pulse. Está activado por defecto. Decides en el siguiente paso y puedes cambiarlo en cualquier momento en Ajustes.',
+    'Las estadísticas de uso salientes de Pulse son opcionales y están desactivadas por defecto. Si las activas, Pulse envía a diario un pequeño resumen con conteos de versiones y funciones, junto con un ID de instalación seudónimo rotativo. Nunca incluye hostnames, credenciales, direcciones IP ni lo que escribes. Decides en el siguiente paso y puedes cambiarlo en cualquier momento en Ajustes.',
   'setup.welcome.telemetryNotice.title': 'Estadísticas de uso',
   'setup.wizard.ariaLabel': 'Asistente de configuración de Pulse',
   'setup.welcome.action.continueSecurity': 'Continuar a Seguridad',
@@ -379,7 +379,7 @@ export const ES_MESSAGE_OVERRIDES = {
     'Controla con qué frecuencia Pulse sondea nodos de Proxmox VE.',
   'settings.general.monitoringCadence.section.title': 'Cadencia de supervisión',
   'settings.general.telemetry.description':
-    'Ayuda a mejorar Pulse compartiendo un resumen diario de uso. Vista previa del payload muestra exactamente lo que se enviaría: un ID de instalación seudónimo rotativo, identidad de versión normalizada, plataforma de ejecución, categorías generales de método de despliegue y ciclo de vida, conteos agregados de recursos y resultados, flags generales de funciones, contadores sin contenido de uso de Patrol, Assistant y API de capacidades, y cuatro conteos de adopción del historial de cargas de trabajo deduplicados por sesión. Nunca incluye hostnames, credenciales, identificadores de infraestructura, URLs, rutas, configuración regional, eventos del navegador, datos de clickstream, prompts, mensajes de chat, texto de comandos, salida de acciones, valores de tokens, nombres, direcciones de email ni direcciones IP. Nunca se vende, se comparte con nadie ni se usa para publicidad, y no está vinculado a una cuenta o licencia de Pulse. Las filas de telemetría se conservan hasta 90 días, y las direcciones IP de las solicitudes se usan solo transitoriamente para rate limiting y no se guardan en filas de telemetría.',
+    'La telemetría de uso saliente es opcional y está desactivada por defecto. Si la activas, envía a diario un resumen de uso. Vista previa del payload muestra exactamente lo que se enviaría: un ID de instalación seudónimo rotativo, identidad de versión normalizada, plataforma de ejecución, categorías generales de método de despliegue y ciclo de vida, conteos agregados de recursos y resultados, flags generales de funciones, contadores sin contenido de uso de Patrol, Assistant y API de capacidades, y cuatro conteos de adopción del historial de cargas de trabajo deduplicados por sesión. Nunca incluye hostnames, credenciales, identificadores de infraestructura, URLs, rutas, configuración regional, eventos del navegador, datos de clickstream, prompts, mensajes de chat, texto de comandos, salida de acciones, valores de tokens, nombres, direcciones de email ni direcciones IP. No está vinculada a una cuenta o licencia de Pulse. Las filas de telemetría se conservan hasta 90 días, y las direcciones IP de las solicitudes se usan solo transitoriamente para rate limiting y no se guardan en filas de telemetría.',
   'settings.general.temperature.description': 'Muestra temperaturas en Celsius o Fahrenheit.',
   'settings.general.temperature.title': 'Unidad de temperatura',
   'settings.general.telemetry.copyJson': 'Copiar JSON',

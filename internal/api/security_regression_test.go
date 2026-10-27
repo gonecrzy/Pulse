@@ -22,6 +22,7 @@ import (
 	"github.com/rcourtman/pulse-go-rewrite/internal/api/agentbinding"
 	"github.com/rcourtman/pulse-go-rewrite/internal/api/agenttokens"
 	"github.com/rcourtman/pulse-go-rewrite/internal/config"
+	"github.com/rcourtman/pulse-go-rewrite/internal/forkfeatures"
 	"github.com/rcourtman/pulse-go-rewrite/internal/mock"
 	"github.com/rcourtman/pulse-go-rewrite/internal/models"
 	"github.com/rcourtman/pulse-go-rewrite/internal/monitoring"
@@ -3548,7 +3549,7 @@ func TestAIKnowledgeMutationEndpointsRequireAIExecuteScope(t *testing.T) {
 	}
 }
 
-func TestAuditEndpointsRequireLicenseFeature(t *testing.T) {
+func TestAuditEndpointsRequireLocalForkCapability(t *testing.T) {
 	rawToken := "audit-license-token-123.12345678"
 	record := newTokenRecord(t, rawToken, []string{config.ScopeSettingsRead, config.ScopeAuditRead}, nil)
 	cfg := newTestConfigWithTokens(t, record)
@@ -3558,8 +3559,8 @@ func TestAuditEndpointsRequireLicenseFeature(t *testing.T) {
 	req.Header.Set("X-API-Token", rawToken)
 	rec := httptest.NewRecorder()
 	router.Handler().ServeHTTP(rec, req)
-	if rec.Code != http.StatusPaymentRequired {
-		t.Fatalf("expected 402 for missing audit logging license, got %d", rec.Code)
+	if rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), string(forkfeatures.FeatureAuditLogging)) {
+		t.Fatalf("expected a closed local audit capability gate, got %d: %s", rec.Code, rec.Body.String())
 	}
 }
 
@@ -3573,8 +3574,8 @@ func TestAuditVerifyRequiresLicenseFeature(t *testing.T) {
 	req.Header.Set("X-API-Token", rawToken)
 	rec := httptest.NewRecorder()
 	router.Handler().ServeHTTP(rec, req)
-	if rec.Code != http.StatusPaymentRequired {
-		t.Fatalf("expected 402 for missing audit logging license, got %d", rec.Code)
+	if rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), string(forkfeatures.FeatureAuditLogging)) {
+		t.Fatalf("expected a closed local audit capability gate, got %d: %s", rec.Code, rec.Body.String())
 	}
 }
 
@@ -3593,7 +3594,7 @@ func TestReportingCatalogDoesNotRequireLicenseFeature(t *testing.T) {
 	}
 }
 
-func TestReportingExecutionEndpointsRequireLicenseFeature(t *testing.T) {
+func TestReportingExecutionEndpointsRequireLocalForkCapability(t *testing.T) {
 	rawToken := "reporting-license-token-123.12345678"
 	record := newTokenRecord(t, rawToken, []string{config.ScopeSettingsRead}, nil)
 	cfg := newTestConfigWithTokens(t, record)
@@ -3619,13 +3620,13 @@ func TestReportingExecutionEndpointsRequireLicenseFeature(t *testing.T) {
 		req.Header.Set("X-API-Token", rawToken)
 		rec := httptest.NewRecorder()
 		router.Handler().ServeHTTP(rec, req)
-		if rec.Code != http.StatusPaymentRequired {
-			t.Fatalf("expected 402 for missing reporting license on %s %s, got %d", tc.method, tc.path, rec.Code)
+		if rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), string(forkfeatures.FeatureAdvancedReporting)) {
+			t.Fatalf("expected a closed local reporting capability gate on %s %s, got %d: %s", tc.method, tc.path, rec.Code, rec.Body.String())
 		}
 	}
 }
 
-func TestRBACEndpointsRequireLicenseFeature(t *testing.T) {
+func TestRBACEndpointsRequireLocalForkCapability(t *testing.T) {
 	rawToken := "rbac-license-token-123.12345678"
 	record := newTokenRecord(t, rawToken, []string{config.ScopeSettingsRead}, nil)
 	cfg := newTestConfigWithTokens(t, record)
@@ -3641,13 +3642,13 @@ func TestRBACEndpointsRequireLicenseFeature(t *testing.T) {
 		req.Header.Set("X-API-Token", rawToken)
 		rec := httptest.NewRecorder()
 		router.Handler().ServeHTTP(rec, req)
-		if rec.Code != http.StatusPaymentRequired {
-			t.Fatalf("expected 402 for missing RBAC license on %s, got %d", path, rec.Code)
+		if rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), string(forkfeatures.FeatureRBAC)) {
+			t.Fatalf("expected a closed local RBAC capability gate on %s, got %d: %s", path, rec.Code, rec.Body.String())
 		}
 	}
 }
 
-func TestRBACMutationsRequireLicenseFeature(t *testing.T) {
+func TestRBACMutationsRequireLocalForkCapability(t *testing.T) {
 	rawToken := "rbac-license-mutation-token-123.12345678"
 	record := newTokenRecord(t, rawToken, []string{config.ScopeSettingsRead}, nil)
 	cfg := newTestConfigWithTokens(t, record)
@@ -3670,8 +3671,8 @@ func TestRBACMutationsRequireLicenseFeature(t *testing.T) {
 		req.Header.Set("X-API-Token", rawToken)
 		rec := httptest.NewRecorder()
 		router.Handler().ServeHTTP(rec, req)
-		if rec.Code != http.StatusPaymentRequired {
-			t.Fatalf("expected 402 for missing RBAC license on %s %s, got %d", tc.method, tc.path, rec.Code)
+		if rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), string(forkfeatures.FeatureRBAC)) {
+			t.Fatalf("expected a closed local RBAC capability gate on %s %s, got %d: %s", tc.method, tc.path, rec.Code, rec.Body.String())
 		}
 	}
 }
@@ -3738,7 +3739,7 @@ func TestSecurityTokensWriteRequiresSettingsWriteScope(t *testing.T) {
 	}
 }
 
-func TestAgentProfilesRequireLicenseFeature(t *testing.T) {
+func TestAgentProfilesRequireLocalForkCapability(t *testing.T) {
 	rawToken := "profiles-license-token-123.12345678"
 	record := newTokenRecord(t, rawToken, []string{config.ScopeSettingsWrite}, nil)
 	cfg := newTestConfigWithTokens(t, record)
@@ -3748,8 +3749,8 @@ func TestAgentProfilesRequireLicenseFeature(t *testing.T) {
 	req.Header.Set("X-API-Token", rawToken)
 	rec := httptest.NewRecorder()
 	router.Handler().ServeHTTP(rec, req)
-	if rec.Code != http.StatusPaymentRequired {
-		t.Fatalf("expected 402 for missing agent profiles license, got %d", rec.Code)
+	if rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), string(forkfeatures.FeatureAgentProfiles)) {
+		t.Fatalf("expected a closed local agent profiles capability gate, got %d: %s", rec.Code, rec.Body.String())
 	}
 }
 

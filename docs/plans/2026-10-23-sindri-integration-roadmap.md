@@ -339,6 +339,70 @@ The upstream `frontend-modern/browser-tests/backup-date-chronology.cjs` failure 
 
 These inputs block live compatibility claims and image readiness; they do not block fixture-backed monitoring integration. Future action authority remains a separate Pulse policy decision and checkpoint. The existing Sindri reports remain read-only and should be consulted only if a later phase needs a specific behavior reference.
 
+### Phase 2K — Standalone fork policy and upstream service removal
+
+**Status (2026-10-27):** Implemented locally from `c325f89bd` on
+`feature/komodo-phase2-foundation`; pending review. No push, merge, deployment,
+or image publication is part of this checkpoint. See the
+[standalone egress inventory](2026-10-27-standalone-egress-inventory.md) and
+the [Phase 2J architecture audit](2026-10-27-patrol-sindri-architecture-audit.md)
+for the source matrix and compatibility boundaries.
+
+- The fork profile is version 2 and explicitly reports implementation,
+  supported/experimental/unavailable status, enabled state, and availability.
+  Its fresh-install defaults enable supported deterministic triage, read-only
+  Komodo, Sindri finding investigation, and the existing governed action
+  lifecycle. Public agent-profile, RBAC, audit, reporting, and external-probe
+  implementations also have explicit fork capabilities, disabled until an
+  administrator enables each one. `fork.action_safety`, cases, Discord operations, and the
+  Codex-LB-exclusive gateway remain unavailable or disabled. Capability
+  availability does not grant a user role, action approval, or dispatch.
+- An existing version-1 profile is migrated in memory while preserving its
+  explicit enabled feature set; the next administrator save writes version 2.
+  Corrupt/unknown policy remains fail-closed. A missing profile uses the new
+  version-2 defaults. License, billing, provider, and infrastructure files are
+  not rewritten.
+- Standalone licensing, activation, grant refresh, installation-status polling,
+  hosted entitlement refresh, trial, and checkout traffic are stopped by
+  default. Old activation, license, billing, and refresh-token files remain on
+  disk. `GET /api/license/entitlements` is retained for compatibility and does
+  not synthesize Pro, hosted, or trial state; activation/checkout are retired
+  with `410 Gone`. An explicit `PULSE_UPSTREAM_COMMERCIAL_SERVICES=true` keeps
+  the legacy compatibility path available for operators who deliberately need
+  it. Hosted service behavior is unchanged.
+- Missing telemetry preferences now resolve off, and the disabled telemetry
+  runner creates no sender. Existing explicit opt-in remains effective. Release
+  checks and unattended updates default off; an operator can still run a manual
+  check, and configured infrastructure, AI provider, notification, IdP, probe,
+  and typed action traffic remains enabled under its existing controls.
+- The local Sindri finding-reinvestigation route reuses Pulse's runner, finding
+  records, evidence tools, budgets, and organization/resource admission. It does
+  not change Pulse `ai_autofix` / `ai_alerts` entitlements or general Pulse
+  automatic Patrol behavior. Automatic repair remains unavailable while
+  `fork.action_safety` is unimplemented.
+
+**Focused validation:** fork-feature policy tests passed (13 tests); focused
+configuration and telemetry tests passed (2 and 3 tests); the focused API
+regression selection passed (21 tests); licensing tests passed (1,019 tests);
+frontend targeted tests passed (26 tests across 5 files), and the TypeScript
+check passed. The standalone HTTP egress tests use local mock servers; no live
+licensing, provider, or infrastructure endpoint was called. The broader
+`go test ./internal/api -count=1` run completed with 6,419 passed, 45 failed,
+and 11 skipped. The remaining failures include legacy commercial-route,
+entitlement-response snapshot, and prior capability-gate assertions; they are
+recorded for review and are not represented as passing validation. A
+supplemental multi-package run also reported three failures in
+`internal/config` (`TestConfigurationMigrationArchiveScope`,
+`TestLoadAIFindings_UndecryptableFilePreserved`, and
+`TestLoadAIChatSessions_UndecryptableFilePreserved`); the focused configuration
+default tests passed separately.
+
+This Phase 2K checkpoint supersedes the Phase 2J audit's as-of-audit statements
+that the profile was default-empty and that standalone telemetry was enabled by
+default. The audit remains the source-reference baseline; its historical
+licensing and gateway recommendations are not evidence that those later phases
+have been implemented.
+
 ## Git checkpoint discipline
 
 - The current focused checkpoint is `feature/komodo-phase2-foundation`, based on current `origin/sindri`. Preserve the historical `feature/sindri-integration` branch and checkpoint history. Create descriptive, logically separated commits for approved implementation phases.

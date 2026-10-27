@@ -222,7 +222,8 @@ type Config struct {
 	EnableProxmoxGuestDockerDetection bool             `envconfig:"PULSE_ENABLE_PROXMOX_GUEST_DOCKER_DETECTION" default:"false" json:"-"` // Allow Proxmox-side pct exec probes that only detect Docker socket presence inside LXC guests
 	EnableProxmoxGuestDockerInventory bool             `envconfig:"PULSE_ENABLE_PROXMOX_GUEST_DOCKER_INVENTORY" default:"false" json:"-"` // Allow Proxmox-side pct exec collection of minimal Docker inventory from LXC guests
 	ProxmoxGuestDockerInventoryVMIDs  string           `envconfig:"PULSE_PROXMOX_GUEST_DOCKER_INVENTORY_VMIDS" default:"" json:"-"`       // Optional comma-separated Proxmox VMID allowlist for LXC Docker inventory
-	TelemetryEnabled                  bool             `envconfig:"PULSE_TELEMETRY" default:"true"`                                       // Outbound usage telemetry enabled by default (pseudonymous install ID, version, resource counts, feature flags — opt out any time)
+	TelemetryEnabled                  bool             `envconfig:"PULSE_TELEMETRY" default:"false"`                                      // Outbound Pulse usage telemetry requires explicit opt-in
+	UpstreamCommercialServicesEnabled bool             `envconfig:"PULSE_UPSTREAM_COMMERCIAL_SERVICES" default:"false" json:"-"`          // Opt-in compatibility switch for Pulse activation, entitlement refresh, and checkout services
 	MultiTenantEnabled                bool             `envconfig:"PULSE_MULTI_TENANT_ENABLED" default:"false"`                           // Enable multi-tenant support
 	MetricsToken                      string           `envconfig:"PULSE_METRICS_TOKEN" default:"" json:"-"`                              // Bearer token for /metrics endpoint (empty = unauthenticated)
 	MetricsBindAddress                string           `envconfig:"PULSE_METRICS_BIND_ADDRESS" default:"127.0.0.1" json:"-"`              // Bind address for /metrics endpoint
@@ -825,42 +826,43 @@ func load(initLogging bool) (*Config, error) {
 
 	// Initialize config with defaults
 	cfg := &Config{
-		BindAddress:                     "0.0.0.0",
-		FrontendPort:                    7655,
-		ConfigPath:                      dataDir,
-		DataPath:                        dataDir,
-		AppRoot:                         detectAppRoot(),
-		ConnectionTimeout:               60 * time.Second,
-		BackupPollingCycles:             10,
-		BackupPollingInterval:           0,
-		EnableBackupPolling:             true,
-		PVEPollingInterval:              10 * time.Second,
-		AdaptivePollingEnabled:          false,
-		AdaptivePollingBaseInterval:     10 * time.Second,
-		AdaptivePollingMinInterval:      5 * time.Second,
-		AdaptivePollingMaxInterval:      5 * time.Minute,
-		GuestMetadataMinRefreshInterval: DefaultGuestMetadataMinRefresh,
-		GuestMetadataRefreshJitter:      DefaultGuestMetadataRefreshJitter,
-		GuestMetadataRetryBackoff:       DefaultGuestMetadataRetryBackoff,
-		GuestMetadataMaxConcurrent:      DefaultGuestMetadataMaxConcurrent,
-		DNSCacheTimeout:                 5 * time.Minute, // Default DNS cache timeout
-		LogLevel:                        "info",
-		LogFormat:                       "auto",
-		LogMaxSize:                      100,
-		LogMaxAge:                       30,
-		LogCompress:                     true,
-		AllowedOrigins:                  "",               // Empty means no CORS headers (same-origin only)
-		PBSPollingInterval:              60 * time.Second, // Default PBS polling (slower)
-		PMGPollingInterval:              60 * time.Second, // Default PMG polling (aggregated stats)
-		DiscoveryEnabled:                false,
-		DiscoverySubnet:                 "auto",
-		TemperatureMonitoringEnabled:    true,
-		TelemetryEnabled:                true,            // Enabled by default; opt out via PULSE_TELEMETRY=false or Settings
-		MaxPollTimeout:                  3 * time.Minute, // Default max poll timeout for large clusters
-		ProTrialSignupURL:               pkglicensing.DefaultProTrialSignupURL,
-		EnvOverrides:                    make(map[string]bool),
-		AgentConnectURL:                 "",
-		MetricsBindAddress:              "127.0.0.1",
+		BindAddress:                       "0.0.0.0",
+		FrontendPort:                      7655,
+		ConfigPath:                        dataDir,
+		DataPath:                          dataDir,
+		AppRoot:                           detectAppRoot(),
+		ConnectionTimeout:                 60 * time.Second,
+		BackupPollingCycles:               10,
+		BackupPollingInterval:             0,
+		EnableBackupPolling:               true,
+		PVEPollingInterval:                10 * time.Second,
+		AdaptivePollingEnabled:            false,
+		AdaptivePollingBaseInterval:       10 * time.Second,
+		AdaptivePollingMinInterval:        5 * time.Second,
+		AdaptivePollingMaxInterval:        5 * time.Minute,
+		GuestMetadataMinRefreshInterval:   DefaultGuestMetadataMinRefresh,
+		GuestMetadataRefreshJitter:        DefaultGuestMetadataRefreshJitter,
+		GuestMetadataRetryBackoff:         DefaultGuestMetadataRetryBackoff,
+		GuestMetadataMaxConcurrent:        DefaultGuestMetadataMaxConcurrent,
+		DNSCacheTimeout:                   5 * time.Minute, // Default DNS cache timeout
+		LogLevel:                          "info",
+		LogFormat:                         "auto",
+		LogMaxSize:                        100,
+		LogMaxAge:                         30,
+		LogCompress:                       true,
+		AllowedOrigins:                    "",               // Empty means no CORS headers (same-origin only)
+		PBSPollingInterval:                60 * time.Second, // Default PBS polling (slower)
+		PMGPollingInterval:                60 * time.Second, // Default PMG polling (aggregated stats)
+		DiscoveryEnabled:                  false,
+		DiscoverySubnet:                   "auto",
+		TemperatureMonitoringEnabled:      true,
+		TelemetryEnabled:                  false,           // Outbound Pulse telemetry is opt-in via PULSE_TELEMETRY=true or Settings
+		UpstreamCommercialServicesEnabled: false,           // Standalone fork does not contact Pulse commercial services by default
+		MaxPollTimeout:                    3 * time.Minute, // Default max poll timeout for large clusters
+		ProTrialSignupURL:                 pkglicensing.DefaultProTrialSignupURL,
+		EnvOverrides:                      make(map[string]bool),
+		AgentConnectURL:                   "",
+		MetricsBindAddress:                "127.0.0.1",
 		// Metrics retention defaults (tiered)
 		MetricsRetentionRawHours:    2,  // 2 hours of raw ~5s data
 		MetricsRetentionMinuteHours: 24, // 24 hours of minute averages
@@ -957,11 +959,9 @@ func load(initLogging bool) (*Config, error) {
 			cfg.DisableDockerUpdateActions = systemSettings.DisableDockerUpdateActions
 			// Load the Proxmox guest Docker inventory opt-in (env var overrides below)
 			cfg.EnableProxmoxGuestDockerInventory = systemSettings.EnableProxmoxGuestDockerInventory
-			// Load TelemetryEnabled (enabled by default; nil means true for upgrading users)
+			// A missing telemetry preference is opt-out, including on upgrades.
 			if systemSettings.TelemetryEnabled != nil {
 				cfg.TelemetryEnabled = *systemSettings.TelemetryEnabled
-			} else {
-				cfg.TelemetryEnabled = true // default: enabled
 			}
 			// Load PublicURL from settings (will be overridden by env var if set)
 			if systemSettings.PublicURL != "" {
@@ -1160,6 +1160,16 @@ func load(initLogging bool) (*Config, error) {
 			log.Info().Bool("enabled", enabled).Msg("Overriding outbound usage telemetry setting from environment")
 		} else {
 			log.Warn().Str("value", telemetryStr).Msg("Invalid PULSE_TELEMETRY value, ignoring")
+		}
+	}
+	if upstreamCommercialStr := utils.GetenvTrim("PULSE_UPSTREAM_COMMERCIAL_SERVICES"); upstreamCommercialStr != "" {
+		if enabled, err := strconv.ParseBool(upstreamCommercialStr); err == nil {
+			cfg.UpstreamCommercialServicesEnabled = enabled
+			cfg.EnvOverrides["PULSE_UPSTREAM_COMMERCIAL_SERVICES"] = true
+			cfg.EnvOverrides["upstreamCommercialServicesEnabled"] = true
+			log.Info().Bool("enabled", enabled).Msg("Overriding upstream Pulse commercial service policy from environment")
+		} else {
+			log.Warn().Str("value", upstreamCommercialStr).Msg("Invalid PULSE_UPSTREAM_COMMERCIAL_SERVICES value, ignoring")
 		}
 	}
 	if trialSignupURL := utils.GetenvTrim(pkglicensing.ProTrialSignupURLEnvVar); trialSignupURL != "" {

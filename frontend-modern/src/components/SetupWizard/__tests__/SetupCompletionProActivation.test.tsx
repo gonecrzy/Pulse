@@ -36,15 +36,18 @@ const baseState: WizardState = {
 const mockLicenseEndpoints = ({
   build,
   licenseValid,
+  commercialServicesEnabled = true,
 }: {
   build?: string;
   licenseValid?: boolean;
+  commercialServicesEnabled?: boolean;
 }) => {
   apiFetchJSONMock.mockImplementation((path: string) => {
     if (path === '/api/license/runtime-capabilities') {
       return Promise.resolve({
         capabilities: [],
         limits: [],
+        commercial_services_enabled: commercialServicesEnabled,
         runtime: build ? { build, label: `Pulse ${build} runtime` } : undefined,
       });
     }
@@ -71,13 +74,31 @@ const waitForLicenseProbe = async () => {
 };
 
 describe('shouldShowSetupProActivationPointer', () => {
-  it('shows only for a Pro build with an explicitly invalid license', () => {
-    expect(shouldShowSetupProActivationPointer({ runtimeBuild: 'pro', licenseValid: false })).toBe(
-      true,
-    );
-    expect(shouldShowSetupProActivationPointer({ runtimeBuild: 'pro', licenseValid: true })).toBe(
-      false,
-    );
+  it('shows only for a Pro build with an invalid license and enabled commercial services', () => {
+    expect(
+      shouldShowSetupProActivationPointer({
+        runtimeBuild: 'pro',
+        licenseValid: false,
+        commercialServicesEnabled: true,
+      }),
+    ).toBe(true);
+    expect(
+      shouldShowSetupProActivationPointer({
+        runtimeBuild: 'pro',
+        licenseValid: true,
+        commercialServicesEnabled: true,
+      }),
+    ).toBe(false);
+    expect(
+      shouldShowSetupProActivationPointer({
+        runtimeBuild: 'pro',
+        licenseValid: false,
+        commercialServicesEnabled: false,
+      }),
+    ).toBe(false);
+    expect(
+      shouldShowSetupProActivationPointer({ runtimeBuild: 'pro', licenseValid: false }),
+    ).toBe(false);
     expect(
       shouldShowSetupProActivationPointer({ runtimeBuild: 'community', licenseValid: false }),
     ).toBe(false);
@@ -176,6 +197,19 @@ describe('SetupCompletionPanel Pro activation pointer', () => {
         return Promise.reject(new Error('probe failed'));
       }
       return Promise.resolve({ resources: [] });
+    });
+
+    render(() => <SetupCompletionPanel state={baseState} onComplete={vi.fn()} />);
+
+    await waitForLicenseProbe();
+    expect(screen.queryByText('Activate Pulse Pro')).not.toBeInTheDocument();
+  });
+
+  it('hides the pointer for a standalone Pro build with commercial services disabled', async () => {
+    mockLicenseEndpoints({
+      build: 'pro',
+      licenseValid: false,
+      commercialServicesEnabled: false,
     });
 
     render(() => <SetupCompletionPanel state={baseState} onComplete={vi.fn()} />);

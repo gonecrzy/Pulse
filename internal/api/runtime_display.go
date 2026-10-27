@@ -37,7 +37,7 @@ func (h *SystemSettingsHandler) HandleGetRuntimeDisplay(w http.ResponseWriter, r
 		return
 	}
 
-	response := RuntimeDisplayResponse{TelemetryEnabled: true}
+	response := RuntimeDisplayResponse{TelemetryEnabled: false}
 	if h != nil && h.config != nil {
 		// Match HandleGetSystemSettings so the environment override wins over
 		// the persisted value for every role. These booleans reveal only the

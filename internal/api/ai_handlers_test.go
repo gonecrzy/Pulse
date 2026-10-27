@@ -256,6 +256,7 @@ func TestMutatePatrolAutopilotConfigReconcilesBacklogOnlyWhenLeavingMonitor(t *t
 	handler := newTestAISettingsHandler(&config.Config{DataPath: tmp}, persistence, nil)
 	service := handler.GetAIService(context.Background())
 	require.NotNil(t, service)
+	service.SetLicenseChecker(stubLicenseChecker{allow: true})
 	service.SetStateProvider(&stubStateProvider{})
 	patrol := service.GetPatrolService()
 	require.NotNil(t, patrol)

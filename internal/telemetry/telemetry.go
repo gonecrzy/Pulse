@@ -2,7 +2,8 @@
 //
 // Pulse sends a lightweight ping on startup and once every 24 hours to help the
 // developer understand how many active installations exist and which features are
-// in use. Telemetry is enabled by default and can be opted out at any time.
+// in use. Outbound Pulse telemetry is disabled by default and requires an
+// explicit operator opt-in.
 //
 // # What is sent (the full list — nothing else)
 //
@@ -70,10 +71,11 @@
 //   - No raw browser events, clickstream, guest/user identity, routes, selected
 //     ranges, cursor values, interaction timing, or browser identity
 //
-// # How to disable
+// # How to enable
 //
-// Set the environment variable PULSE_TELEMETRY=false, or toggle off
-// "Outbound usage telemetry" in Settings → System → General.
+// Set PULSE_TELEMETRY=true, or toggle on "Outbound usage telemetry" in
+// Settings → System → General. With telemetry disabled, Start creates no
+// sender and sends no request.
 //
 // # Mock mode
 //
@@ -1284,12 +1286,12 @@ func ResetInstallID(dataDir string) (string, error) {
 	return resetInstallIDAt(dataDir, time.Now().UTC())
 }
 
-// IsEnabled reports whether telemetry is enabled.
-// Telemetry is on by default; set PULSE_TELEMETRY=false to disable.
+// IsEnabled reports whether telemetry is enabled. Telemetry is off by default;
+// set PULSE_TELEMETRY=true to opt in.
 func IsEnabled() bool {
 	v := os.Getenv("PULSE_TELEMETRY")
 	if v == "" {
-		return true // enabled by default
+		return false
 	}
 	return v == "true" || v == "1"
 }

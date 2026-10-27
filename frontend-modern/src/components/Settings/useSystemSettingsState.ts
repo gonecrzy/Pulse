@@ -62,7 +62,7 @@ export function useSystemSettingsState({
   const [enableProxmoxGuestDockerInventory, setEnableProxmoxGuestDockerInventory] =
     createSignal(false);
   const [savingGuestDockerInventory, setSavingGuestDockerInventory] = createSignal(false);
-  const [telemetryEnabled, setTelemetryEnabled] = createSignal(true);
+  const [telemetryEnabled, setTelemetryEnabled] = createSignal(false);
   const [reportBrandDisplayName, setReportBrandDisplayName] = createSignal('');
   const [reportBrandLogoBase64, setReportBrandLogoBase64] = createSignal('');
   const [reportBrandLogoFormat, setReportBrandLogoFormat] =
@@ -160,7 +160,7 @@ export function useSystemSettingsState({
       setEnableProxmoxGuestDockerInventory(
         systemSettings.enableProxmoxGuestDockerInventory ?? false,
       );
-      setTelemetryEnabled(systemSettings.telemetryEnabled ?? true);
+      setTelemetryEnabled(systemSettings.telemetryEnabled ?? false);
       setReportBrandDisplayName(systemSettings.reportBranding?.displayName ?? '');
       setReportBrandLogoBase64(systemSettings.reportBranding?.logoBase64 ?? '');
       setReportBrandLogoFormat(systemSettings.reportBranding?.logoFormat ?? '');
@@ -203,7 +203,7 @@ export function useSystemSettingsState({
         const dockerActionsDisabled = runtimeDisplay.disableDockerUpdateActions ?? false;
         setDisableDockerUpdateActions(dockerActionsDisabled);
         updateDockerUpdateActionsSetting(dockerActionsDisabled);
-        setTelemetryEnabled(runtimeDisplay.telemetryEnabled ?? true);
+        setTelemetryEnabled(runtimeDisplay.telemetryEnabled ?? false);
         // Without this, the Monitoring Cadence card shows the Realtime (10s)
         // default instead of the interval the server actually polls at.
         if (

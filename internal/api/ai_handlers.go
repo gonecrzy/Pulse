@@ -8354,12 +8354,6 @@ func (h *AISettingsHandler) HandleForkReinvestigateFinding(w http.ResponseWriter
 		writeErrorResponse(w, http.StatusServiceUnavailable, "not_initialized", "Pulse investigation runner is not available", nil)
 		return
 	}
-	// The service boundary independently resolves the same central access
-	// decision. This protects callers that do not enter through HTTP.
-	runner.SetInvestigationAdmissionChecker(func(ctx context.Context) error {
-		_, err := h.forkFeatureAccess(ctx, forkfeatures.FeatureAIInvestigation)
-		return err
-	})
 	runner.SetBudgetChecker(func() error { return aiService.CheckBudget("patrol") })
 
 	orgID := GetOrgID(r.Context())
@@ -8396,6 +8390,10 @@ func (h *AISettingsHandler) HandleForkReinvestigateFinding(w http.ResponseWriter
 		},
 		Catalog: catalog,
 		Planner: planner,
+		AdmissionCheck: func(ctx context.Context) error {
+			_, err := h.forkFeatureAccess(ctx, forkfeatures.FeatureAIInvestigation)
+			return err
+		},
 	}
 	timeout := aiConfig.GetPatrolInvestigationTimeout()
 	runCtx, cancel := context.WithTimeout(r.Context(), timeout)

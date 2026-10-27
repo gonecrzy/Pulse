@@ -84,10 +84,10 @@ export const EN_MESSAGES = {
   'setup.security.error.passwordRequired': 'Please enter a password',
   'setup.security.error.passwordTooShort': 'Password must be at least 12 characters',
   'setup.security.error.setupFailed': 'Setup failed: {error}',
-  'setup.security.error.telemetryDisableFailed':
-    'Your admin account was created, but usage statistics could not be turned off. You can turn them off in Settings → System → General.',
-  'setup.security.error.telemetryLockedOn':
-    'Your admin account was created. Usage statistics stay on because this server sets PULSE_TELEMETRY=true. Set PULSE_TELEMETRY=false and restart Pulse to turn them off.',
+  'setup.security.error.telemetryEnableFailed':
+    'Your admin account was created, but usage statistics could not be enabled. You can enable them in Settings → System → General.',
+  'setup.security.error.telemetryLockedOff':
+    'Your admin account was created. Usage statistics remain off because this server sets PULSE_TELEMETRY=false. Remove that override and restart Pulse to enable them.',
   'setup.security.generatedPasswordHelp':
     'A secure 20-character password will be generated and shown on the next screen.',
   'setup.security.label.confirmPassword': 'Confirm password',
@@ -104,14 +104,14 @@ export const EN_MESSAGES = {
   'setup.security.showPassword.hide': 'Hide',
   'setup.security.showPassword.show': 'Show',
   'setup.security.telemetry.description':
-    'Send a small daily usage summary so the features and platforms you rely on get priority. It holds counts and on/off flags with a rotating pseudonymous install ID, never hostnames, credentials, or IP addresses. It is never sold or shared and is not linked to a Pulse account. Change this at any time in Settings.',
+    'Optionally send a small daily usage summary so the features and platforms you rely on get priority. It holds counts and on/off flags with a rotating pseudonymous install ID, never hostnames, credentials, or IP addresses. It is off by default and can be changed at any time in Settings.',
   'setup.security.telemetry.title': 'Usage statistics',
   'setup.security.title': 'Create your admin account',
   'setup.step.firstSource': 'First source',
   'setup.step.security': 'Security',
   'setup.step.unlockServer': 'Unlock server',
   'setup.welcome.telemetryNotice.description':
-    'Pulse sends a small daily usage summary showing which releases are deployed and which features and platforms are in use, so development effort goes where Pulse is actually used. It holds counts and on/off flags with a rotating pseudonymous install ID, never hostnames, credentials, IP addresses, or anything you type. It is never sold, shared, or used for advertising, and it is not linked to a Pulse account or license. It is on by default. You choose on the next step and can change it at any time in Settings.',
+    'Outbound usage telemetry is optional and off by default. If enabled, Pulse sends a small daily usage summary with release and feature counts, plus a rotating pseudonymous install ID. It never includes hostnames, credentials, IP addresses, or anything you type. Choose on the next step and change it at any time in Settings.',
   'setup.welcome.telemetryNotice.title': 'Usage statistics',
   'setup.wizard.ariaLabel': 'Pulse Setup Wizard',
   'alerts.activation.switchLabel': 'Send notifications',
@@ -372,7 +372,7 @@ export const EN_MESSAGES = {
     'Control how frequently Pulse polls Proxmox VE nodes.',
   'settings.general.monitoringCadence.section.title': 'Monitoring cadence',
   'settings.general.telemetry.description':
-    'Help improve Pulse by sharing a daily usage summary. Preview payload shows exactly what would be sent: a rotating pseudonymous install ID, normalized release identity, runtime platform, coarse deployment and lifecycle buckets, aggregate resource and outcome counts, coarse feature flags, content-free Patrol, Assistant, and capability-API usage counters, and four session-deduplicated workload-history adoption counts. It never includes hostnames, credentials, infrastructure identifiers, URLs, paths, locale, raw browser events, an event-level clickstream, prompts, chat messages, command text, action output, token values, names, email addresses, or IP addresses. It is never sold, shared with anyone else, or used for advertising, and it is not linked to a Pulse account or license. Telemetry rows are retained for up to 90 days, and request IP addresses are used only transiently for rate limiting and are not stored in telemetry rows.',
+    'Outbound usage telemetry is optional and off by default. If enabled, it sends a daily usage summary. Preview payload shows exactly what would be sent: a rotating pseudonymous install ID, normalized release identity, runtime platform, coarse deployment and lifecycle buckets, aggregate resource and outcome counts, coarse feature flags, content-free Patrol, Assistant, and capability-API usage counters, and four session-deduplicated workload-history adoption counts. It never includes hostnames, credentials, infrastructure identifiers, URLs, paths, locale, raw browser events, an event-level clickstream, prompts, chat messages, command text, action output, token values, names, email addresses, or IP addresses. It is not linked to a Pulse account or license. Telemetry rows are retained for up to 90 days, and request IP addresses are used only transiently for rate limiting and are not stored in telemetry rows.',
   'settings.general.temperature.description': 'Display temperatures in Celsius or Fahrenheit.',
   'settings.general.temperature.title': 'Temperature unit',
   'settings.general.telemetry.copyJson': 'Copy JSON',
@@ -655,8 +655,8 @@ export const FIRST_SESSION_MONITORING_MIGRATED_MESSAGE_KEYS = [
   'setup.security.error.passwordRequired',
   'setup.security.error.passwordTooShort',
   'setup.security.error.setupFailed',
-  'setup.security.error.telemetryDisableFailed',
-  'setup.security.error.telemetryLockedOn',
+  'setup.security.error.telemetryEnableFailed',
+  'setup.security.error.telemetryLockedOff',
   'setup.security.generatedPasswordHelp',
   'setup.security.label.confirmPassword',
   'setup.security.label.password',

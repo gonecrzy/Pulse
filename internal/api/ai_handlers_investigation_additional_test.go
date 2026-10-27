@@ -611,6 +611,7 @@ func TestHandlePatrolAutonomyGet(t *testing.T) {
 	}
 
 	handler := newTestAISettingsHandler(cfg, persistence, nil)
+	handler.GetAIService(context.Background()).SetLicenseChecker(stubLicenseChecker{allow: true})
 
 	getReq := newLoopbackRequest(http.MethodGet, "/api/ai/patrol/autonomy", nil)
 	getRec := httptest.NewRecorder()

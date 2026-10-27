@@ -117,11 +117,11 @@ describe('SecurityStep', () => {
     expect(storedHandoff.createdAt).toEqual(expect.any(String));
     expect(onComplete).toHaveBeenCalledOnce();
     expect(showErrorMock).not.toHaveBeenCalled();
-    // Usage statistics stay on by default, so setup makes no settings write.
+    // Usage statistics stay off by default, so setup makes no settings write.
     expect(apiFetchJSONMock).toHaveBeenCalledTimes(1);
   });
 
-  it('offers the usage statistics choice and applies an opt-out after the account exists', async () => {
+  it('offers an opt-in that is off by default and saves it after the account exists', async () => {
     const onComplete = vi.fn();
 
     render(() => (
@@ -135,11 +135,11 @@ describe('SecurityStep', () => {
     ));
 
     const toggle = screen.getByRole('button', { name: 'Usage statistics' });
-    expect(toggle).toHaveAttribute('aria-pressed', 'true');
+    expect(toggle).toHaveAttribute('aria-pressed', 'false');
     expect(screen.getByText(/never hostnames, credentials, or IP addresses/)).toBeInTheDocument();
 
     fireEvent.click(toggle);
-    expect(toggle).toHaveAttribute('aria-pressed', 'false');
+    expect(toggle).toHaveAttribute('aria-pressed', 'true');
 
     fireEvent.click(screen.getByRole('button', { name: /Create Account & Continue/i }));
 
@@ -150,14 +150,12 @@ describe('SecurityStep', () => {
     const [settingsUrl, settingsInit] = apiFetchJSONMock.mock.calls[1] as [string, RequestInit];
     expect(settingsUrl).toBe('/api/system/settings/update');
     expect(settingsInit.method).toBe('POST');
-    expect(JSON.parse(String(settingsInit.body))).toEqual({ telemetryEnabled: false });
+    expect(JSON.parse(String(settingsInit.body))).toEqual({ telemetryEnabled: true });
     expect(showErrorMock).not.toHaveBeenCalled();
   });
 
   // A server started with PULSE_TELEMETRY refuses the write (409 env_locked).
-  // When it already keeps statistics off, reporting a failure told the
-  // operator Pulse was still sending data.
-  it('reports nothing when the server already keeps usage statistics off', async () => {
+  it('reports when server policy keeps a requested opt-in off', async () => {
     const onComplete = vi.fn();
     apiFetchJSONMock
       .mockResolvedValueOnce({ success: true })
@@ -181,10 +179,12 @@ describe('SecurityStep', () => {
 
     await waitFor(() => expect(onComplete).toHaveBeenCalledOnce());
     expect(apiFetchJSONMock.mock.calls[2][0]).toBe('/api/system/settings');
-    expect(showErrorMock).not.toHaveBeenCalled();
+    expect(showErrorMock).toHaveBeenCalledWith(
+      'Your admin account was created. Usage statistics remain off because this server sets PULSE_TELEMETRY=false. Remove that override and restart Pulse to enable them.',
+    );
   });
 
-  it('names the server setting when it keeps usage statistics on', async () => {
+  it('does not report a failed opt-in if the server already keeps usage statistics on', async () => {
     const onComplete = vi.fn();
     apiFetchJSONMock
       .mockResolvedValueOnce({ success: true })
@@ -207,12 +207,10 @@ describe('SecurityStep', () => {
     fireEvent.click(screen.getByRole('button', { name: /Create Account & Continue/i }));
 
     await waitFor(() => expect(onComplete).toHaveBeenCalledOnce());
-    expect(showErrorMock).toHaveBeenCalledWith(
-      'Your admin account was created. Usage statistics stay on because this server sets PULSE_TELEMETRY=true. Set PULSE_TELEMETRY=false and restart Pulse to turn them off.',
-    );
+    expect(showErrorMock).not.toHaveBeenCalled();
   });
 
-  it('keeps the account when the opt-out write fails and says so', async () => {
+  it('keeps the account when the opt-in write fails and says so', async () => {
     const onComplete = vi.fn();
     apiFetchJSONMock
       .mockResolvedValueOnce({ success: true })
@@ -233,7 +231,7 @@ describe('SecurityStep', () => {
 
     await waitFor(() => expect(onComplete).toHaveBeenCalledOnce());
     expect(showErrorMock).toHaveBeenCalledWith(
-      'Your admin account was created, but usage statistics could not be turned off. You can turn them off in Settings → System → General.',
+      'Your admin account was created, but usage statistics could not be enabled. You can enable them in Settings → System → General.',
     );
   });
 });

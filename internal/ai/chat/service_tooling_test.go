@@ -1290,6 +1290,27 @@ func TestInvestigationServiceFailsClosedWithoutAdmissionResolver(t *testing.T) {
 	}
 }
 
+func TestInvestigationRequestAdmissionDoesNotReplaceSharedCommercialPolicy(t *testing.T) {
+	service := &Service{
+		started: true,
+		investigationAdmissionChecker: func(context.Context) error {
+			return fmt.Errorf("commercial admission denied")
+		},
+	}
+	identity := tools.ProposalIdentity{ProposalID: "p-1", FindingID: "f-1", InvestigationID: "i-1"}
+	_, err := service.ExecuteInvestigationStream(context.Background(), InvestigationRunRequest{
+		Identity:       identity,
+		AdmissionCheck: func(context.Context) error { return nil },
+	}, nil)
+	if err == nil || !strings.Contains(err.Error(), "no tool executor") {
+		t.Fatalf("fork request admission did not override only this call: %v", err)
+	}
+	_, err = service.ExecuteInvestigationStream(context.Background(), InvestigationRunRequest{Identity: identity}, nil)
+	if err == nil || !strings.Contains(err.Error(), "commercial admission denied") {
+		t.Fatalf("request-scoped fork policy replaced shared commercial policy: %v", err)
+	}
+}
+
 func TestProposalRawInputOverrideNeverLeaksThroughProgressEvents(t *testing.T) {
 	var events []string
 	callback := func(event StreamEvent) { events = append(events, string(event.Data)) }

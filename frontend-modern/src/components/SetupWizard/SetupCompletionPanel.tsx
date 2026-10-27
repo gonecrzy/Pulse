@@ -62,6 +62,7 @@ export const SetupCompletionPanel: Component<CompleteStepProps> = (props) => {
           shouldShowSetupProActivationPointer({
             runtimeBuild: capabilities?.runtime?.build,
             licenseValid: licenseStatus?.valid,
+            commercialServicesEnabled: capabilities?.commercial_services_enabled,
           }),
         );
       } catch (error) {

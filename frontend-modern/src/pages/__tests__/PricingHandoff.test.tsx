@@ -3,6 +3,7 @@ import { cleanup, render, screen, waitFor } from '@solidjs/testing-library';
 import { Route, Router } from '@solidjs/router';
 import PricingHandoff from '@/pages/PricingHandoff';
 import pricingHandoffSource from '@/pages/PricingHandoff.tsx?raw';
+import { syncSessionPresentationPolicy } from '@/stores/sessionPresentationPolicy';
 import { DEFAULT_LOCALE, loadLocaleCatalog, setActiveLocale } from '@/i18n';
 import {
   getSelfHostedPurchaseStartUrl,
@@ -24,6 +25,7 @@ describe('PricingHandoff', () => {
   beforeEach(() => {
     handoffToExternalPricingMock.mockReset();
     setActiveLocale(DEFAULT_LOCALE);
+    syncSessionPresentationPolicy(null);
     window.scrollTo = vi.fn();
   });
 
@@ -91,6 +93,28 @@ describe('PricingHandoff', () => {
     expect(pricingHandoffSource).toContain('descriptionVisibility="always"');
     expect(pricingHandoffSource).toContain('updateDocumentTitle={false}');
     expect(pricingHandoffSource).not.toContain('<h1');
+  });
+
+  it('suppresses pricing and activation handoffs when standalone commercial surfaces are hidden', async () => {
+    syncSessionPresentationPolicy({
+      presentationPolicy: {
+        demoMode: false,
+        readOnly: false,
+        hideCommercial: true,
+        hideUpgrade: true,
+      },
+    });
+    window.history.replaceState({}, '', '/pricing?feature=unknown_pro_feature');
+
+    render(() => (
+      <Router>
+        <Route path="/pricing" component={PricingHandoff} />
+        <Route path="/" component={() => <div>Local home</div>} />
+      </Router>
+    ));
+
+    expect(await screen.findByText('Local home')).toBeInTheDocument();
+    expect(handoffToExternalPricingMock).not.toHaveBeenCalled();
   });
 
   // The earlier 'retired monitored-system pricing handoffs' case has been

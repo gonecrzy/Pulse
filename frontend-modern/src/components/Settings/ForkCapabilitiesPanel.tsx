@@ -122,8 +122,8 @@ export const ForkCapabilitiesPanel: Component<ForkCapabilitiesPanelProps> = (pro
       bodyClass="space-y-3 p-3 sm:space-y-4 sm:p-5"
     >
       <p class="text-sm text-muted">
-        These capabilities are resolved by the Pulse backend. Commercial license features remain
-        reported separately.
+        Supported local capabilities can be enabled here without Pulse activation or subscription
+        state. Availability does not grant action approval or execution authority.
       </p>
 
       <Show when={forkCapabilitiesLoading() && !forkCapabilitySnapshot()}>
@@ -157,8 +157,9 @@ export const ForkCapabilitiesPanel: Component<ForkCapabilitiesPanelProps> = (pro
                       </p>
                       <p class="break-all font-mono text-xs text-muted">{capability.id}</p>
                       <p class="text-xs text-muted">
-                        {capability.available ? 'Available' : 'Unavailable'} ·{' '}
-                        {capability.implemented ? 'Implemented' : 'Not implemented'} · {source()}
+                        {capability.status} ·{' '}
+                        {capability.implemented ? 'implemented' : 'not implemented'} ·{' '}
+                        {capability.enabled ? 'enabled' : 'disabled'} · {source()}
                       </p>
                     </div>
                     <Show when={capability.implemented}>

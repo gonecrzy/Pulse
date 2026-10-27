@@ -11,7 +11,7 @@ import (
 	"sync"
 )
 
-const ProfileVersion = 1
+const ProfileVersion = 2
 
 type FeatureID string
 
@@ -21,6 +21,11 @@ const (
 	FeatureDeterministicTriage FeatureID = "fork.deterministic_triage"
 	FeatureAIInvestigation     FeatureID = "fork.ai_investigation"
 	FeatureGovernedActions     FeatureID = "fork.governed_actions"
+	FeatureAgentProfiles       FeatureID = "fork.agent_profiles"
+	FeatureRBAC                FeatureID = "fork.rbac"
+	FeatureAuditLogging        FeatureID = "fork.audit_logging"
+	FeatureAdvancedReporting   FeatureID = "fork.advanced_reporting"
+	FeatureExternalProbe       FeatureID = "fork.external_probe"
 	FeatureActionSafety        FeatureID = "fork.action_safety"
 	FeatureOperationalCases    FeatureID = "fork.operational_cases"
 	FeatureLongTermMetrics     FeatureID = "fork.long_term_metrics"
@@ -30,19 +35,35 @@ const (
 type FeatureDefinition struct {
 	ID             FeatureID `json:"id"`
 	Implemented    bool      `json:"implemented"`
+	Status         Status    `json:"status"`
 	Implementation string    `json:"implementation,omitempty"`
 }
 
+// Status describes implementation maturity independently from whether an
+// operator enabled the capability in the local profile.
+type Status string
+
+const (
+	StatusSupported    Status = "supported"
+	StatusExperimental Status = "experimental"
+	StatusUnavailable  Status = "unavailable"
+)
+
 var registeredFeatures = []FeatureDefinition{
-	{ID: FeatureCodexLBGateway, Implementation: "OpenAI-compatible Codex-LB provider enforcement"},
-	{ID: FeatureKomodoReadOnly, Implementation: "read-only Komodo monitoring adapter"},
-	{ID: FeatureDeterministicTriage, Implementation: "deterministic alert triage extensions"},
-	{ID: FeatureAIInvestigation, Implemented: true, Implementation: "Pulse chat investigation runner and findings store"},
-	{ID: FeatureGovernedActions, Implemented: true, Implementation: "Pulse typed action planner and canonical action lifecycle"},
-	{ID: FeatureActionSafety, Implementation: "strict remediation policy and safety controls"},
-	{ID: FeatureOperationalCases, Implementation: "multi-alert operational cases and repair plans"},
-	{ID: FeatureLongTermMetrics, Implementation: "extended Pulse metric retention tiers"},
-	{ID: FeatureDiscordOps, Implementation: "Discord conversational operations"},
+	{ID: FeatureCodexLBGateway, Status: StatusExperimental, Implementation: "OpenAI-compatible Codex-LB provider enforcement"},
+	{ID: FeatureKomodoReadOnly, Implemented: true, Status: StatusSupported, Implementation: "read-only Komodo monitoring adapter"},
+	{ID: FeatureDeterministicTriage, Implemented: true, Status: StatusSupported, Implementation: "deterministic alert triage extensions"},
+	{ID: FeatureAIInvestigation, Implemented: true, Status: StatusSupported, Implementation: "Pulse chat investigation runner and findings store"},
+	{ID: FeatureGovernedActions, Implemented: true, Status: StatusSupported, Implementation: "Pulse typed action planner and canonical action lifecycle"},
+	{ID: FeatureAgentProfiles, Implemented: true, Status: StatusSupported, Implementation: "public agent profile manager and versioned configuration"},
+	{ID: FeatureRBAC, Implemented: true, Status: StatusSupported, Implementation: "organization-scoped roles and permission checks"},
+	{ID: FeatureAuditLogging, Implemented: true, Status: StatusSupported, Implementation: "local append-only audit records and read APIs"},
+	{ID: FeatureAdvancedReporting, Implemented: true, Status: StatusSupported, Implementation: "local report generation and scheduling"},
+	{ID: FeatureExternalProbe, Implemented: true, Status: StatusSupported, Implementation: "operator-configured external availability probes"},
+	{ID: FeatureActionSafety, Status: StatusExperimental, Implementation: "strict remediation policy and safety controls"},
+	{ID: FeatureOperationalCases, Status: StatusExperimental, Implementation: "multi-alert operational cases and repair plans"},
+	{ID: FeatureLongTermMetrics, Status: StatusUnavailable, Implementation: "extended Pulse metric retention tiers"},
+	{ID: FeatureDiscordOps, Status: StatusExperimental, Implementation: "Discord conversational operations"},
 }
 
 type ForkProfile struct {
@@ -52,13 +73,20 @@ type ForkProfile struct {
 }
 
 func DefaultProfile() ForkProfile {
-	return ForkProfile{Version: ProfileVersion, Revision: 1, EnabledFeatures: []FeatureID{}}
+	return ForkProfile{Version: ProfileVersion, Revision: 1, EnabledFeatures: []FeatureID{
+		FeatureAIInvestigation,
+		FeatureDeterministicTriage,
+		FeatureGovernedActions,
+		FeatureKomodoReadOnly,
+	}}
 }
 
 type Capability struct {
 	ID          FeatureID `json:"id"`
 	Available   bool      `json:"available"`
 	Implemented bool      `json:"implemented"`
+	Enabled     bool      `json:"enabled"`
+	Status      Status    `json:"status"`
 	Source      string    `json:"source"`
 }
 
@@ -108,11 +136,12 @@ func NewManager(store ProfileStore) *Manager {
 	if profile == nil {
 		return manager
 	}
-	if err := validateProfile(*profile); err != nil {
+	migratedProfile := migrateProfile(*profile)
+	if err := validateProfile(migratedProfile); err != nil {
 		manager.loadErr = fmt.Errorf("validate persisted fork profile: %w", err)
 		return manager
 	}
-	manager.profile = cloneProfile(*profile)
+	manager.profile = cloneProfile(migratedProfile)
 	return manager
 }
 
@@ -137,13 +166,14 @@ func (m *Manager) Snapshot() (Snapshot, error) {
 	}
 	snapshot := Snapshot{ProfileVersion: m.profile.Version, Revision: m.profile.Revision}
 	for _, feature := range RegisteredFeatures() {
-		available := feature.Implemented && enabled[feature.ID]
+		isEnabled := enabled[feature.ID]
+		available := feature.Implemented && isEnabled
 		source := "unavailable"
 		if available {
 			source = "fork_public"
 		}
 		snapshot.Capabilities = append(snapshot.Capabilities, Capability{
-			ID: feature.ID, Available: available, Implemented: feature.Implemented, Source: source,
+			ID: feature.ID, Available: available, Implemented: feature.Implemented, Enabled: isEnabled, Status: feature.Status, Source: source,
 		})
 	}
 	return snapshot, nil
@@ -186,6 +216,7 @@ func (m *Manager) Replace(profile ForkProfile, expectedRevision uint64) (Snapsho
 		return Snapshot{}, ErrStaleRevision
 	}
 	profile.Revision = expectedRevision + 1
+	profile = migrateProfile(profile)
 	if err := validateProfile(profile); err != nil {
 		return Snapshot{}, fmt.Errorf("%w: %v", ErrInvalidProfile, err)
 	}
@@ -206,12 +237,13 @@ func (m *Manager) snapshotLocked() Snapshot {
 	}
 	snapshot := Snapshot{ProfileVersion: m.profile.Version, Revision: m.profile.Revision}
 	for _, feature := range RegisteredFeatures() {
-		available := feature.Implemented && enabled[feature.ID]
+		isEnabled := enabled[feature.ID]
+		available := feature.Implemented && isEnabled
 		source := "unavailable"
 		if available {
 			source = "fork_public"
 		}
-		snapshot.Capabilities = append(snapshot.Capabilities, Capability{ID: feature.ID, Available: available, Implemented: feature.Implemented, Source: source})
+		snapshot.Capabilities = append(snapshot.Capabilities, Capability{ID: feature.ID, Available: available, Implemented: feature.Implemented, Enabled: isEnabled, Status: feature.Status, Source: source})
 	}
 	return snapshot
 }
@@ -237,11 +269,21 @@ func validateProfile(profile ForkProfile) error {
 		if !ok {
 			return fmt.Errorf("unknown fork capability %q", id)
 		}
-		if !feature.Implemented {
+		if !feature.Implemented || feature.Status != StatusSupported {
 			return fmt.Errorf("fork capability %q has no complete implementation", id)
 		}
 	}
 	return nil
+}
+
+// migrateProfile upgrades the persisted pre-policy-version profile while
+// preserving its explicit feature choices. A missing profile uses new defaults;
+// an explicitly empty v1 profile remains disabled after migration.
+func migrateProfile(profile ForkProfile) ForkProfile {
+	if profile.Version == 1 {
+		profile.Version = ProfileVersion
+	}
+	return profile
 }
 
 func featureDefinition(id FeatureID) (FeatureDefinition, bool) {
@@ -258,6 +300,28 @@ func registered(id FeatureID) bool {
 	return ok
 }
 
+// LocalCapabilityForLicenseFeature maps implemented public standalone surfaces
+// to their explicit fork-policy capability. Composite or upstream-dependent
+// entitlements are deliberately omitted: ai_autofix includes automation,
+// relay depends on Pulse services, and hosted/multi-tenant authority is not a
+// local feature toggle.
+func LocalCapabilityForLicenseFeature(feature string) (FeatureID, bool) {
+	switch strings.TrimSpace(feature) {
+	case "agent_profiles":
+		return FeatureAgentProfiles, true
+	case "rbac":
+		return FeatureRBAC, true
+	case "audit_logging":
+		return FeatureAuditLogging, true
+	case "advanced_reporting":
+		return FeatureAdvancedReporting, true
+	case "external_probe":
+		return FeatureExternalProbe, true
+	default:
+		return "", false
+	}
+}
+
 func cloneProfile(profile ForkProfile) ForkProfile {
 	profile.EnabledFeatures = append([]FeatureID(nil), profile.EnabledFeatures...)
 	return profile
@@ -267,7 +331,6 @@ type Source string
 
 const (
 	SourceForkPublic  Source = "fork_public"
-	SourceCommercial  Source = "commercial_license"
 	SourceUnavailable Source = "unavailable"
 )
 
@@ -278,14 +341,9 @@ type AccessDecision struct {
 	ForkError  error     `json:"-"`
 }
 
-type CommercialChecker func(context.Context, FeatureID) bool
-
-// AccessResolver combines the central fork availability profile with an
-// existing commercial check where a public route already has a paid path.
-// It never mutates commercial entitlements or treats fork availability as one.
+// AccessResolver is the single local fork capability admission boundary.
 type AccessResolver struct {
-	Fork       *Manager
-	Commercial CommercialChecker
+	Fork *Manager
 }
 
 func (r AccessResolver) Resolve(ctx context.Context, id FeatureID) AccessDecision {
@@ -298,9 +356,7 @@ func (r AccessResolver) Resolve(ctx context.Context, id FeatureID) AccessDecisio
 			decision.ForkError = err
 		}
 	}
-	if r.Commercial != nil && r.Commercial(ctx, id) {
-		decision.Available, decision.Source = true, SourceCommercial
-	}
+	_ = ctx
 	return decision
 }
 

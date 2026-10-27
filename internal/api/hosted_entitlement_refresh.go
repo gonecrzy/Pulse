@@ -54,6 +54,12 @@ func (h *LicenseHandlers) ensureHostedEntitlementRefreshForOrg(orgID string, ser
 	if h == nil || h.mtPersistence == nil {
 		return
 	}
+	if !h.upstreamCommercialServicesEnabled() {
+		// Standalone runtimes preserve legacy billing snapshots but do not use
+		// refresh tokens or start retries against Pulse entitlement services.
+		h.StopAllBackgroundLoops()
+		return
+	}
 	requestedOrgID := normalizeHostedEntitlementOrgID(orgID)
 	effectiveOrgID, state, err := h.loadHostedEntitlementRefreshTarget(requestedOrgID)
 	if err != nil {

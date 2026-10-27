@@ -102,7 +102,7 @@ func TestGetTenantComponents_RetriesFailedExchangeInBackground(t *testing.T) {
 		t.Fatalf("save legacy JWT: %v", err)
 	}
 
-	handlers := NewLicenseHandlers(mtp, false)
+	handlers := NewLicenseHandlers(mtp, false, &config.Config{UpstreamCommercialServicesEnabled: true})
 	handlers.legacyExchangeRetrySchedule = []time.Duration{10 * time.Millisecond}
 	t.Cleanup(handlers.StopAllBackgroundLoops)
 
@@ -196,7 +196,7 @@ func TestGetTenantComponents_StopsRetryingOnTerminalExchangeFailure(t *testing.T
 		t.Fatalf("save legacy JWT: %v", err)
 	}
 
-	handlers := NewLicenseHandlers(mtp, false)
+	handlers := NewLicenseHandlers(mtp, false, &config.Config{UpstreamCommercialServicesEnabled: true})
 	handlers.legacyExchangeRetrySchedule = []time.Duration{10 * time.Millisecond}
 	t.Cleanup(handlers.StopAllBackgroundLoops)
 
@@ -263,7 +263,7 @@ func TestGetTenantComponents_SurfacesUnreadablePersistedLicense(t *testing.T) {
 		t.Fatalf("write undecryptable license file: %v", err)
 	}
 
-	handlers := NewLicenseHandlers(mtp, false)
+	handlers := NewLicenseHandlers(mtp, false, &config.Config{UpstreamCommercialServicesEnabled: true})
 	t.Cleanup(handlers.StopAllBackgroundLoops)
 
 	ctx := context.WithValue(context.Background(), OrgIDContextKey, "default")
@@ -294,7 +294,7 @@ func TestGetTenantComponents_SurfacesUnreadablePersistedLicense(t *testing.T) {
 func TestSetCommercialMigrationState_EscalatesSustainedTransportFailure(t *testing.T) {
 	baseDir := t.TempDir()
 	mtp := config.NewMultiTenantPersistence(baseDir)
-	handlers := NewLicenseHandlers(mtp, false)
+	handlers := NewLicenseHandlers(mtp, false, &config.Config{UpstreamCommercialServicesEnabled: true})
 
 	now := time.Unix(1_700_000_000, 0)
 	handlers.commercialMigrationNow = func() time.Time { return now }

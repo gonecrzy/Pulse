@@ -10,10 +10,29 @@ import (
 
 	"github.com/rcourtman/pulse-go-rewrite/internal/config"
 	"github.com/rcourtman/pulse-go-rewrite/pkg/auth"
+	"github.com/rcourtman/pulse-go-rewrite/pkg/edition"
 )
 
 type allowRulesAuthorizer struct {
 	rules map[string]bool
+}
+
+func TestStandaloneRuntimeHidesCommercialSurfacesEvenInProBuild(t *testing.T) {
+	previousEdition := edition.Current()
+	edition.SetEdition(edition.Pro)
+	t.Cleanup(func() { edition.SetEdition(previousEdition) })
+
+	standalone := &Router{config: &config.Config{}}
+	policy := standalone.securityStatusPresentationPolicy(context.Background())
+	if !policy.HideCommercial || !policy.HideUpgrade {
+		t.Fatalf("standalone policy = %+v, want commercial and upgrade surfaces hidden", policy)
+	}
+
+	optedIn := &Router{config: &config.Config{UpstreamCommercialServicesEnabled: true}}
+	policy = optedIn.securityStatusPresentationPolicy(context.Background())
+	if policy.HideCommercial || policy.HideUpgrade {
+		t.Fatalf("compatibility opt-in policy = %+v, want commercial surfaces available", policy)
+	}
 }
 
 func (a *allowRulesAuthorizer) Authorize(_ context.Context, action string, resource string) (bool, error) {

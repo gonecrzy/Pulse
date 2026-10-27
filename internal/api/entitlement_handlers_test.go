@@ -367,8 +367,11 @@ func TestEntitlementHandler_HostedEvaluatorKeepsCloudLimitsWhenNoLicense(t *test
 		t.Fatalf("unmarshal payload failed: %v", err)
 	}
 
-	if payload.SubscriptionState != string(license.SubStateActive) {
-		t.Fatalf("subscription_state=%q, want %q", payload.SubscriptionState, license.SubStateActive)
+	if payload.CommercialServicesEnabled {
+		t.Fatal("fresh standalone install reports Pulse commercial services enabled")
+	}
+	if payload.SubscriptionState != "" {
+		t.Fatalf("subscription_state=%q, want empty because no subscription exists", payload.SubscriptionState)
 	}
 	if payload.PlanVersion != "cloud_starter" {
 		t.Fatalf("plan_version=%q, want %q", payload.PlanVersion, "cloud_starter")
@@ -732,7 +735,7 @@ func TestEntitlementHandler_SelfHostedTrialEligibilityRetiredForFreshOrg(t *test
 	}
 }
 
-func TestEntitlementHandler_OverflowOnlyBillingStateReportsActiveCommunity(t *testing.T) {
+func TestEntitlementHandler_StandaloneDoesNotLoadCommercialOverflowState(t *testing.T) {
 	baseDir := t.TempDir()
 	mtp := config.NewMultiTenantPersistence(baseDir)
 	now := time.Now().Unix()
@@ -760,11 +763,14 @@ func TestEntitlementHandler_OverflowOnlyBillingStateReportsActiveCommunity(t *te
 	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("unmarshal payload failed: %v", err)
 	}
-	if payload.SubscriptionState != string(license.SubStateActive) {
-		t.Fatalf("subscription_state=%q, want %q", payload.SubscriptionState, license.SubStateActive)
+	if payload.SubscriptionState != "" {
+		t.Fatalf("subscription_state=%q, want empty because standalone ignores commercial billing state", payload.SubscriptionState)
 	}
 	if payload.TrialEligible {
 		t.Fatalf("trial_eligible=%v, want false", payload.TrialEligible)
+	}
+	if payload.OverflowDaysRemaining != nil {
+		t.Fatalf("standalone payload exposed commercial overflow state: %v", *payload.OverflowDaysRemaining)
 	}
 }
 

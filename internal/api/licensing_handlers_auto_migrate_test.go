@@ -132,7 +132,7 @@ func TestGetTenantComponents_AutoExchangesPersistedLegacyJWT(t *testing.T) {
 	}
 
 	// Create handlers.
-	handlers := NewLicenseHandlers(mtp, false)
+	handlers := NewLicenseHandlers(mtp, false, &config.Config{UpstreamCommercialServicesEnabled: true})
 	ctx := context.WithValue(context.Background(), OrgIDContextKey, "default")
 	svc := handlers.Service(ctx)
 	if svc == nil {
@@ -212,7 +212,7 @@ func TestGetTenantComponents_MockModeSkipsPersistedLegacyAutoExchangeAndClearsNo
 		t.Fatalf("save stale commercial migration state: %v", err)
 	}
 
-	handlers := NewLicenseHandlers(mtp, false)
+	handlers := NewLicenseHandlers(mtp, false, &config.Config{UpstreamCommercialServicesEnabled: true})
 	ctx := context.WithValue(context.Background(), OrgIDContextKey, "default")
 	svc := handlers.Service(ctx)
 	if svc == nil {
@@ -250,7 +250,7 @@ func TestGetTenantComponents_MockModeSkipsPersistedLegacyAutoExchangeAndClearsNo
 func TestSetCommercialMigrationState_AutoMigrateEscalatesSustainedTransportFailure(t *testing.T) {
 	baseDir := t.TempDir()
 	mtp := config.NewMultiTenantPersistence(baseDir)
-	handlers := NewLicenseHandlers(mtp, false)
+	handlers := NewLicenseHandlers(mtp, false, &config.Config{UpstreamCommercialServicesEnabled: true})
 
 	now := time.Unix(1_700_000_000, 0)
 	handlers.commercialMigrationNow = func() time.Time { return now }
@@ -360,7 +360,7 @@ func TestGetTenantComponents_SkipsExchange_WhenActivationStateExists(t *testing.
 		t.Fatalf("save activation state: %v", err)
 	}
 
-	handlers := NewLicenseHandlers(mtp, false)
+	handlers := NewLicenseHandlers(mtp, false, &config.Config{UpstreamCommercialServicesEnabled: true})
 	ctx := context.WithValue(context.Background(), OrgIDContextKey, "default")
 	svc := handlers.Service(ctx)
 	if svc == nil {
@@ -416,7 +416,7 @@ func TestGetTenantComponents_PersistsCommercialMigrationState_WhenAutoExchangeFa
 		t.Fatalf("save legacy JWT: %v", err)
 	}
 
-	handlers := NewLicenseHandlers(mtp, false)
+	handlers := NewLicenseHandlers(mtp, false, &config.Config{UpstreamCommercialServicesEnabled: true})
 	ctx := context.WithValue(context.Background(), OrgIDContextKey, "default")
 	svc := handlers.Service(ctx)
 	if svc == nil {
@@ -531,7 +531,7 @@ func TestGetTenantComponents_AutoExchangeLeavesSelfHostedMonitoringUncapped(t *t
 		t.Fatalf("save legacy jwt: %v", err)
 	}
 
-	handlers := NewLicenseHandlers(mtp, false)
+	handlers := NewLicenseHandlers(mtp, false, &config.Config{UpstreamCommercialServicesEnabled: true})
 	handlers.SetMonitors(buildGrandfatherFloorMonitor(23), nil)
 	ctx := context.WithValue(context.Background(), OrgIDContextKey, "default")
 	svc := handlers.Service(ctx)
@@ -649,7 +649,7 @@ func TestGetTenantComponents_DoesNotBackfillGrandfatherFloorForUncappedSelfHoste
 		t.Fatalf("save activation state: %v", err)
 	}
 
-	handlers := NewLicenseHandlers(mtp, false)
+	handlers := NewLicenseHandlers(mtp, false, &config.Config{UpstreamCommercialServicesEnabled: true})
 	ctx := context.WithValue(context.Background(), OrgIDContextKey, "default")
 	svc := handlers.Service(ctx)
 	if svc == nil {
@@ -819,7 +819,7 @@ func TestGetTenantComponents_DoesNotCaptureGrandfatherFloorWhenSupplementalInven
 	provider := &grandfatherFloorSupplementalProvider{}
 	monitor := buildSupplementalGrandfatherFloorMonitor(provider)
 
-	handlers := NewLicenseHandlers(mtp, false)
+	handlers := NewLicenseHandlers(mtp, false, &config.Config{UpstreamCommercialServicesEnabled: true})
 	handlers.SetMonitors(monitor, nil)
 	t.Cleanup(handlers.StopAllBackgroundLoops)
 	ctx := context.WithValue(context.Background(), OrgIDContextKey, "default")

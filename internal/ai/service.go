@@ -827,15 +827,16 @@ func (s *Service) SetAlertAnalyzerFactory(fn func(aicontracts.AlertAnalyzerDeps)
 	s.alertAnalyzerFactory = fn
 }
 
-// HasLicenseFeature checks if a Pro feature is licensed (returns true if no license checker is set)
+// HasLicenseFeature checks if a commercial feature is licensed. Missing
+// licensing state fails closed so callers cannot treat an uninitialized
+// checker as an entitlement.
 func (s *Service) HasLicenseFeature(feature string) bool {
 	s.mu.RLock()
 	checker := s.licenseChecker
 	s.mu.RUnlock()
 
 	if checker == nil {
-		// No license checker means no enforcement (development mode or feature not gated)
-		return true
+		return false
 	}
 	return checker.HasFeature(feature)
 }

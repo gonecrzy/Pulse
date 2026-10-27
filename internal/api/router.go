@@ -269,13 +269,6 @@ func NewRouter(cfg *config.Config, monitor *monitoring.Monitor, mtMonitor *monit
 	r.forkProfileManager = forkfeatures.NewManager(r.persistence)
 	r.forkAccess = forkfeatures.AccessResolver{
 		Fork: r.forkProfileManager,
-		Commercial: func(ctx context.Context, id forkfeatures.FeatureID) bool {
-			if id != forkfeatures.FeatureAIInvestigation || r.aiSettingsHandler == nil {
-				return false
-			}
-			service := r.aiSettingsHandler.GetAIService(ctx)
-			return service != nil && service.HasLicenseFeature(ai.FeatureAIAutoFix)
-		},
 	}
 	r.ensureChartService()
 	if r.wsHub != nil {
@@ -627,6 +620,7 @@ func (r *Router) setupRoutes() {
 	}
 	r.configProfileHandler = NewConfigProfileHandler(r.multiTenant)
 	r.licenseHandlers = NewLicenseHandlers(r.multiTenant, r.hostedMode, r.config)
+	r.licenseHandlers.SetForkAccessResolver(r.forkAccess)
 	r.licenseHandlers.SetRuntimeVersion(r.serverVersion)
 	r.licenseHandlers.SetMonitors(r.monitor, r.mtMonitor)
 	// The compiled Pro binary self-updates from the license server download
@@ -666,6 +660,9 @@ func (r *Router) setupRoutes() {
 	r.reportingHandlers.SetSystemSettingsStore(r.persistence)
 	r.reportingHandlers.SetCommercialLicenseResolver(func(ctx context.Context) *licenseService {
 		return r.licenseHandlers.Service(ctx)
+	})
+	r.reportingHandlers.SetFeatureCheckerResolver(func(ctx context.Context) licenseFeatureChecker {
+		return r.licenseHandlers.FeatureService(ctx)
 	})
 	r.logHandlers = NewLogHandlers(r.config, r.persistence)
 	rbacHandlers := NewRBACHandlers(r.config, rbacProvider)
@@ -858,10 +855,16 @@ func (r *Router) setupRoutes() {
 		r.wireAIChatDependenciesForService(ctx, service)
 		if guarded, ok := service.(interface {
 			SetInvestigationAdmissionChecker(func(context.Context) error)
+			PatrolInvestigationLicensed() bool
 		}); ok {
-			guarded.SetInvestigationAdmissionChecker(func(callCtx context.Context) error {
-				_, err := r.forkAccess.Require(callCtx, forkfeatures.FeatureAIInvestigation)
-				return err
+			// Pulse-owned callers use the commercial admission decision. Sindri's
+			// explicit route supplies a request-scoped local policy check instead
+			// of mutating this shared runner policy.
+			guarded.SetInvestigationAdmissionChecker(func(context.Context) error {
+				if !guarded.PatrolInvestigationLicensed() {
+					return fmt.Errorf("investigation requires the %s commercial entitlement", ai.FeatureAIAutoFix)
+				}
+				return nil
 			})
 		}
 	})
@@ -952,7 +955,7 @@ func (r *Router) setupRoutes() {
 	if r.monitor != nil {
 		alertMgr := r.monitor.GetAlertManager()
 		if alertMgr != nil {
-			licSvc := r.licenseHandlers.Service(context.Background())
+			licSvc := r.licenseHandlers.FeatureService(context.Background())
 			alertMgr.SetLicenseChecker(func(feature string) bool {
 				return licSvc.HasFeature(feature)
 			})
@@ -960,7 +963,7 @@ func (r *Router) setupRoutes() {
 		// Wire license checker for monitoring Pro features (external probes).
 		// The checker is consulted per read, so an entitlement lapse converges
 		// on the next polling cycle without a restart.
-		monitorLicSvc := r.licenseHandlers.Service(context.Background())
+		monitorLicSvc := r.licenseHandlers.FeatureService(context.Background())
 		r.monitor.SetLicenseChecker(func(feature string) bool {
 			if monitorLicSvc == nil {
 				return false
@@ -3194,7 +3197,7 @@ func (r *Router) wireAIChatDependenciesForService(ctx context.Context, service A
 	if persistence := r.persistenceForOrg(ctx); persistence != nil {
 		var licenseSvc licenseFeatureChecker
 		if r.licenseHandlers != nil {
-			licenseSvc = r.licenseHandlers.Service(ctx)
+			licenseSvc = r.licenseHandlers.FeatureService(ctx)
 		}
 		manager := NewAssistantAgentProfileManager(persistence, licenseSvc)
 		service.SetAgentProfileManager(manager)
@@ -7922,6 +7925,9 @@ func (r *Router) forwardUpdateProgress() {
 
 // backgroundUpdateChecker periodically checks for updates and caches the result
 func (r *Router) backgroundUpdateChecker(ctx context.Context) {
+	if r == nil || r.updateManager == nil {
+		return
+	}
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -7936,10 +7942,12 @@ func (r *Router) backgroundUpdateChecker(ctx context.Context) {
 	case <-startupDelay.C:
 	}
 
-	if _, err := r.updateManager.CheckForUpdates(ctx); err != nil {
-		log.Debug().Err(err).Msg("Initial update check failed")
-	} else {
-		log.Info().Msg("Initial update check completed")
+	if r.automaticUpdateChecksEnabled() {
+		if _, err := r.updateManager.CheckForUpdates(ctx); err != nil {
+			log.Debug().Err(err).Msg("Initial update check failed")
+		} else {
+			log.Info().Msg("Initial update check completed")
+		}
 	}
 
 	// Then check every hour
@@ -7951,6 +7959,9 @@ func (r *Router) backgroundUpdateChecker(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+			if !r.automaticUpdateChecksEnabled() {
+				continue
+			}
 			if _, err := r.updateManager.CheckForUpdates(ctx); err != nil {
 				log.Debug().Err(err).Msg("Periodic update check failed")
 			} else {
@@ -7958,6 +7969,10 @@ func (r *Router) backgroundUpdateChecker(ctx context.Context) {
 			}
 		}
 	}
+}
+
+func (r *Router) automaticUpdateChecksEnabled() bool {
+	return r != nil && r.config != nil && config.EffectiveAutoUpdateEnabled(r.config.UpdateChannel, r.config.AutoUpdateEnabled)
 }
 
 type checksumCacheEntry struct {

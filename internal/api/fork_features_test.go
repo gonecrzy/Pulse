@@ -18,8 +18,8 @@ func TestForkFeatureHandlersRejectForgedAndStaleProfiles(t *testing.T) {
 	handlers := NewForkFeatureHandlers(manager)
 
 	for _, body := range []string{
-		`{"version":1,"expected_revision":1,"enabled_features":["fork.komodo_read_only"]}`,
-		`{"version":2,"expected_revision":1,"enabled_features":[]}`,
+		`{"version":1,"expected_revision":1,"enabled_features":["fork.codex_lb_gateway"]}`,
+		`{"version":2,"expected_revision":1,"enabled_features":["fork.ai_investigation","fork.ai_investigation"]}`,
 		`{"version":1,"expected_revision":1,"enabled_features":[],"commercial_entitlements":["ai_autofix"]}`,
 	} {
 		req := httptest.NewRequest(http.MethodPut, "/api/fork/profile", strings.NewReader(body))
@@ -30,7 +30,7 @@ func TestForkFeatureHandlersRejectForgedAndStaleProfiles(t *testing.T) {
 		}
 	}
 
-	valid := `{"version":1,"expected_revision":1,"enabled_features":["fork.ai_investigation"]}`
+	valid := `{"version":2,"expected_revision":1,"enabled_features":["fork.ai_investigation"]}`
 	first := httptest.NewRecorder()
 	handlers.HandleProfile(first, httptest.NewRequest(http.MethodPut, "/api/fork/profile", strings.NewReader(valid)))
 	if first.Code != http.StatusOK {
@@ -53,6 +53,12 @@ func TestForkFeatureHandlersRejectForgedAndStaleProfiles(t *testing.T) {
 
 func TestForkCapabilityRouteGateFailsClosedAndUsesCentralResolver(t *testing.T) {
 	manager := forkfeatures.NewManager(nil)
+	disabled := forkfeatures.DefaultProfile()
+	disabled.EnabledFeatures = []forkfeatures.FeatureID{}
+	disabledSnapshot, err := manager.Replace(disabled, disabled.Revision)
+	if err != nil {
+		t.Fatal(err)
+	}
 	router := &Router{forkAccess: forkfeatures.AccessResolver{Fork: manager}}
 	calls := 0
 	gate := router.withForkCapability(forkfeatures.FeatureGovernedActions, func(w http.ResponseWriter, _ *http.Request) {
@@ -68,7 +74,7 @@ func TestForkCapabilityRouteGateFailsClosedAndUsesCentralResolver(t *testing.T) 
 
 	profile := forkfeatures.DefaultProfile()
 	profile.EnabledFeatures = []forkfeatures.FeatureID{forkfeatures.FeatureGovernedActions}
-	if _, err := manager.Replace(profile, profile.Revision); err != nil {
+	if _, err := manager.Replace(profile, disabledSnapshot.Revision); err != nil {
 		t.Fatal(err)
 	}
 	recorder = httptest.NewRecorder()
@@ -136,6 +142,11 @@ func TestAuthenticatedActionPlanRouteRequiresForkAvailability(t *testing.T) {
 	router := NewRouter(cfg, nil, nil, nil, nil, "1.0.0")
 	cleanupTestRouter(t, router)
 	router.authorizer = allowingActionAuthorizer{}
+	profile := forkfeatures.DefaultProfile()
+	profile.EnabledFeatures = []forkfeatures.FeatureID{}
+	if _, err := router.forkProfileManager.Replace(profile, profile.Revision); err != nil {
+		t.Fatal(err)
+	}
 	req := httptest.NewRequest(http.MethodPost, "/api/actions/plan", strings.NewReader(`{}`))
 	req.Header.Set("X-API-Token", rawToken)
 	recorder := httptest.NewRecorder()
@@ -157,8 +168,29 @@ func TestForkCapabilitiesEndpointReportsOnlyForkAvailability(t *testing.T) {
 	if err := json.Unmarshal(recorder.Body.Bytes(), &snapshot); err != nil {
 		t.Fatal(err)
 	}
-	if snapshot.Has(forkfeatures.FeatureAIInvestigation) || snapshot.Has(forkfeatures.FeatureGovernedActions) {
-		t.Fatalf("default profile enabled capabilities: %+v", snapshot.Capabilities)
+	for _, id := range []forkfeatures.FeatureID{
+		forkfeatures.FeatureAIInvestigation,
+		forkfeatures.FeatureGovernedActions,
+		forkfeatures.FeatureKomodoReadOnly,
+		forkfeatures.FeatureDeterministicTriage,
+	} {
+		if !snapshot.Has(id) {
+			t.Fatalf("default profile did not enable %s: %+v", id, snapshot.Capabilities)
+		}
+	}
+	for _, id := range []forkfeatures.FeatureID{
+		forkfeatures.FeatureAgentProfiles,
+		forkfeatures.FeatureRBAC,
+		forkfeatures.FeatureAuditLogging,
+		forkfeatures.FeatureAdvancedReporting,
+		forkfeatures.FeatureExternalProbe,
+	} {
+		if snapshot.Has(id) {
+			t.Fatalf("default profile enabled opt-in public capability %s: %+v", id, snapshot.Capabilities)
+		}
+	}
+	if snapshot.Has(forkfeatures.FeatureActionSafety) {
+		t.Fatalf("default profile enabled unfinished action safety: %+v", snapshot.Capabilities)
 	}
 	if strings.Contains(recorder.Body.String(), "ai_autofix") {
 		t.Fatalf("fork capability response exposed a commercial entitlement: %s", recorder.Body.String())

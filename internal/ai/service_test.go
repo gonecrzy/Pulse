@@ -1009,9 +1009,9 @@ func TestService_SetMetricsHistoryProvider(t *testing.T) {
 func TestService_LicenseGating(t *testing.T) {
 	svc := NewService(nil, nil)
 
-	// Default should be true when no checker is set (dev mode)
-	if !svc.HasLicenseFeature("test") {
-		t.Error("Expected true for no license checker (dev mode)")
+	// Missing licensing state must not grant a commercial capability.
+	if svc.HasLicenseFeature("test") {
+		t.Error("Expected false for no license checker")
 	}
 
 	mockLC := &mockLicenseChecker{hasFeature: true}

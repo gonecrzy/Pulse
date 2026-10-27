@@ -112,20 +112,46 @@ func TestLoad_EnvOverrides(t *testing.T) {
 
 func TestLoad_TelemetryEnabledDefaultAndEnvOverride(t *testing.T) {
 	t.Setenv("PULSE_DATA_DIR", t.TempDir())
-	os.Unsetenv("PULSE_TELEMETRY")
+	t.Setenv("PULSE_TELEMETRY", "")
 
 	cfg, err := Load()
 	require.NoError(t, err)
-	assert.True(t, cfg.TelemetryEnabled)
+	assert.False(t, cfg.TelemetryEnabled)
 	assert.False(t, cfg.EnvOverrides["PULSE_TELEMETRY"])
 	assert.False(t, cfg.EnvOverrides["telemetryEnabled"])
+
+	t.Setenv("PULSE_TELEMETRY", "true")
+	cfg, err = Load()
+	require.NoError(t, err)
+	assert.True(t, cfg.TelemetryEnabled)
+	assert.True(t, cfg.EnvOverrides["PULSE_TELEMETRY"])
+	assert.True(t, cfg.EnvOverrides["telemetryEnabled"])
 
 	t.Setenv("PULSE_TELEMETRY", "false")
 	cfg, err = Load()
 	require.NoError(t, err)
 	assert.False(t, cfg.TelemetryEnabled)
-	assert.True(t, cfg.EnvOverrides["PULSE_TELEMETRY"])
-	assert.True(t, cfg.EnvOverrides["telemetryEnabled"])
+}
+
+func TestLoad_UpstreamCommercialServicesRequireExplicitOptIn(t *testing.T) {
+	t.Setenv("PULSE_DATA_DIR", t.TempDir())
+	t.Setenv("PULSE_UPSTREAM_COMMERCIAL_SERVICES", "")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	assert.False(t, cfg.UpstreamCommercialServicesEnabled)
+	assert.False(t, cfg.EnvOverrides["PULSE_UPSTREAM_COMMERCIAL_SERVICES"])
+
+	t.Setenv("PULSE_UPSTREAM_COMMERCIAL_SERVICES", "true")
+	cfg, err = Load()
+	require.NoError(t, err)
+	assert.True(t, cfg.UpstreamCommercialServicesEnabled)
+	assert.True(t, cfg.EnvOverrides["PULSE_UPSTREAM_COMMERCIAL_SERVICES"])
+
+	t.Setenv("PULSE_UPSTREAM_COMMERCIAL_SERVICES", "false")
+	cfg, err = Load()
+	require.NoError(t, err)
+	assert.False(t, cfg.UpstreamCommercialServicesEnabled)
 }
 
 func TestLoad_AgentIngestPortDefaultsDisabled(t *testing.T) {

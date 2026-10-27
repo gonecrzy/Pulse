@@ -37,6 +37,11 @@ type EntitlementPayload struct {
 	// It is used by the frontend to gate hosted-control-plane-only UI.
 	HostedMode bool `json:"hosted_mode"`
 
+	// CommercialServicesEnabled indicates whether this runtime has opted into
+	// Pulse activation, billing, and entitlement-refresh workflows. It does not
+	// grant or imply any entitlement.
+	CommercialServicesEnabled bool `json:"commercial_services_enabled"`
+
 	// Valid mirrors the effective license validity for display surfaces.
 	Valid bool `json:"valid"`
 
@@ -97,6 +102,10 @@ type CommercialPosturePayload struct {
 	// SubscriptionState is the current subscription lifecycle state.
 	SubscriptionState string `json:"subscription_state"`
 
+	// CommercialServicesEnabled reports whether Pulse commercial workflows are
+	// available in this runtime; it is informational and grants no capability.
+	CommercialServicesEnabled bool `json:"commercial_services_enabled"`
+
 	// UpgradeReasons provides user-actionable upgrade prompts.
 	UpgradeReasons []UpgradeReason `json:"upgrade_reasons"`
 
@@ -142,6 +151,11 @@ type RuntimeCapabilitiesPayload struct {
 
 	// HostedMode indicates that this server is running in Pulse hosted mode.
 	HostedMode bool `json:"hosted_mode"`
+
+	// CommercialServicesEnabled says whether this standalone runtime has
+	// explicitly enabled Pulse activation, billing, and entitlement refresh.
+	// It grants and implies no commercial entitlement.
+	CommercialServicesEnabled bool `json:"commercial_services_enabled"`
 
 	// MaxHistoryDays is the maximum metrics history retention in days for the current tier.
 	MaxHistoryDays int `json:"max_history_days"`
@@ -370,16 +384,17 @@ func CommercialPosturePayloadFromEntitlementPayload(
 	payload EntitlementPayload,
 ) CommercialPosturePayload {
 	sanitized := CommercialPosturePayload{
-		SubscriptionState:      payload.SubscriptionState,
-		UpgradeReasons:         append([]UpgradeReason(nil), payload.UpgradeReasons...),
-		Tier:                   payload.Tier,
-		TrialExpiresAt:         payload.TrialExpiresAt,
-		TrialDaysRemaining:     payload.TrialDaysRemaining,
-		TrialEligible:          payload.TrialEligible,
-		TrialEligibilityReason: payload.TrialEligibilityReason,
-		OverflowDaysRemaining:  payload.OverflowDaysRemaining,
-		LegacyConnections:      payload.LegacyConnections,
-		HasMigrationGap:        payload.HasMigrationGap,
+		SubscriptionState:         payload.SubscriptionState,
+		CommercialServicesEnabled: payload.CommercialServicesEnabled,
+		UpgradeReasons:            append([]UpgradeReason(nil), payload.UpgradeReasons...),
+		Tier:                      payload.Tier,
+		TrialExpiresAt:            payload.TrialExpiresAt,
+		TrialDaysRemaining:        payload.TrialDaysRemaining,
+		TrialEligible:             payload.TrialEligible,
+		TrialEligibilityReason:    payload.TrialEligibilityReason,
+		OverflowDaysRemaining:     payload.OverflowDaysRemaining,
+		LegacyConnections:         payload.LegacyConnections,
+		HasMigrationGap:           payload.HasMigrationGap,
 	}
 	if payload.CommercialMigration != nil {
 		sanitized.CommercialMigration = CloneCommercialMigrationStatus(payload.CommercialMigration)

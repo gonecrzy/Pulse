@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -32,6 +33,49 @@ type MockUpdateManager struct {
 	RemoveSSEClientFunc     func(clientID string)
 	CheckProRuntimeFunc     func(ctx context.Context, channel string) (*updates.ProRuntimeSwitch, error)
 	ApplyProRuntimeFunc     func(ctx context.Context, channel string, by updates.InitiatedBy, via updates.InitiatedVia) error
+}
+
+func TestBackgroundUpdateCheckerDoesNotContactUpstreamByDefault(t *testing.T) {
+	oldBuildVersion := updates.BuildVersion
+	updates.BuildVersion = "6.4.0"
+	t.Cleanup(func() { updates.BuildVersion = oldBuildVersion })
+	t.Setenv("PULSE_GITHUB_REPO", "example/pulse-fork")
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte("[]"))
+	}))
+	defer server.Close()
+	t.Setenv("PULSE_UPDATE_SERVER", server.URL)
+	cfg := &config.Config{UpdateChannel: "stable", AutoUpdateEnabled: false}
+	manager := updates.NewManager(cfg)
+	defer manager.Close()
+	router := &Router{
+		config:        cfg,
+		updateManager: manager,
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		router.backgroundUpdateChecker(ctx)
+		close(done)
+	}()
+
+	select {
+	case <-time.After(1200 * time.Millisecond):
+	case <-done:
+		t.Fatal("background update checker exited before cancellation")
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("background update checker did not stop after cancellation")
+	}
+	if got := requests.Load(); got != 0 {
+		t.Fatalf("background update checker made %d upstream requests with automatic updates disabled", got)
+	}
 }
 
 func (m *MockUpdateManager) GetReleaseNoteImage(ctx context.Context, version, name string) ([]byte, error) {

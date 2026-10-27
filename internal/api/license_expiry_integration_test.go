@@ -23,7 +23,7 @@ func createTestHandlerWithDir(t *testing.T) (*LicenseHandlers, string) {
 	if _, err := mtp.GetPersistence("default"); err != nil {
 		t.Fatalf("init default persistence: %v", err)
 	}
-	return NewLicenseHandlers(mtp, false), tempDir
+	return NewLicenseHandlers(mtp, false, &config.Config{UpstreamCommercialServicesEnabled: true}), tempDir
 }
 
 // TestExpiredLicenseBlocksProFeature verifies that when a Pro license expires

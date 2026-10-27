@@ -137,7 +137,7 @@ func TestIsEnabled(t *testing.T) {
 		{"true", true},
 		{"1", true},
 		{"false", false},
-		{"", true}, // enabled by default when env var is not set
+		{"", false}, // disabled by default when env var is not set
 		{"0", false},
 		{"yes", false}, // only "true"/"1" are truthy; unknown values disable
 	}
@@ -337,57 +337,57 @@ func TestApplySnapshot(t *testing.T) {
 
 	snap := func() Snapshot {
 		return Snapshot{
-			PVENodes:                              3,
-			VMs:                                   10,
-			Containers:                            5,
-			AgentHosts:                            2,
-			DockerContainers:                      12,
-			KubernetesPods:                        18,
-			StoragePools:                          4,
-			PhysicalDisks:                         9,
-			TrueNASSystems:                        1,
-			TrueNASApps:                           3,
-			VMwareHosts:                           2,
-			AvailabilityTargets:                   6,
-			AIEnabled:                             true,
-			PatrolEnabled:                         true,
-			DiscoveryEnabled:                      true,
-			NotificationsEnabled:                  true,
-			AIActionsEnabled:                      true,
-			AlertAIEnabled:                        true,
-			ActiveAlerts:                          2,
-			PaidLicense:                           true,
-			HasAPITokens:                          true,
-			RBACCustomRoles:                       3,
-			RBACUserAssignments:                   7,
-			AuditReads30d:                         41,
-			ReportSchedules:                       5,
-			ReportSchedulesEnabled:                4,
-			ReportSchedulesRun30d:                 2,
-			AgentProfiles:                         9,
-			UpdateAttempts30d:                     4,
-			UpdateSuccesses30d:                    2,
-			UpdateFailures30d:                     1,
-			UpdateLastFailureCategory:             "download",
-			ActiveAlertsCritical:                  2,
-			ActiveAlertsAge1h24h:                  2,
-			AlertsFiredCritical30d:                5,
-			AlertsResolvedCritical30d:             3,
-			AlertsResolution1h24h30d:              3,
-			AlertsRepeatOccurrences30d:            2,
-			AlertsSnoozedOccurrences30d:           2,
-			AlertsResolvedWhileSnoozed30d:         1,
-			AlertManagerTenants:                   2,
-			AlertDeliveryActiveTenants:            1,
-			AlertFlappingEnabledTenants:           2,
-			AlertIntentPolicyConfiguredTenants:    1,
-			AlertEventHistoryAuthoritativeTenants: 2,
-			AlertActiveStateAuthoritativeTenants:  2,
-			PulseIntelligenceLoopConfigured:       true,
-			PulseIntelligenceLoopActive30d:        true,
-			PulseIntelligenceCompleteOperationsLoop30d:                     true,
-			PulseIntelligenceApprovedExecutionLoop30d:                      true,
-			PulseIntelligenceResolvedOperationsLoop30d:                     true,
+			PVENodes:                                   3,
+			VMs:                                        10,
+			Containers:                                 5,
+			AgentHosts:                                 2,
+			DockerContainers:                           12,
+			KubernetesPods:                             18,
+			StoragePools:                               4,
+			PhysicalDisks:                              9,
+			TrueNASSystems:                             1,
+			TrueNASApps:                                3,
+			VMwareHosts:                                2,
+			AvailabilityTargets:                        6,
+			AIEnabled:                                  true,
+			PatrolEnabled:                              true,
+			DiscoveryEnabled:                           true,
+			NotificationsEnabled:                       true,
+			AIActionsEnabled:                           true,
+			AlertAIEnabled:                             true,
+			ActiveAlerts:                               2,
+			PaidLicense:                                true,
+			HasAPITokens:                               true,
+			RBACCustomRoles:                            3,
+			RBACUserAssignments:                        7,
+			AuditReads30d:                              41,
+			ReportSchedules:                            5,
+			ReportSchedulesEnabled:                     4,
+			ReportSchedulesRun30d:                      2,
+			AgentProfiles:                              9,
+			UpdateAttempts30d:                          4,
+			UpdateSuccesses30d:                         2,
+			UpdateFailures30d:                          1,
+			UpdateLastFailureCategory:                  "download",
+			ActiveAlertsCritical:                       2,
+			ActiveAlertsAge1h24h:                       2,
+			AlertsFiredCritical30d:                     5,
+			AlertsResolvedCritical30d:                  3,
+			AlertsResolution1h24h30d:                   3,
+			AlertsRepeatOccurrences30d:                 2,
+			AlertsSnoozedOccurrences30d:                2,
+			AlertsResolvedWhileSnoozed30d:              1,
+			AlertManagerTenants:                        2,
+			AlertDeliveryActiveTenants:                 1,
+			AlertFlappingEnabledTenants:                2,
+			AlertIntentPolicyConfiguredTenants:         1,
+			AlertEventHistoryAuthoritativeTenants:      2,
+			AlertActiveStateAuthoritativeTenants:       2,
+			PulseIntelligenceLoopConfigured:            true,
+			PulseIntelligenceLoopActive30d:             true,
+			PulseIntelligenceCompleteOperationsLoop30d: true,
+			PulseIntelligenceApprovedExecutionLoop30d:  true,
+			PulseIntelligenceResolvedOperationsLoop30d: true,
 			PulseIntelligencePatrolControlCompletedOperationsLoop30d:       true,
 			PulseIntelligencePatrolControlResolvedOperationsLoop30d:        true,
 			PulseIntelligencePatrolControlPaidCompletedOperationsLoop30d:   true,
@@ -773,11 +773,11 @@ func TestTelemetryPrivacyDocsDisclosePseudonymousIdentityAndIPHandling(t *testin
 
 		for _, required := range []string{
 			"outbound usage telemetry",
-			"enabled by default",
+			"disabled by default",
 			"rotating pseudonymous install ID",
 			"Pulse does not send raw browser events or an event-level clickstream",
 			"Lifecycle and outcome signals are deliberately limited to closed buckets, booleans, and aggregate counts",
-			"PULSE_TELEMETRY=false",
+			"PULSE_TELEMETRY=true",
 			"The license server uses request IP addresses transiently for abuse/rate limiting",
 		} {
 			if !strings.Contains(content, required) {
@@ -1329,12 +1329,32 @@ func TestSendEvent_SendsWhenMockModeDisabled(t *testing.T) {
 }
 
 func TestStartStop_DisabledByDefault(t *testing.T) {
-	// Start should be a no-op when Enabled is false (the default).
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests.Add(1)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+	oldEndpoint := pingEndpoint
+	pingEndpoint = server.URL
+	t.Cleanup(func() { pingEndpoint = oldEndpoint })
+	Stop()
+
+	// Start should not create a sender or request when Enabled is false.
 	Start(context.Background(), Config{
 		Version: "6.0.0",
 		DataDir: t.TempDir(),
 		Enabled: false,
 	})
+	mu.Lock()
+	running := current != nil
+	mu.Unlock()
+	if running {
+		t.Fatal("disabled telemetry created a sender")
+	}
+	if requests.Load() != 0 {
+		t.Fatalf("disabled telemetry made %d outbound requests", requests.Load())
+	}
 
 	// Stop should also be safe when nothing was started.
 	Stop()
@@ -1388,7 +1408,7 @@ func TestTelemetryPrivacyDocsDiscloseSetupChoiceAndPayloadChanges(t *testing.T) 
 		}
 		content := string(raw)
 		for _, required := range []string{
-			"During first-run setup, switch off **Usage statistics** on the admin-account step",
+			"During first-run setup, switch on **Usage statistics** on the admin-account step",
 			"The first startup ping is sent about two minutes after Pulse starts",
 			"#### Payload changes",
 			"Every change to the payload bumps the schema version, is listed here with its date, and appears in the release notes",

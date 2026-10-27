@@ -41,7 +41,10 @@ func (h *LicenseHandlers) buildCommercialEntitlementPayload(
 	usage := h.entitlementUsageSnapshot(ctx)
 	trialEndsAtUnix := trialEndsAtUnixFromService(svc)
 
-	overflowGrantedAt := h.ensureOnboardingOverflow(ctx, status.Tier)
+	var overflowGrantedAt *int64
+	if h.upstreamCommercialServicesEnabled() {
+		overflowGrantedAt = h.ensureOnboardingOverflow(ctx, status.Tier)
+	}
 	now := time.Now()
 
 	payload := buildEntitlementPayloadWithUsage(
@@ -50,6 +53,18 @@ func (h *LicenseHandlers) buildCommercialEntitlementPayload(
 		usage,
 		trialEndsAtUnix,
 	)
+	payload.CommercialServicesEnabled = h.upstreamCommercialServicesEnabled()
+	if !payload.CommercialServicesEnabled {
+		payload.TrialEligible = false
+		payload.TrialEligibilityReason = ""
+		payload.UpgradeReasons = []upgradeReasonModel{}
+		if svc.Current() == nil && svc.Evaluator() == nil {
+			// Empty means no commercial subscription was configured. Preserve the
+			// established response shape without inventing an active or expired
+			// subscription for the local Community runtime.
+			payload.SubscriptionState = ""
+		}
+	}
 
 	// Surface overflow days remaining for frontend messaging.
 	if days := overflowDaysRemainingFromLicensing(status.Tier, overflowGrantedAt, now); days > 0 {
@@ -129,6 +144,7 @@ func (h *LicenseHandlers) HandleRuntimeCapabilities(w http.ResponseWriter, r *ht
 		usage,
 	)
 	payload.HostedMode = h != nil && h.hostedMode
+	payload.CommercialServicesEnabled = h.upstreamCommercialServicesEnabled()
 	runtimeIdentity := h.currentRuntimeIdentity()
 	payload.Runtime = cloneRuntimeIdentityFromLicensing(runtimeIdentity)
 	payload.Capabilities, payload.BlockedCapabilities = filterCapabilitiesForRuntimeIdentityFromLicensing(

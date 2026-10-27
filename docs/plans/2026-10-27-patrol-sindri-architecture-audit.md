@@ -248,3 +248,23 @@ Every checkpoint is independently reviewable. The action-adapter and automatic-r
 ## Audit outcome
 
 This checkpoint changes documentation only. No audit-specific test was necessary because no executable contract changed; no test suite was run. The existing roadmap receives an as-of-date status correction and points here for the full audit and next implementation order.
+
+## Phase 2K implementation overlay (2026-10-27)
+
+The audit above records the Phase 2J source baseline. Phase 2K then added the
+version-2 standalone fork profile, local admission for explicitly implemented
+public standalone surfaces, and default-off Pulse commercial/telemetry egress.
+The current profile's default allowlist and the five public Pro-gated surfaces
+that require explicit administrator enablement are listed in the
+[Phase 2K roadmap update](2026-10-23-sindri-integration-roadmap.md#phase-2k--standalone-fork-policy-and-upstream-service-removal).
+Detailed destination and trigger classifications are in the
+[standalone egress inventory](2026-10-27-standalone-egress-inventory.md).
+
+Commercial entitlement JSON remains independently sourced from the existing
+licensing service and does not report local capabilities as Pro features.
+Standalone activation, refresh, installation-status polling, checkout, and
+telemetry senders are disabled by default; old billing/license files are kept
+for migration. The explicit compatibility environment switch is documented in
+the roadmap and configuration guide. Hosted entitlement paths and security
+authorization remain separate. Codex-LB-only enforcement, multi-step cases,
+automatic repair safety, and action mutations are not part of this overlay.

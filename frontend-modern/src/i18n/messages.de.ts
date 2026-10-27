@@ -264,10 +264,10 @@ export const DE_MESSAGE_OVERRIDES = {
   'setup.security.error.passwordRequired': 'Bitte geben Sie ein Passwort ein',
   'setup.security.error.passwordTooShort': 'Das Passwort muss mindestens 12 Zeichen haben',
   'setup.security.error.setupFailed': 'Einrichtung fehlgeschlagen: {error}',
-  'setup.security.error.telemetryLockedOn':
-    'Ihr Admin-Konto wurde erstellt. Die Nutzungsstatistiken bleiben eingeschaltet, weil dieser Server PULSE_TELEMETRY=true setzt. Setzen Sie PULSE_TELEMETRY=false und starten Sie Pulse neu, um sie auszuschalten.',
-  'setup.security.error.telemetryDisableFailed':
-    'Ihr Admin-Konto wurde erstellt, aber die Nutzungsstatistiken konnten nicht ausgeschaltet werden. Sie koennen sie unter Einstellungen → System → Allgemein ausschalten.',
+  'setup.security.error.telemetryLockedOff':
+    'Ihr Admin-Konto wurde erstellt. Die Nutzungsstatistiken bleiben ausgeschaltet, weil dieser Server PULSE_TELEMETRY=false setzt. Entfernen Sie diese Vorgabe und starten Sie Pulse neu, um sie einzuschalten.',
+  'setup.security.error.telemetryEnableFailed':
+    'Ihr Admin-Konto wurde erstellt, aber die Nutzungsstatistiken konnten nicht eingeschaltet werden. Sie koennen sie unter Einstellungen → System → Allgemein einschalten.',
   'setup.security.generatedPasswordHelp':
     'Ein sicheres 20-Zeichen-Passwort wird erzeugt und auf dem naechsten Bildschirm angezeigt.',
   'setup.security.label.confirmPassword': 'Passwort bestaetigen',
@@ -285,14 +285,14 @@ export const DE_MESSAGE_OVERRIDES = {
   'setup.security.showPassword.hide': 'Ausblenden',
   'setup.security.showPassword.show': 'Anzeigen',
   'setup.security.telemetry.description':
-    'Eine kleine taegliche Nutzungszusammenfassung senden, damit die Funktionen und Plattformen, auf die Sie sich verlassen, Prioritaet bekommen. Sie enthaelt Zaehler und An/Aus-Flags mit einer rotierenden pseudonymen Installations-ID, niemals Hostnamen, Zugangsdaten oder IP-Adressen. Sie wird niemals verkauft oder weitergegeben und ist nicht mit einem Pulse-Konto verknuepft. Jederzeit in den Einstellungen aenderbar.',
+    'Optional eine kleine taegliche Nutzungszusammenfassung senden, damit die Funktionen und Plattformen, auf die Sie sich verlassen, Prioritaet bekommen. Sie enthaelt Zaehler und An/Aus-Flags mit einer rotierenden pseudonymen Installations-ID, niemals Hostnamen, Zugangsdaten oder IP-Adressen. Sie ist standardmaessig ausgeschaltet und jederzeit in den Einstellungen aenderbar.',
   'setup.security.telemetry.title': 'Nutzungsstatistiken',
   'setup.security.title': 'Admin-Konto erstellen',
   'setup.step.firstSource': 'Erste Quelle',
   'setup.step.security': 'Sicherheit',
   'setup.step.unlockServer': 'Server entsperren',
   'setup.welcome.telemetryNotice.description':
-    'Pulse sendet eine kleine taegliche Nutzungszusammenfassung, die zeigt, welche Releases im Einsatz sind und welche Funktionen und Plattformen genutzt werden, damit die Entwicklung dort ansetzt, wo Pulse tatsaechlich genutzt wird. Sie enthaelt Zaehler und An/Aus-Flags mit einer rotierenden pseudonymen Installations-ID, niemals Hostnamen, Zugangsdaten, IP-Adressen oder etwas, das Sie eingeben. Sie wird niemals verkauft, weitergegeben oder fuer Werbung verwendet und ist nicht mit einem Pulse-Konto oder einer Lizenz verknuepft. Sie ist standardmaessig aktiviert. Sie entscheiden im naechsten Schritt und koennen es jederzeit in den Einstellungen aendern.',
+    'Ausgehende Nutzungsstatistiken von Pulse sind optional und standardmaessig ausgeschaltet. Wenn aktiviert, sendet Pulse taeglich eine kleine Zusammenfassung mit Release- und Funktionszaehlern sowie einer rotierenden pseudonymen Installations-ID. Hostnamen, Zugangsdaten, IP-Adressen und eingegebene Inhalte werden nie gesendet. Sie entscheiden im naechsten Schritt und koennen die Einstellung jederzeit aendern.',
   'setup.welcome.telemetryNotice.title': 'Nutzungsstatistiken',
   'setup.wizard.ariaLabel': 'Pulse-Einrichtungsassistent',
   'setup.welcome.action.continueSecurity': 'Weiter zu Sicherheit',
@@ -388,7 +388,7 @@ export const DE_MESSAGE_OVERRIDES = {
     'Steuern Sie, wie oft Pulse Proxmox VE-Knoten abfragt.',
   'settings.general.monitoringCadence.section.title': 'Monitoring-Takt',
   'settings.general.telemetry.description':
-    'Helfen Sie, Pulse zu verbessern, indem Sie eine taegliche Nutzungszusammenfassung teilen. Payload anzeigen zeigt genau, was gesendet wuerde: eine rotierende pseudonyme Installations-ID, normalisierte Release-Identitaet, Laufzeitplattform, grobe Kategorien fuer Bereitstellungsart und Lebenszyklus, aggregierte Ressourcen- und Ergebniszahlen, grobe Funktionsflags, inhaltsfreie Nutzungszaehler fuer Patrol, Assistant und Capability-APIs sowie vier sitzungsdeduplizierte Zaehler zur Nutzung des Workload-Verlaufs. Er enthaelt niemals Hostnamen, Zugangsdaten, Infrastrukturkennungen, URLs, Pfade, Gebietsschema, Browser-Ereignisse, Clickstream-Daten, Prompts, Chatnachrichten, Befehlstexte, Aktionsausgaben, Token-Werte, Namen, E-Mail-Adressen oder IP-Adressen. Er wird niemals verkauft, an andere weitergegeben oder fuer Werbung verwendet und ist nicht mit einem Pulse-Konto oder einer Lizenz verknuepft. Telemetriezeilen werden bis zu 90 Tage aufbewahrt, und Anfrage-IP-Adressen werden nur kurzzeitig fuer Rate-Limiting verwendet und nicht in Telemetriezeilen gespeichert.',
+    'Ausgehende Nutzungstelemetrie ist optional und standardmaessig ausgeschaltet. Wenn aktiviert, sendet sie taeglich eine Nutzungszusammenfassung. Payload anzeigen zeigt genau, was gesendet wuerde: eine rotierende pseudonyme Installations-ID, normalisierte Release-Identitaet, Laufzeitplattform, grobe Kategorien fuer Bereitstellungsart und Lebenszyklus, aggregierte Ressourcen- und Ergebniszahlen, grobe Funktionsflags, inhaltsfreie Nutzungszaehler fuer Patrol, Assistant und Capability-APIs sowie vier sitzungsdeduplizierte Zaehler zur Nutzung des Workload-Verlaufs. Sie enthaelt niemals Hostnamen, Zugangsdaten, Infrastrukturkennungen, URLs, Pfade, Gebietsschema, Browser-Ereignisse, Clickstream-Daten, Prompts, Chatnachrichten, Befehlstexte, Aktionsausgaben, Token-Werte, Namen, E-Mail-Adressen oder IP-Adressen. Telemetriezeilen werden bis zu 90 Tage aufbewahrt, und Anfrage-IP-Adressen werden nur kurzzeitig fuer Rate-Limiting verwendet und nicht in Telemetriezeilen gespeichert.',
   'settings.general.temperature.description': 'Temperaturen in Celsius oder Fahrenheit anzeigen.',
   'settings.general.temperature.title': 'Temperatureinheit',
   'settings.general.telemetry.copyJson': 'JSON kopieren',

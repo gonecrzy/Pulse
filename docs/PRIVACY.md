@@ -14,19 +14,19 @@ third-party analytics, support diagnostics, or ordinary Settings surfaces.
 
 ### Outbound usage telemetry
 
-Pulse includes outbound usage telemetry that is **enabled by default**. It sends a lightweight ping on startup and once every 24 hours with a rotating pseudonymous install ID to help me understand how many active installations exist, which releases are actually deployed, which features are in use, and whether Patrol control and governed Pulse Intelligence operations are being adopted.
+Pulse includes optional outbound usage telemetry that is **disabled by default**. While disabled, the sender does not start and makes no request. If an operator opts in, it sends a lightweight ping about two minutes after startup and once every 24 hours with a rotating pseudonymous install ID to report aggregate release, feature, and Patrol usage.
 
 The telemetry payload does not include hostnames, credentials, infrastructure identifiers, IP addresses, URLs, paths, locale, prompts, chat messages, command text, action output, token values, names, email addresses, or account identifiers. Lifecycle and outcome signals are deliberately limited to closed buckets, booleans, and aggregate counts. Local service-health signals are likewise limited to closed buckets, booleans, and normalized release versions. Four browser-derived workload-history milestones are counted locally at most once per browser session and sent only as rolling aggregate counts; Pulse does not send raw browser events or an event-level clickstream. The local service-health probe requests only Pulse's own bound listener and never transmits the listener address, request URL, response content, or raw failure text. See the full field list below.
 
 While mock/demo fixture mode is enabled, Pulse suppresses outbound telemetry entirely: a mock-mode instance reports a synthetic fixture fleet rather than a real installation, so it never pings.
 
-#### How to disable
+#### How to enable
 
-- During first-run setup, switch off **Usage statistics** on the admin-account step, or
-- **Settings → System → General → Outbound usage telemetry** (toggle off), or
-- Set the environment variable `PULSE_TELEMETRY=false`
+- During first-run setup, switch on **Usage statistics** on the admin-account step, or
+- **Settings → System → General → Outbound usage telemetry** (toggle on), or
+- Set the environment variable `PULSE_TELEMETRY=true`
 
-The first startup ping is sent about two minutes after Pulse starts. The setup and Settings switches stop every later ping; setting `PULSE_TELEMETRY=false` before the first start prevents the first one as well.
+The first startup ping is sent about two minutes after Pulse starts. Set `PULSE_TELEMETRY=false` to keep the sender stopped even when a saved preference enables it. An environment variable takes precedence over the Settings switch.
 
 #### How to inspect or rotate it
 

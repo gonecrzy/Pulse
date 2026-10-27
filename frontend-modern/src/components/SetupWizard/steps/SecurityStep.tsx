@@ -18,16 +18,16 @@ interface SecurityStepProps {
 const GENERATED_PASSWORD_LENGTH = 20;
 const GENERATED_PASSWORD_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$%';
 
-// What the server keeps after an opt-out it refused: already off, held on by
+// What the server keeps after an opt-in it refused: already on, held off by
 // the PULSE_TELEMETRY environment variable, or unknown.
-const readTelemetryOutcome = async (): Promise<'off' | 'lockedOn' | 'unknown'> => {
+const readTelemetryOutcome = async (): Promise<'on' | 'lockedOff' | 'unknown'> => {
   try {
     const settings = await SettingsAPI.getSystemSettings();
-    if (settings.telemetryEnabled === false) return 'off';
+    if (settings.telemetryEnabled === true) return 'on';
     const locked = Boolean(
       settings.envOverrides?.telemetryEnabled || settings.envOverrides?.PULSE_TELEMETRY,
     );
-    return locked && settings.telemetryEnabled === true ? 'lockedOn' : 'unknown';
+    return locked && settings.telemetryEnabled === false ? 'lockedOff' : 'unknown';
   } catch {
     return 'unknown';
   }
@@ -40,11 +40,9 @@ export const SecurityStep: Component<SecurityStepProps> = (props) => {
   const [confirmPassword, setConfirmPassword] = createSignal('');
   const [showPassword, setShowPassword] = createSignal(false);
   const [isSettingUp, setIsSettingUp] = createSignal(false);
-  // Outbound usage telemetry stays on by default; this is the first
-  // authenticated moment where the operator can decide, so the choice lives
-  // here instead of as an environment-variable instruction that arrives after
-  // the process has already started.
-  const [shareUsageStatistics, setShareUsageStatistics] = createSignal(true);
+  // Telemetry is off by default. The authenticated setup choice only writes
+  // the setting when the operator explicitly opts in.
+  const [shareUsageStatistics, setShareUsageStatistics] = createSignal(false);
 
   const generatePassword = () => {
     const password: string[] = [];
@@ -132,21 +130,20 @@ export const SecurityStep: Component<SecurityStepProps> = (props) => {
         }
       }
 
-      if (!shareUsageStatistics()) {
+      if (shareUsageStatistics()) {
         // The admin token is already active, so the preference is written
         // through the canonical system-settings path rather than a setup-only
         // side channel. The account exists either way; only report the miss.
         try {
-          await SettingsAPI.updateSystemSettings({ telemetryEnabled: false });
+          await SettingsAPI.updateSystemSettings({ telemetryEnabled: true });
         } catch {
-          // A server started with PULSE_TELEMETRY owns this choice and refuses
-          // the write. Read what it chose rather than report a failure: when
-          // it already keeps statistics off there is nothing to tell.
+          // Environment configuration owns this choice and refuses the write.
+          // Read the effective value before reporting a failed opt-in.
           const outcome = await readTelemetryOutcome();
-          if (outcome === 'lockedOn') {
-            showError(t('setup.security.error.telemetryLockedOn'));
-          } else if (outcome !== 'off') {
-            showError(t('setup.security.error.telemetryDisableFailed'));
+          if (outcome === 'lockedOff') {
+            showError(t('setup.security.error.telemetryLockedOff'));
+          } else if (outcome !== 'on') {
+            showError(t('setup.security.error.telemetryEnableFailed'));
           }
         }
       }
