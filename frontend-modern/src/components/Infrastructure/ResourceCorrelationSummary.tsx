@@ -551,7 +551,7 @@ export const ResourceCorrelationSummary: Component<ResourceCorrelationSummaryPro
                           Path: {relationshipPathLabel(edge)}
                         </div>
                         <div class="mt-0.5 text-[10px] text-muted">
-                          Potential relevance only; impact is unconfirmed.
+                          This path may be relevant. Impact is unconfirmed.
                         </div>
                       </div>
                     );
@@ -625,7 +625,7 @@ export const ResourceCorrelationSummary: Component<ResourceCorrelationSummaryPro
                           Path: {relationshipPathLabel(edge)}
                         </div>
                         <div class="mt-0.5 text-[10px] text-muted">
-                          Potential shared failure domain; impact is unconfirmed.
+                          This path may share a failure domain. Impact is unconfirmed.
                         </div>
                       </div>
                     );

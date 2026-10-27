@@ -447,7 +447,7 @@ describe('ResourceCorrelationSummary', () => {
       screen.getByRole('link', { name: /Open shared infrastructure resource alfheim · vm/ }),
     ).toHaveAttribute('href', `/resources/${siblingId}`);
     expect(
-      screen.getAllByText('Potential shared failure domain; impact is unconfirmed.'),
+      screen.getAllByText('This path may share a failure domain. Impact is unconfirmed.'),
     ).toHaveLength(2);
   });
 });
