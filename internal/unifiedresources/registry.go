@@ -1669,6 +1669,7 @@ func (rr *ResourceRegistry) ListResourceRelationships() []ResourceRelationship {
 		}
 		return RelationshipPresentationKey(relationships[i]) < RelationshipPresentationKey(relationships[j])
 	})
+	EnsureUniqueResourceRelationshipIDs(relationships)
 	return relationships
 }
 

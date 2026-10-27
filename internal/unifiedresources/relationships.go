@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -48,7 +49,42 @@ func mergeResourceRelationships(primary, incoming []ResourceRelationship) []Reso
 		}
 		return RelationshipPresentationKey(out[i]) < RelationshipPresentationKey(out[j])
 	})
+	EnsureUniqueResourceRelationshipIDs(out)
 	return out
+}
+
+// EnsureUniqueResourceRelationshipIDs disambiguates legacy IDs when distinct
+// owner observations share the old endpoint/type/discoverer hash. It preserves
+// every already-unique ID, so existing API references remain stable.
+func EnsureUniqueResourceRelationshipIDs(relationships []ResourceRelationship) {
+	seen := make(map[string]struct{}, len(relationships))
+	for index := range relationships {
+		relationship := &relationships[index]
+		if relationship.ID == "" {
+			continue
+		}
+		if _, exists := seen[relationship.ID]; !exists {
+			seen[relationship.ID] = struct{}{}
+			continue
+		}
+		material := RelationshipPresentationKey(*relationship)
+		for suffix := 0; ; suffix++ {
+			candidate := relationshipIDFromMaterial(material)
+			if suffix > 0 {
+				candidate = relationshipIDFromMaterial(material + "\x00" + strconv.Itoa(suffix))
+			}
+			if _, exists := seen[candidate]; !exists {
+				relationship.ID = candidate
+				seen[candidate] = struct{}{}
+				break
+			}
+		}
+	}
+}
+
+func relationshipIDFromMaterial(material string) string {
+	sum := sha256.Sum256([]byte(material))
+	return "relationship_" + hex.EncodeToString(sum[:16])
 }
 
 func rewriteResourceRelationshipEndpoint(relationships []ResourceRelationship, fromID, toID string) []ResourceRelationship {
@@ -459,7 +495,17 @@ func normalizeResourceRelationship(relationship *ResourceRelationship) {
 		relationship.Type == "" {
 		return
 	}
-	sum := sha256.Sum256([]byte(RelationshipPresentationKey(*relationship)))
+	// Keep the long-standing relationship ID recipe stable. Presentation
+	// deduplication uses RelationshipPresentationKey, which also includes owner
+	// provenance, but adding those fields here would rewrite persisted canonical
+	// IDs and break existing API references.
+	sum := sha256.Sum256([]byte(strings.Join([]string{
+		relationship.SourceID,
+		relationship.TargetID,
+		string(relationship.Type),
+		relationship.Discoverer,
+		relationship.EvidenceID,
+	}, "\x00")))
 	relationship.ID = "relationship_" + hex.EncodeToString(sum[:16])
 }
 

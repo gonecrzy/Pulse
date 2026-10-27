@@ -475,6 +475,7 @@ func canonicalResourceRelationshipContext(registry *unified.ResourceRegistry, re
 		}
 		return unified.RelationshipPresentationKey(relationships[i]) < unified.RelationshipPresentationKey(relationships[j])
 	})
+	unified.EnsureUniqueResourceRelationshipIDs(relationships)
 	return relationships
 }
 

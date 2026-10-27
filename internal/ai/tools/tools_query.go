@@ -4298,6 +4298,7 @@ func canonicalRelationshipsForTopology(rs unifiedresources.ReadState, resources 
 		}
 		return unifiedresources.RelationshipPresentationKey(relationships[i]) < unifiedresources.RelationshipPresentationKey(relationships[j])
 	})
+	unifiedresources.EnsureUniqueResourceRelationshipIDs(relationships)
 	return relationships
 }
 
