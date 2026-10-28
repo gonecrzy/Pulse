@@ -25,10 +25,14 @@ import {
   getInvestigationStatusBadgeTone,
 } from '@/utils/aiFindingPresentation';
 import { getInvestigationSectionState } from '@/utils/patrolEmptyStatePresentation';
-import { buildPatrolInvestigationRecordPresentation } from '@/features/patrol/patrolInvestigationContextModel';
+import {
+  buildPatrolInvestigationRecordPresentation,
+  labelDiagnosticInterpretation,
+} from '@/features/patrol/patrolInvestigationContextModel';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
 import { MetadataBadge } from '@/components/shared/MetadataBadge';
 import { InvestigationMessages } from './InvestigationMessages';
+import { InvestigationResourceTopology } from './InvestigationResourceTopology';
 import { renderMarkdown } from '@/components/AI/aiChatUtils';
 import { notificationStore } from '@/stores/notifications';
 import { aiIntelligenceStore } from '@/stores/aiIntelligence';
@@ -54,6 +58,7 @@ const runNoteClass = (outcome: string | undefined): string =>
 
 interface InvestigationSectionProps {
   findingId: string;
+  resourceId?: string;
   investigationStatus?: string;
   investigationOutcome?: string;
   investigationAttempts?: number;
@@ -62,10 +67,14 @@ interface InvestigationSectionProps {
 
 export const InvestigationSection: Component<InvestigationSectionProps> = (props) => {
   const [showThread, setShowThread] = createSignal(false);
+  const [showInfrastructureContext, setShowInfrastructureContext] = createSignal(false);
   const [reinvestigating, setReinvestigating] = createSignal(false);
   const [cooldownUntil, setCooldownUntil] = createSignal(0);
   const investigationRecord = createMemo(() =>
     buildPatrolInvestigationRecordPresentation(props.investigationRecord),
+  );
+  const investigationResourceId = createMemo(
+    () => props.investigationRecord?.subject.resource_id?.trim() || props.resourceId?.trim() || '',
   );
 
   const [investigation, { refetch }] = createResource(
@@ -232,11 +241,36 @@ export const InvestigationSection: Component<InvestigationSectionProps> = (props
             </Show>
           </div>
 
+          <Show
+            when={
+              props.investigationRecord?.trigger.title ||
+              props.investigationRecord?.trigger.detected_at
+            }
+          >
+            <p class="mt-2 text-xs text-muted">
+              <span class="font-medium text-base-content">Trigger:</span>{' '}
+              {props.investigationRecord?.trigger.title || 'Finding investigation'}
+              <Show when={props.investigationRecord?.trigger.detected_at}>
+                {' · detected '}
+                {formatTimestamp(props.investigationRecord!.trigger.detected_at)}
+              </Show>
+            </p>
+          </Show>
+
           <Show when={investigationRecord().conclusion}>
+            <div class="mt-2 text-[10px] font-medium uppercase text-muted">
+              Diagnostic interpretation
+            </div>
+            <p class="mt-1 text-[11px] text-muted">
+              AI-authored hypothesis. Compare it with observed evidence before treating it as a
+              cause.
+            </p>
             <div
               class={`mt-2 ${summaryClass}`}
               // eslint-disable-next-line solid/no-innerhtml
-              innerHTML={renderMarkdown(investigationRecord().conclusion!)}
+              innerHTML={renderMarkdown(
+                labelDiagnosticInterpretation(investigationRecord().conclusion),
+              )}
             />
           </Show>
           <Show when={investigationRecord().recommendedAction}>
@@ -249,6 +283,7 @@ export const InvestigationSection: Component<InvestigationSectionProps> = (props
           <Show when={investigationRecord().proposedFix}>
             {(fix) => (
               <div class="mt-2 rounded-sm border border-border-subtle bg-surface p-2 text-xs">
+                <div class="mb-1 text-[10px] font-medium uppercase text-muted">Proposed action</div>
                 <div class="font-medium text-base-content">{fix().description}</div>
                 <div class="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-muted">
                   <Show when={fix().riskLabel}>
@@ -286,14 +321,19 @@ export const InvestigationSection: Component<InvestigationSectionProps> = (props
             </div>
           </Show>
 
-          <Show when={investigationRecord().evidenceSummaries.length > 0}>
+          <Show when={investigationRecord().hasRecord}>
             <div class="mt-2">
-              <div class="text-[10px] font-medium uppercase text-muted">Evidence</div>
-              <ul class="mt-1 space-y-1 text-xs text-muted">
-                <For each={investigationRecord().evidenceSummaries}>
-                  {(item) => <li>{item}</li>}
-                </For>
-              </ul>
+              <div class="text-[10px] font-medium uppercase text-muted">Observed evidence</div>
+              <Show
+                when={investigationRecord().evidenceSummaries.length > 0}
+                fallback={<p class="mt-1 text-xs italic text-muted">No evidence was recorded.</p>}
+              >
+                <ul class="mt-1 space-y-1 text-xs text-muted">
+                  <For each={investigationRecord().evidenceSummaries}>
+                    {(item) => <li>{item}</li>}
+                  </For>
+                </ul>
+              </Show>
             </div>
           </Show>
 
@@ -346,6 +386,20 @@ export const InvestigationSection: Component<InvestigationSectionProps> = (props
         </div>
       </Show>
 
+      <Show when={investigationResourceId()}>
+        <details
+          class="rounded-sm border border-border-subtle bg-surface-alt px-2 py-1.5"
+          onToggle={(event) => setShowInfrastructureContext(event.currentTarget.open)}
+        >
+          <summary class="cursor-pointer text-xs font-medium text-base-content">
+            Infrastructure context
+          </summary>
+          <Show when={showInfrastructureContext()}>
+            <InvestigationResourceTopology resourceId={investigationResourceId()} />
+          </Show>
+        </details>
+      </Show>
+
       {/* Investigation details */}
       <Show when={!investigation.loading && investigation()}>
         {(inv) => (
@@ -378,11 +432,20 @@ export const InvestigationSection: Component<InvestigationSectionProps> = (props
                 inv().summary?.trim() && inv().summary?.trim() !== investigationRecord().conclusion
               }
             >
-              <div
-                class={`bg-surface-alt rounded-sm p-2 ${summaryClass}`}
-                // eslint-disable-next-line solid/no-innerhtml
-                innerHTML={renderMarkdown(inv().summary!)}
-              />
+              <div class="rounded-sm bg-surface-alt p-2">
+                <div class="mb-1 text-[10px] font-medium uppercase text-muted">
+                  Diagnostic interpretation
+                </div>
+                <p class="mb-2 text-[11px] text-muted">
+                  AI-authored hypothesis. Compare it with observed evidence before treating it as a
+                  cause.
+                </p>
+                <div
+                  class={summaryClass}
+                  // eslint-disable-next-line solid/no-innerhtml
+                  innerHTML={renderMarkdown(labelDiagnosticInterpretation(inv().summary))}
+                />
+              </div>
             </Show>
 
             {/* Tools used + turn count */}

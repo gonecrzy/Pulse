@@ -2,9 +2,21 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-import { buildPatrolInvestigationRecordPresentation } from '../patrolInvestigationContextModel';
+import {
+  buildPatrolInvestigationRecordPresentation,
+  labelDiagnosticInterpretation,
+} from '../patrolInvestigationContextModel';
 
 describe('patrolInvestigationContextModel', () => {
+  it('labels root-cause headings as hypotheses in the operator presentation', () => {
+    expect(
+      labelDiagnosticInterpretation('### Root cause\n\nStorage pressure may explain it.'),
+    ).toBe('### Diagnostic hypothesis\n\nStorage pressure may explain it.');
+    expect(labelDiagnosticInterpretation('Root cause: unknown')).toBe(
+      'Diagnostic hypothesis: unknown',
+    );
+  });
+
   it('builds operator-facing Patrol record presentation without exposing raw commands', () => {
     const presentation = buildPatrolInvestigationRecordPresentation({
       id: 'record-1',

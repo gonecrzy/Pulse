@@ -25,6 +25,10 @@ vi.mock('../PatrolIntelligenceBanners', () => ({
   PatrolIntelligenceBanners: () => <div>Patrol banners</div>,
 }));
 
+vi.mock('../PatrolSindriOverview', () => ({
+  PatrolSindriOverview: () => <div>Sindri operations overview</div>,
+}));
+
 vi.mock('../PatrolAttentionWorkbench', () => ({
   PatrolAttentionWorkbench: (props: {
     onOpenFindings?: (item: Record<string, unknown>) => void;
@@ -100,6 +104,7 @@ describe('PatrolIntelligenceSurface finding handoff', () => {
     renderSurface();
 
     expect(screen.getByRole('tab', { name: 'Inbox' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByText('Sindri operations overview')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Open scoped finding options' })).toBeInTheDocument();
     expect(screen.getByTestId('patrol-workspace')).toBeInTheDocument();
     expect(screen.getByTestId('patrol-workspace').parentElement).toHaveClass('pointer-events-none');

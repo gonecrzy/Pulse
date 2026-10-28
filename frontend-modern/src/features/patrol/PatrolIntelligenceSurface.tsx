@@ -13,10 +13,13 @@ import { ButtonLink } from '@/components/shared/Button';
 import { MetadataBadge } from '@/components/shared/MetadataBadge';
 import { actionInboxStore } from '@/stores/actionInbox';
 import { aiIntelligenceStore } from '@/stores/aiIntelligence';
+import { patrolAttentionStore } from '@/stores/patrolAttention';
+import { aiRuntimeSettings, aiRuntimeSettingsLoaded } from '@/stores/aiRuntimeState';
 import { usePatrolIntelligenceState } from './usePatrolIntelligenceState';
 import { PatrolIntelligenceHeader } from './PatrolIntelligenceHeader';
 import { PatrolIntelligenceBanners } from './PatrolIntelligenceBanners';
 import { PatrolIntelligenceWorkspace } from './PatrolIntelligenceWorkspace';
+import { PatrolSindriOverview } from './PatrolSindriOverview';
 import { PatrolAttentionWorkbench } from './PatrolAttentionWorkbench';
 import { PatrolObjectivesPanel } from './PatrolObjectivesPanel';
 import { PatrolRecentWorkPanel } from './PatrolRecentWorkPanel';
@@ -129,6 +132,19 @@ export function PatrolIntelligenceSurface() {
           aria-labelledby="patrol-inbox-tab"
           class="space-y-4"
         >
+          <PatrolSindriOverview
+            patrolStatus={() => state.patrolStatus()}
+            patrolEnabled={() => state.patrolEnabledLocal()}
+            gatewayStatus={() => aiRuntimeSettings()?.codex_lb_gateway}
+            settingsLoaded={() => aiRuntimeSettingsLoaded()}
+            findings={() => aiIntelligenceStore.patrolFindings}
+            attentionSummary={() => patrolAttentionStore.summary()}
+            pendingActionCount={() => actionInboxStore.pendingActionCount}
+            lastCompletedRun={() =>
+              (state.patrolRunHistory.value() ?? []).find((run) => Boolean(run.completed_at)) ??
+              null
+            }
+          />
           <Show when={state.shouldShowPatrolSetupOnly()}>
             <div
               class={`rounded-lg border border-border bg-surface p-4 sm:p-5 ${!state.patrolEnabledLocal() ? 'pointer-events-none opacity-50' : ''}`}

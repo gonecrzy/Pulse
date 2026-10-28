@@ -1926,6 +1926,7 @@ export const FindingsPanel: Component<FindingsPanelProps> = (props) => {
         <Show when={hasFindingInvestigationDetails(finding)}>
           <InvestigationSection
             findingId={finding.id}
+            resourceId={finding.resourceId}
             investigationStatus={finding.investigationStatus}
             investigationOutcome={finding.investigationOutcome}
             investigationAttempts={finding.investigationAttempts}

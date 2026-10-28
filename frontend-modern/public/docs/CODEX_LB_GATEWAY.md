@@ -90,6 +90,11 @@ To qualify a deployment, make its approved Pulse AI settings available, enable
 select the gateway model, and explicitly authorize the synthetic read-only
 qualification requests. Do not reuse credentials from unrelated applications.
 
+Phase 2N adds a fixture-backed Patrol status view for the server-reported
+gateway fields. This UI integration does not qualify a live Codex-LB deployment
+or replace the test-image acceptance procedure; live connectivity, streaming,
+tool continuation and latency remain unverified until that checklist passes.
+
 ## Credential rotation and removal
 
 Enter a replacement key and save to rotate it. The current value remains

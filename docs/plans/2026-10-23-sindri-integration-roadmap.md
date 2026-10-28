@@ -483,17 +483,72 @@ treated as live compatibility evidence.
 local fixtures, but live sufficiency cannot be determined without the operator's
 gateway. A Responses API implementation is not justified by current evidence;
 reconsider it only if live compatibility exposes a concrete need for preserved
-reasoning state or behavior Chat Completions cannot provide. **Patrol UI
-integration: no-go** until the gateway is configured and the read-only live
-qualification matrix passes. Required prerequisites are an approved Pulse AI
-settings file, enabled `fork.codex_lb_gateway`, a configured endpoint and
-credential, an explicitly selected gateway model, and operator authorization
-for synthetic diagnostic requests.
+reasoning state or behavior Chat Completions cannot provide. Phase 2N adds a
+fixture-backed Patrol UI for reporting the backend's gateway status. This does
+not change the live qualification result or establish production readiness.
+Live use still requires an approved Pulse AI settings file, enabled
+`fork.codex_lb_gateway`, a configured endpoint and credential, an explicitly
+selected gateway model, and operator authorization for synthetic diagnostic
+requests against the test image.
+
+### Phase 2N — Unified Patrol investigation workspace
+
+**Status (2026-10-28):** Implemented locally on
+`feature/komodo-phase2-foundation`; the frontend suite, type-check, lint and
+governance checks passed. Changed frontend files pass Prettier. The whole-tree
+format check reports two pre-existing SetupWizard test files listed below. No live gateway request,
+infrastructure mutation, push, merge, deployment, or image publication is part
+of this checkpoint.
+
+- The existing `/patrol`, `/patrol/protection`, and `/patrol/activity` route
+  contract remains intact. The Inbox now includes a compact Sindri operations
+  overview for deterministic monitoring health, schedule and last completed
+  run, active findings and investigations, active incidents, pending governed
+  actions, and Codex-LB readiness. Monitoring and AI availability are shown as
+  separate signals; a healthy monitoring service with an unavailable gateway
+  states that AI investigation is unavailable.
+- The overview uses Patrol status/history, AI runtime settings, current finding
+  records, the existing attention summary, and the action inbox. It adds no
+  API, scheduler, finding store, case aggregate, or approval service. The
+  gateway settings link points to the existing AI settings screen; only
+  non-secret readiness and credential-configured fields are displayed.
+- Expanded investigation details label recorded evidence as observed evidence,
+  model-authored summaries as diagnostic interpretation, and fix suggestions as
+  proposed actions. Explicit “root cause” headings are rendered as “Diagnostic
+  hypothesis.” Re-investigation remains on the existing server-admitted
+  finding route, and typed action identity continues to link through the
+  existing `/actions` lifecycle.
+- An investigation's infrastructure disclosure lazily reads the existing
+  canonical resource endpoint and passes its bounded
+  `relationshipContext` to `ResourceCorrelationSummary`. The shared graph UI
+  supplies canonical identity, host/VM hierarchy, incidents, source freshness,
+  direct versus indirect relationships, and resource navigation. An unavailable
+  neighborhood does not hide or fail the investigation record.
+- Activity and Protection remain their existing Patrol views. The standalone
+  Assistant launcher, AI runtime, investigation persistence, topology store,
+  and repair engine were not introduced.
+- Live Codex-LB qualification remains unperformed. See the future test-image
+  [Patrol acceptance checklist](2026-10-28-sindri-patrol-acceptance-checklist.md).
+
+**Verification:** `npm --prefix frontend-modern test -- --reporter=dot
+--maxWorkers=2` passed 1,271 test files and 22,205 tests; one file and three
+tests were skipped. `npm --prefix frontend-modern run type-check` passed.
+`npm --prefix frontend-modern run lint` passed ESLint and all seven frontend
+audits. Prettier passed for all changed frontend files, and `git diff --check`
+passed. The whole-tree `format:check` is not clean on this base checkout: it
+reports only the untouched `src/components/SetupWizard/__tests__/SetupCompletionPanel.guardrails.test.ts`
+and `src/components/SetupWizard/__tests__/SetupCompletionProActivation.test.tsx`.
+
+Repository governance passed: workflow trust validation and 48 trust tests;
+the canonical mutation registry/AI-tools governance test selection; all tests
+in `internal/repoctl`; the repository boundary regression test; and report plus
+all six private-boundary enforcement modes. No backend API/resource contract
+changed in this phase, so the broader Go API/resource suites were not rerun.
 
 ## Git checkpoint discipline
 
 - The current focused checkpoint is `feature/komodo-phase2-foundation`, based on current `origin/sindri`. Preserve the historical `feature/sindri-integration` branch and checkpoint history. Create descriptive, logically separated commits for approved implementation phases.
 - Run the phase's focused tests and relevant broader checks before committing, and record exact commands/results with that checkpoint.
-- Push this completed review checkpoint to `origin/feature/komodo-phase2-foundation` so the architecture reviewer can inspect it on GitHub. Do not merge it into `sindri`. Report branch, commit SHA, changed files, tests, and remaining issues.
+- Push a checkpoint only when the operator explicitly authorizes it. Do not merge it into `sindri`. Report branch, commit SHA, changed files, tests, and remaining issues.
 - For policy, authentication, action execution, AI tools, or feature-entitlement changes, publish and review a checkpoint before starting dependent work.
 - Never commit secrets, environment files, production credentials, or private Sindri artifacts. Do not push directly to `main`, force-push a reviewed checkpoint, or merge without explicit authorization.

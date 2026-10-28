@@ -24,6 +24,18 @@ export interface PatrolInvestigationRecordPresentation {
   error?: string;
 }
 
+/**
+ * Investigation conclusions are model-authored diagnostic interpretations.
+ * Relabel explicit "root cause" headings so unsupported hypotheses are not
+ * presented as confirmed facts in the operator workspace.
+ */
+export function labelDiagnosticInterpretation(value?: string | null): string {
+  const text = normalizeText(value);
+  return text
+    .replace(/^(\s*#{1,6}\s*)root cause\b/gim, '$1Diagnostic hypothesis')
+    .replace(/^(\s*)root cause\s*:/gim, '$1Diagnostic hypothesis:');
+}
+
 export function buildPatrolInvestigationRecordPresentation(
   record?: InvestigationRecord | null,
 ): PatrolInvestigationRecordPresentation {

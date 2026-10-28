@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from '@solidjs/testing-library';
+import { cleanup, fireEvent, render, screen } from '@solidjs/testing-library';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { InvestigationRecord } from '@/api/ai';
 import type { Investigation } from '@/api/patrol';
@@ -11,6 +11,7 @@ import investigationSectionSource from '../InvestigationSection.tsx?raw';
 import InvestigationSection from '../InvestigationSection';
 
 const getInvestigationMock = vi.hoisted(() => vi.fn<() => Promise<Investigation>>());
+const getResourceMock = vi.hoisted(() => vi.fn());
 const reinvestigateFindingMock = vi.hoisted(() => vi.fn());
 const loadFindingsMock = vi.hoisted(() => vi.fn());
 
@@ -18,6 +19,10 @@ vi.mock('@/api/patrol', () => ({
   getInvestigation: getInvestigationMock,
   reinvestigateFinding: reinvestigateFindingMock,
   formatTimestamp: (value: string) => value,
+}));
+
+vi.mock('@/api/resources', () => ({
+  ResourceAPI: { getResource: getResourceMock },
 }));
 
 vi.mock('@/stores/notifications', () => ({
@@ -40,6 +45,7 @@ vi.mock('../InvestigationMessages', () => ({
 describe('InvestigationSection', () => {
   beforeEach(() => {
     getInvestigationMock.mockReset();
+    getResourceMock.mockReset();
     reinvestigateFindingMock.mockReset();
     loadFindingsMock.mockReset();
   });
@@ -241,11 +247,128 @@ describe('InvestigationSection', () => {
     expect(await screen.findByText('Patrol record')).toBeInTheDocument();
     expect(screen.getByText('Fix queued')).toBeInTheDocument();
     expect(screen.queryByText('Completed')).not.toBeInTheDocument();
+    expect(screen.getByText('Observed evidence')).toBeInTheDocument();
+    expect(screen.getByText('Proposed action')).toBeInTheDocument();
     expect(screen.getByText('Backup job saturated CPU.')).toBeInTheDocument();
     expect(screen.getByText('CPU stayed above 95% for 10 minutes')).toBeInTheDocument();
     expect(screen.getByText('1 command recorded for approval context')).toBeInTheDocument();
     expect(screen.queryByText(/No investigation data available/)).not.toBeInTheDocument();
     expect(screen.queryByText('systemctl restart workload.service')).not.toBeInTheDocument();
+  });
+
+  it('loads bounded canonical topology only when investigation infrastructure context is expanded', async () => {
+    getInvestigationMock.mockResolvedValue(undefined as unknown as Investigation);
+    getResourceMock.mockResolvedValue({
+      id: 'proxmox:vm/100',
+      type: 'vm',
+      name: 'Database VM',
+      displayName: 'Database VM',
+      platformId: 'proxmox-1',
+      platformType: 'proxmox',
+      sourceType: 'proxmox',
+      status: 'online',
+      lastSeen: Date.parse('2026-10-28T09:00:00Z'),
+      canonicalIdentity: { primaryId: 'proxmox:vm/100', displayName: 'Database VM' },
+      sourceStatus: { proxmox: { status: 'current', lastSeen: '2026-10-28T09:00:00Z' } },
+      relationshipContext: {
+        resources: [
+          {
+            id: 'host-1',
+            type: 'agent',
+            name: 'PVE host',
+            status: 'online',
+            sources: ['proxmox'],
+          },
+          {
+            id: 'proxmox:vm/100',
+            type: 'vm',
+            name: 'Database VM',
+            status: 'online',
+            parentId: 'host-1',
+            sources: ['proxmox', 'komodo'],
+            canonicalIdentity: { primaryId: 'proxmox:vm/100', displayName: 'Database VM' },
+          },
+        ],
+        relationships: [
+          {
+            sourceId: 'proxmox:vm/100',
+            targetId: 'host-1',
+            type: 'runs_on',
+            confidence: 1,
+            active: true,
+            discoverer: 'proxmox_adapter',
+            evidenceSource: 'proxmox',
+            evidenceFreshness: 'current',
+            observedAt: '2026-10-28T09:00:00Z',
+            lastSeenAt: '2026-10-28T09:00:00Z',
+          },
+        ],
+        relationshipDetails: [],
+        truncated: false,
+      },
+    });
+
+    render(() => (
+      <InvestigationSection
+        findingId="finding-topology"
+        resourceId="legacy-vm-alias"
+        investigationRecord={{
+          id: 'record-topology',
+          finding_id: 'finding-topology',
+          subject: { resource_id: 'proxmox:vm/100', resource_name: 'Database VM' },
+          trigger: { detected_at: '2026-10-28T09:00:00Z' },
+          status: 'completed',
+          evidence: [],
+          verification: [],
+          rollback: [],
+          tools_used: [],
+          started_at: '2026-10-28T09:00:00Z',
+        }}
+      />
+    ));
+
+    expect(getResourceMock).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByText('Infrastructure context'));
+    expect(await screen.findByTestId('patrol-investigation-resource-topology')).toBeInTheDocument();
+    expect(getResourceMock).toHaveBeenCalledWith('proxmox:vm/100');
+    const hostNode = screen.getByTestId('resource-topology-tree-node-host-1');
+    fireEvent.click(hostNode.querySelector('summary')!);
+    fireEvent(hostNode, new Event('toggle'));
+    expect(screen.getByTestId('resource-topology-tree-entry-proxmox:vm/100')).toHaveTextContent(
+      'VM · Proxmox + Komodo Server',
+    );
+    expect(screen.getByText(/Canonical resource/)).toBeInTheDocument();
+  });
+
+  it('keeps the investigation usable and reports unavailable topology without exposing API errors', async () => {
+    getInvestigationMock.mockResolvedValue(undefined as unknown as Investigation);
+    getResourceMock.mockRejectedValue(new Error('organization B resource denied'));
+
+    render(() => (
+      <InvestigationSection
+        findingId="finding-unavailable-topology"
+        resourceId="org-a:vm/1"
+        investigationRecord={{
+          id: 'record-unavailable-topology',
+          finding_id: 'finding-unavailable-topology',
+          subject: { resource_id: 'org-a:vm/1' },
+          trigger: { detected_at: '2026-10-28T09:00:00Z' },
+          status: 'completed',
+          evidence: [],
+          verification: [],
+          rollback: [],
+          tools_used: [],
+          started_at: '2026-10-28T09:00:00Z',
+        }}
+      />
+    ));
+
+    fireEvent.click(screen.getByText('Infrastructure context'));
+    expect(
+      await screen.findByText('Canonical infrastructure context is unavailable.'),
+    ).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain('organization B resource denied');
+    expect(screen.getByText('Patrol record')).toBeInTheDocument();
   });
 
   it('shows the record run status until the run has an outcome', async () => {
@@ -308,7 +431,7 @@ describe('InvestigationSection', () => {
         />
       ));
       await screen.findByRole('button', { name: 'Show investigation thread' });
-      expect(screen.getAllByRole('heading', { name: 'Root cause' })).toHaveLength(1);
+      expect(screen.getAllByRole('heading', { name: 'Diagnostic hypothesis' })).toHaveLength(1);
       expect(screen.getByText('unknown').tagName).toBe('STRONG');
       expect(screen.getAllByRole('listitem')).toHaveLength(2);
       expect(screen.queryByRole('heading', { name: 'Follow-up' }) !== null).toBe(different);
