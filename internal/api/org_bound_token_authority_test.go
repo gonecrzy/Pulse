@@ -165,6 +165,8 @@ func TestOrgBoundSettingsTokenRouterMatrix(t *testing.T) {
 	}
 
 	instanceRoutes := []struct{ method, path string }{
+		{http.MethodGet, "/api/fork/profile"},
+		{http.MethodPut, "/api/fork/profile"},
 		{http.MethodPost, "/api/system/settings/update"},
 		{http.MethodGet, "/api/system/settings"},
 		{http.MethodPost, "/api/security/sso/providers"},

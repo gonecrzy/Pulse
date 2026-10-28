@@ -69,6 +69,7 @@ export function buildSettingsPanelRegistryContext(
   return {
     getInfrastructurePanelProps: params.getInfrastructurePanelProps,
     systemGeneralPanel: params.systemPanels.systemGeneralPanel,
+    systemForkCapabilitiesPanel: params.systemPanels.systemForkCapabilitiesPanel,
     systemAiPanel,
     systemAiPatrolPanel,
     systemAiAgentsPanel,

@@ -467,6 +467,9 @@ export const DE_MESSAGE_OVERRIDES = {
   'settings.header.systemAiPatrol.description':
     'Legen Sie fest, wann Patrol laeuft, was Patrol startet und welches Modell verwendet wird.',
   'settings.header.systemAiPatrol.title': 'Patrol',
+  'settings.header.systemForkCapabilities.description':
+    'Verwalten Sie implementierte Funktionen dieses Pulse-Forks, getrennt von kommerziellen Anspruechen und Aktionsberechtigungen.',
+  'settings.header.systemForkCapabilities.title': 'Fork-Funktionen',
   'settings.header.systemBilling.description': 'Plan, Lizenz und Patrol-Modus fuer diese Instanz.',
   'settings.header.systemBilling.title': 'Plaene & Abrechnung',
   'settings.header.systemGeneral.description':
@@ -510,6 +513,7 @@ export const DE_MESSAGE_OVERRIDES = {
   'settings.nav.item.dataReports': 'Daten & Berichte',
   'settings.nav.item.diagnosticsHealth': 'Diagnose & Zustand',
   'settings.nav.item.externalAgents': 'Externe Agenten',
+  'settings.nav.item.forkCapabilities': 'Fork-Funktionen',
   'settings.nav.item.general': 'Allgemein',
   'settings.nav.item.infrastructure': 'Infrastruktur',
   'settings.nav.item.network': 'Netzwerk',

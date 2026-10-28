@@ -15,6 +15,7 @@ const canonicalTabPaths = {
   'system-ai': '/settings/pulse-intelligence/provider',
   'system-ai-patrol': '/settings/pulse-intelligence/patrol',
   'system-ai-agents': '/settings/pulse-intelligence/agents',
+  'system-fork-capabilities': '/settings/pulse-intelligence/fork-capabilities',
   'system-relay': '/settings/system-relay',
   'system-billing': '/settings/pulse-intelligence/billing/plan',
   'support-diagnostics': '/settings/support/diagnostics',
@@ -444,6 +445,27 @@ describe('settingsNavigation integration scaffold', () => {
     const paths = Object.keys(canonicalTabPaths).map((tab) => settingsTabPath(tab as SettingsTab));
     const uniquePaths = new Set(paths);
     expect(uniquePaths.size).toBe(paths.length);
+  });
+
+  it('exposes Fork Capabilities only to instance settings administrators', () => {
+    const tab = 'system-fork-capabilities';
+    expect(getSettingsNavItem(tab)?.requiredCapability).toBe('systemSettingsWrite');
+
+    const nonAdmin = {
+      hasFeature: hasFeatures([]),
+      runtimeCapabilitiesLoaded: () => true,
+      settingsCapabilitiesResolved: true,
+      settingsCapabilities: { systemSettingsWrite: false },
+    };
+    expect(shouldHideSettingsNavItem(tab, nonAdmin)).toBe(true);
+    expect(shouldBlockSettingsRouteItem(tab, nonAdmin)).toBe(true);
+
+    const administrator = {
+      ...nonAdmin,
+      settingsCapabilities: { systemSettingsWrite: true },
+    };
+    expect(shouldHideSettingsNavItem(tab, administrator)).toBe(false);
+    expect(shouldBlockSettingsRouteItem(tab, administrator)).toBe(false);
   });
 
   it('setActiveTab eagerly updates currentTab before navigation', () => {

@@ -13,10 +13,10 @@ but cannot be used for inference under this policy.
    Confirm the endpoint and gateway API key with the administrator responsible
    for that deployment.
 2. In Pulse, open **Settings → Fork Capabilities**, enable
-   `fork.codex_lb_gateway`, and save the profile. The fork profile only enables
-   the local policy; it does not provide a gateway endpoint, credential, model,
-   upstream account, or entitlement.
-3. Open **Settings → Pulse Intelligence → Provider Configuration** and expand
+   `fork.codex_lb_gateway`, and save the profile. This enables the local policy
+   only; it does not provide a gateway endpoint, credential, model, upstream
+   account, or entitlement.
+3. Open **Settings → Pulse Intelligence → Provider & Models** and expand
    **Sindri Codex-LB gateway**. Enter the gateway base endpoint, such as
    `https://codex-lb.example/v1`, and its API key. Pulse sends the key as a
    Bearer credential and stores it with the existing encrypted AI settings.
@@ -36,6 +36,83 @@ compatible endpoint is Codex-LB: the administrator explicitly designates the
 endpoint and key in the dedicated Codex-LB fields. That is an operator trust
 assertion, not cryptographic product attestation. Verify the gateway host and
 TLS certificate out of band.
+
+## Activate a configured gateway
+
+When Provider & Models reports that the gateway capability is disabled, use
+**Settings → Fork Capabilities** to enable `fork.codex_lb_gateway`. This page
+also reports each registered capability's implementation status, maturity,
+profile state, effective availability, prerequisites, and restrictions. The
+gateway connection test stays disabled until its capability becomes available.
+After saving, return to Provider & Models; its settings and readiness state
+reload when that page opens. No Pulse restart is required.
+
+For an instance where the administrator needs to update the profile through the
+API, the following commands preserve every existing enabled capability and add
+only `fork.codex_lb_gateway` and `fork.ai_investigation` when missing. Set
+`PULSE_URL` and `PULSE_API_TOKEN` through a protected environment or secret
+manager. The token must be instance-wide and have `settings:read` and
+`settings:write`; organization-bound tokens are refused by these instance
+administration routes. Token-authenticated requests without a session cookie do
+not require CSRF. Browser-session requests do require the session's CSRF token.
+
+```sh
+set -eu
+: "${PULSE_URL:?Set PULSE_URL to the Pulse base URL}"
+: "${PULSE_API_TOKEN:?Load an instance-wide settings token into PULSE_API_TOKEN}"
+
+umask 077
+auth_headers="$(mktemp)"
+trap 'rm -f "$auth_headers"' EXIT
+printf 'X-API-Token: %s\n' "$PULSE_API_TOKEN" > "$auth_headers"
+pulse_curl() {
+  curl --fail --silent --show-error --header "@$auth_headers" "$@"
+}
+
+base="${PULSE_URL%/}"
+profile="$(pulse_curl "$base/api/fork/profile")"
+if printf '%s' "$profile" | jq -e '
+  [.enabled_features[]]
+  | index("fork.codex_lb_gateway") != null
+    and index("fork.ai_investigation") != null
+' >/dev/null; then
+  printf 'Both requested capabilities are already enabled.\n'
+  exit 0
+fi
+
+update="$(printf '%s' "$profile" | jq -c '
+  {
+    version,
+    expected_revision: .revision,
+    enabled_features: (
+      .enabled_features + ["fork.codex_lb_gateway", "fork.ai_investigation"]
+      | unique
+      | sort
+    )
+  }
+')"
+saved="$(pulse_curl --request PUT \
+  --header 'Content-Type: application/json' \
+  --data-binary "$update" \
+  "$base/api/fork/profile")"
+
+printf '%s' "$saved" | jq -e '
+  [.capabilities[] | select(
+    .id == "fork.codex_lb_gateway" or .id == "fork.ai_investigation"
+  )] as $requested
+  | ($requested | length) == 2
+    and all($requested[]; .enabled and .available)
+' >/dev/null
+printf '%s' "$saved" | jq '{revision, capabilities: [.capabilities[] | select(
+  .id == "fork.codex_lb_gateway" or .id == "fork.ai_investigation"
+) | {id, enabled, available}]}'
+```
+
+The write uses the revision read with the profile. If the API returns HTTP 409,
+stop; another administrator changed the profile. Re-read and review that
+version before retrying. The commands do not read or write AI provider settings,
+gateway credentials, action safety, Komodo mutations, or other capabilities.
+The profile change takes effect immediately and survives restart.
 
 ## Network policy
 

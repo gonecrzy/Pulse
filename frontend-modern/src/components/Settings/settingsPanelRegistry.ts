@@ -27,6 +27,7 @@ export type SettingsPanelRegistry = Record<SettingsDispatchableTab, SettingsPane
 export interface SettingsPanelRegistryContext {
   getInfrastructurePanelProps: () => Parameters<typeof InfrastructureWorkspaceType>[0];
   systemGeneralPanel: Component;
+  systemForkCapabilitiesPanel: Component;
   systemAiPanel: Component;
   systemAiPatrolPanel: Component;
   systemAiAgentsPanel: Component;
@@ -79,6 +80,9 @@ export const createSettingsPanelRegistry = (
   },
   'system-ai-agents': {
     component: context.systemAiAgentsPanel,
+  },
+  'system-fork-capabilities': {
+    component: context.systemForkCapabilitiesPanel,
   },
   'system-relay': {
     component: SETTINGS_PANEL_REGISTRY_LOADERS.RelaySettingsPanel,

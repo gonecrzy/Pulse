@@ -45,6 +45,11 @@ export const SETTINGS_HEADER_META: SettingsHeaderMetaMap = {
     title: 'External agents',
     description: "Connect Claude Code, Codex, and other MCP clients to Pulse's governed tools.",
   },
+  'system-fork-capabilities': {
+    title: 'Fork Capabilities',
+    description:
+      'Manage implemented capabilities for this Pulse fork, separately from commercial entitlements and action authorization.',
+  },
   'system-relay': {
     title: 'Pulse Mobile',
     description: RELAY_SETTINGS_DESCRIPTION,
@@ -165,6 +170,10 @@ const SETTINGS_HEADER_META_KEYS = {
   'system-ai-agents': {
     title: 'settings.header.systemAiAgents.title',
     description: 'settings.header.systemAiAgents.description',
+  },
+  'system-fork-capabilities': {
+    title: 'settings.header.systemForkCapabilities.title',
+    description: 'settings.header.systemForkCapabilities.description',
   },
   'system-relay': {
     title: 'settings.header.systemRelay.title',

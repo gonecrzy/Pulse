@@ -70,6 +70,14 @@ describe('ForkCapabilitiesPanel', () => {
             status: 'experimental',
             source: 'unavailable',
           },
+          {
+            id: 'fork.codex_lb_gateway',
+            available: false,
+            implemented: true,
+            enabled: false,
+            status: 'supported',
+            source: 'unavailable',
+          },
         ],
       })
       .mockResolvedValueOnce({
@@ -122,24 +130,34 @@ describe('ForkCapabilitiesPanel', () => {
 
     render(() => <ForkCapabilitiesPanel canManage={() => true} />);
 
-    expect(await screen.findByText('Personal fork capabilities')).toBeInTheDocument();
+    expect(await screen.findByText('Fork Capabilities')).toBeInTheDocument();
     expect(screen.getByText(/Public fork/)).toBeInTheDocument();
     expect(screen.getByText(/not implemented/i)).toBeInTheDocument();
-    expect(screen.getAllByRole('checkbox')).toHaveLength(2);
+    expect(screen.getAllByRole('checkbox')).toHaveLength(3);
+    expect(
+      screen.getByText(/Routes Pulse Intelligence exclusively through the configured/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /Availability does not grant action approval or execution authority\. Existing authorization/,
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getAllByText('Effective availability: Unavailable').length).toBeGreaterThan(0);
+    expect(screen.queryByRole('checkbox', { name: /action safety/i })).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByLabelText('Disabled in fork profile'));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'fork.codex_lb_gateway' }));
     fireEvent.click(screen.getByRole('button', { name: 'Save fork profile' }));
 
     await waitFor(() =>
       expect(api.updateProfile).toHaveBeenCalledWith({
         version: 1,
         expected_revision: 3,
-        enabled_features: ['fork.ai_investigation', 'fork.governed_actions'],
+        enabled_features: ['fork.ai_investigation', 'fork.codex_lb_gateway'],
       }),
     );
     expect(await screen.findByText(/profile changed on the server/i)).toBeInTheDocument();
     await waitFor(() => expect(api.getProfile).toHaveBeenCalledTimes(2));
-    expect(screen.getByLabelText('Enabled in fork profile')).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'fork.governed_actions' })).toBeChecked();
   });
 
   it('does not expose profile editing to a non-administrator', async () => {
@@ -161,7 +179,9 @@ describe('ForkCapabilitiesPanel', () => {
     render(() => <ForkCapabilitiesPanel canManage={() => false} />);
 
     expect(
-      await screen.findByText('A settings administrator can manage the validated fork profile.'),
+      await screen.findByText(
+        'An instance settings administrator can manage the validated fork profile.',
+      ),
     ).toBeInTheDocument();
     expect(api.getProfile).not.toHaveBeenCalled();
     expect(screen.queryByRole('button', { name: 'Save fork profile' })).not.toBeInTheDocument();

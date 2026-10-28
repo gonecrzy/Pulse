@@ -545,6 +545,53 @@ in `internal/repoctl`; the repository boundary regression test; and report plus
 all six private-boundary enforcement modes. No backend API/resource contract
 changed in this phase, so the broader Go API/resource suites were not rerun.
 
+### Phase 2O — Fork capability administration and gateway activation
+
+**Status (2026-10-28):** Implemented locally on
+`feature/komodo-phase2-foundation`. No running-instance update, gateway request,
+push, merge, deployment, or image publication is part of this checkpoint.
+See the updated [Codex-LB gateway setup guide](../CODEX_LB_GATEWAY.md) for the
+Settings flow and revision-safe API procedure.
+
+- The capability editor already existed, but it was appended beneath Settings
+  → System → General and had no Settings navigation item. It now has a dedicated
+  **Settings → Pulse Intelligence → Fork Capabilities** route, gated by the
+  server-provided `systemSettingsWrite` capability and the existing instance
+  administrator/API scopes.
+- The page displays every registered capability with its description,
+  implementation and maturity state, profile state, effective availability,
+  prerequisites, and restrictions. Only implemented, supported capabilities
+  can be toggled. Updates submit the complete versioned profile and its
+  expected revision; existing enabled capabilities are preserved. Stale
+  revisions reload the latest profile for review before another save.
+- A disabled Codex-LB capability now displays the direct Settings link and the
+  required activation guidance; its provider connection test stays disabled
+  until activation. Returning to Provider & Models remounts its settings view,
+  refreshing capability readiness. The gateway remains opt-in and its saved
+  endpoint, protected credential, private-network choice, no-fallback behavior,
+  and gateway-only policy are unchanged. The profile takes effect without a
+  restart.
+- The safe immediate API procedure reads the current profile and revision,
+  adds only `fork.codex_lb_gateway` and `fork.ai_investigation` when missing,
+  submits the complete profile with the expected revision, and confirms both
+  are effectively available. It does not enable automatic repair, action
+  safety, Komodo mutations, or other experimental features.
+- Existing backend coverage continues to enforce unsupported-profile
+  rejection, revision conflicts, persistence across restart, private endpoint
+  opt-in, commercial-policy separation, and organization-bound token refusal.
+  A new readiness regression confirms that a configured gateway is not
+  contacted while its capability is disabled; the existing activation test
+  verifies ready status through streaming and tool continuation.
+
+**Verification:** `go test ./... -count=1` passed 4,351 tests across 61
+packages. `npm test -- --reporter=dot --maxWorkers=2` passed 1,273 test files
+and 22,210 tests; one file and three tests were skipped. The focused capability
+navigation, profile-editor, gateway notice, i18n, readiness, and
+organization-bound token tests also passed. Type-check, lint, formatting,
+workflow trust validation, mutation registry governance tests, all `repoctl`
+tests, repository boundary checks, and all private-boundary enforcement modes
+passed. The activation script passed a shell syntax check; it was not executed.
+
 ## Git checkpoint discipline
 
 - The current focused checkpoint is `feature/komodo-phase2-foundation`, based on current `origin/sindri`. Preserve the historical `feature/sindri-integration` branch and checkpoint history. Create descriptive, logically separated commits for approved implementation phases.

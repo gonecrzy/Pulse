@@ -31,6 +31,7 @@ export type SettingsTab =
   | 'system-ai'
   | 'system-ai-patrol'
   | 'system-ai-agents'
+  | 'system-fork-capabilities'
   | 'system-relay'
   | 'system-billing'
   | 'support-diagnostics'
@@ -120,6 +121,7 @@ const PULSE_INTELLIGENCE_PREFIX = SETTINGS_PULSE_INTELLIGENCE_PATH;
 const PULSE_INTELLIGENCE_PROVIDER_PREFIX = SETTINGS_PROVIDER_MODELS_PATH;
 const PULSE_INTELLIGENCE_PATROL_PREFIX = `${PULSE_INTELLIGENCE_PREFIX}/patrol`;
 const PULSE_INTELLIGENCE_AGENTS_PREFIX = `${PULSE_INTELLIGENCE_PREFIX}/agents`;
+const PULSE_INTELLIGENCE_FORK_CAPABILITIES_PREFIX = `${PULSE_INTELLIGENCE_PREFIX}/fork-capabilities`;
 // Settings > Assistant held the external-agent setup until the Assistant chat
 // retired; its links land on External agents.
 export const PULSE_INTELLIGENCE_LEGACY_ASSISTANT_PATH = `${PULSE_INTELLIGENCE_PREFIX}/assistant`;
@@ -248,6 +250,9 @@ export function deriveTabFromPath(path: string): SettingsTab {
   }
   if (canonicalPath.startsWith(PULSE_INTELLIGENCE_PATROL_PREFIX)) {
     return 'system-ai-patrol';
+  }
+  if (canonicalPath.startsWith(PULSE_INTELLIGENCE_FORK_CAPABILITIES_PREFIX)) {
+    return 'system-fork-capabilities';
   }
   if (canonicalPath.startsWith(PULSE_INTELLIGENCE_AGENTS_PREFIX)) {
     return 'system-ai-agents';
@@ -429,6 +434,8 @@ export function settingsTabPath(tab: SettingsTab): string {
       return PULSE_INTELLIGENCE_PATROL_PREFIX;
     case 'system-ai-agents':
       return PULSE_INTELLIGENCE_AGENTS_PREFIX;
+    case 'system-fork-capabilities':
+      return PULSE_INTELLIGENCE_FORK_CAPABILITIES_PREFIX;
     case 'system-relay':
       return '/settings/system-relay';
     case 'system-billing':
@@ -455,6 +462,7 @@ const ROUTEABLE_SETTINGS_PATHS = new Set<string>([
   settingsTabPath('system-ai'),
   settingsTabPath('system-ai-patrol'),
   settingsTabPath('system-ai-agents'),
+  settingsTabPath('system-fork-capabilities'),
   settingsTabPath('system-relay'),
   settingsTabPath('system-billing'),
   SELF_HOSTED_PRO_BILLING_USAGE_ROUTE,

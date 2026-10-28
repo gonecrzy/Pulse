@@ -103,6 +103,14 @@ export const SETTINGS_NAV_GROUPS: SettingsNavGroup[] = [
         iconProps: { strokeWidth: 2 },
         requiredCapability: 'pulseIntelligenceRead',
       },
+      {
+        id: 'system-fork-capabilities',
+        label: 'Fork Capabilities',
+        keywords: ['fork', 'capability', 'capabilities', 'codex-lb', 'gateway'],
+        icon: ShieldCheck,
+        iconProps: { strokeWidth: 2 },
+        requiredCapability: 'systemSettingsWrite',
+      },
     ],
   },
   {
@@ -345,6 +353,7 @@ const SETTINGS_NAV_ITEM_LABEL_KEYS = {
   'system-ai': 'settings.nav.item.providerModels',
   'system-ai-patrol': 'settings.nav.item.patrol',
   'system-ai-agents': 'settings.nav.item.externalAgents',
+  'system-fork-capabilities': 'settings.nav.item.forkCapabilities',
   'system-relay': 'settings.nav.item.remoteAccess',
   'system-billing': 'settings.nav.item.plans',
   'support-diagnostics': 'settings.nav.item.diagnosticsHealth',

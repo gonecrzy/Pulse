@@ -458,6 +458,9 @@ export const ES_MESSAGE_OVERRIDES = {
   'settings.header.systemAiPatrol.description':
     'Configura cuando se ejecuta Patrol, que lo inicia y que modelo usa.',
   'settings.header.systemAiPatrol.title': 'Patrol',
+  'settings.header.systemForkCapabilities.description':
+    'Administra las capacidades implementadas de este fork de Pulse, separadas de las ventajas comerciales y de la autorización de acciones.',
+  'settings.header.systemForkCapabilities.title': 'Capacidades del fork',
   'settings.header.systemBilling.description':
     'Plan, licencia y modo de Patrol para esta instancia.',
   'settings.header.systemBilling.title': 'Planes y facturacion',
@@ -502,6 +505,7 @@ export const ES_MESSAGE_OVERRIDES = {
   'settings.nav.item.dataReports': 'Datos e informes',
   'settings.nav.item.diagnosticsHealth': 'Diagnóstico y salud',
   'settings.nav.item.externalAgents': 'Agentes externos',
+  'settings.nav.item.forkCapabilities': 'Capacidades del fork',
   'settings.nav.item.general': 'General',
   'settings.nav.item.infrastructure': 'Infraestructura',
   'settings.nav.item.network': 'Red',

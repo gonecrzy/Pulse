@@ -21,6 +21,7 @@ interface UseSettingsSystemPanelsParams {
 
 export interface SettingsSystemPanels {
   systemGeneralPanel: Component;
+  systemForkCapabilitiesPanel: Component;
   getNetworkPanelProps: () => NetworkSettingsPanelProps;
   getRecoveryPanelProps: () => RecoverySettingsPanelProps;
   getUpdatesPanelProps: () => UpdatesSettingsPanelProps;
@@ -79,17 +80,19 @@ export function useSettingsSystemPanels(
       </Show>
       <Show when={params.initialLoadComplete()}>
         <GeneralSettingsPanel {...systemGeneralPanelProps()} />
-        <ForkCapabilitiesPanel
-          canManage={() =>
-            params.securityStatus()?.settingsCapabilities?.systemSettingsWrite === true
-          }
-        />
       </Show>
     </>
   );
 
+  const systemForkCapabilitiesPanel: Component = () => (
+    <ForkCapabilitiesPanel
+      canManage={() => params.securityStatus()?.settingsCapabilities?.systemSettingsWrite === true}
+    />
+  );
+
   return {
     systemGeneralPanel,
+    systemForkCapabilitiesPanel,
     getNetworkPanelProps: () => ({
       envOverrides: params.systemSettings.envOverrides,
       allowedOrigins: params.systemSettings.allowedOrigins,

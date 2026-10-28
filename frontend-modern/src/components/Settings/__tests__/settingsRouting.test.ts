@@ -27,6 +27,7 @@ const canonicalTabPaths = {
   'system-ai': '/settings/pulse-intelligence/provider',
   'system-ai-patrol': '/settings/pulse-intelligence/patrol',
   'system-ai-agents': '/settings/pulse-intelligence/agents',
+  'system-fork-capabilities': '/settings/pulse-intelligence/fork-capabilities',
   'system-relay': '/settings/system-relay',
   'system-billing': '/settings/pulse-intelligence/billing/plan',
   'support-diagnostics': '/settings/support/diagnostics',
@@ -152,6 +153,7 @@ describe('settingsNavigationModel', () => {
     expect(isRouteableSettingsPath('/settings/infrastructure')).toBe(true);
     expect(isRouteableSettingsPath('/settings/monitoring/availability')).toBe(true);
     expect(isRouteableSettingsPath('/settings/pulse-intelligence/provider')).toBe(true);
+    expect(isRouteableSettingsPath('/settings/pulse-intelligence/fork-capabilities')).toBe(true);
     expect(isRouteableSettingsPath('/settings/system-ai')).toBe(true);
     expect(isRouteableSettingsPath('/settings/pulse-intelligence/patrol')).toBe(true);
     expect(isRouteableSettingsPath('/settings/pulse-intelligence/agents')).toBe(true);

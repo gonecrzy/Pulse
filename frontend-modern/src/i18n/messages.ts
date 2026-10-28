@@ -451,6 +451,9 @@ export const EN_MESSAGES = {
   'settings.header.systemAiPatrol.description':
     'Set when Patrol runs, what starts it, and which model it uses.',
   'settings.header.systemAiPatrol.title': 'Patrol',
+  'settings.header.systemForkCapabilities.description':
+    'Manage implemented capabilities for this Pulse fork, separately from commercial entitlements and action authorization.',
+  'settings.header.systemForkCapabilities.title': 'Fork Capabilities',
   'settings.header.systemBilling.description': 'Plan, license, and Patrol mode for this instance.',
   'settings.header.systemBilling.title': 'Plans & Billing',
   'settings.header.systemGeneral.description':
@@ -494,6 +497,7 @@ export const EN_MESSAGES = {
   'settings.nav.item.dataReports': 'Data & Reports',
   'settings.nav.item.diagnosticsHealth': 'Diagnostics & Health',
   'settings.nav.item.externalAgents': 'External agents',
+  'settings.nav.item.forkCapabilities': 'Fork Capabilities',
   'settings.nav.item.general': 'General',
   'settings.nav.item.infrastructure': 'Infrastructure',
   'settings.nav.item.network': 'Network',

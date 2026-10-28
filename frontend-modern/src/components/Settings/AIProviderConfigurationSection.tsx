@@ -8,6 +8,7 @@ import { controlClass } from '@/components/shared/Form';
 import { getAIProviderHealthPresentation } from '@/utils/aiProviderHealthPresentation';
 import { getAIProviderDisplayName } from '@/utils/aiProviderPresentation';
 import { getAIProviderTestResultTextClass } from '@/utils/aiSettingsPresentation';
+import { CodexLBGatewayCapabilityNotice } from './CodexLBGatewayCapabilityNotice';
 import type { AIProvider, AISettings as AISettingsType } from '@/types/ai';
 import {
   AI_PROVIDER_CONFIGS,
@@ -34,6 +35,15 @@ export interface AIProviderConfigurationSectionProps {
   runProviderPreflight: () => Promise<void>;
   handleTestProvider: (provider: AIProvider) => Promise<void>;
   handleClearProvider: (provider: AIProvider) => Promise<void>;
+}
+
+export function isProviderConnectionTestBlocked(
+  provider: AIProvider,
+  settings: AISettingsType | null,
+): boolean {
+  return (
+    provider === 'codex_lb_gateway' && settings?.codex_lb_gateway?.capability_available === false
+  );
 }
 
 export const AIProviderConfigurationSection: Component<AIProviderConfigurationSectionProps> = (
@@ -301,6 +311,9 @@ export const AIProviderConfigurationSection: Component<AIProviderConfigurationSe
                         >
                           {(status) => (
                             <div class="mt-1 space-y-1 text-muted">
+                              <CodexLBGatewayCapabilityNotice
+                                capabilityAvailable={status().capability_available}
+                              />
                               <p>
                                 Fork capability:{' '}
                                 {status().capability_available ? 'available' : 'unavailable'}
@@ -384,7 +397,11 @@ export const AIProviderConfigurationSection: Component<AIProviderConfigurationSe
                           <button
                             type="button"
                             onClick={() => void props.handleTestProvider(config.provider)}
-                            disabled={props.testingProvider() === config.provider || props.saving()}
+                            disabled={
+                              props.testingProvider() === config.provider ||
+                              props.saving() ||
+                              isProviderConnectionTestBlocked(config.provider, props.settings())
+                            }
                             class="inline-flex min-h-10 sm:min-h-9 items-center rounded-md px-3 py-2 text-sm bg-blue-100 dark:bg-blue-900/25 text-blue-700 dark:text-blue-300 hover:bg-blue-200 dark:hover:bg-blue-800 disabled:opacity-50"
                           >
                             {props.testingProvider() === config.provider ? 'Testing...' : 'Test'}

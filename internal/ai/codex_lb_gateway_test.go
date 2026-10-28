@@ -315,3 +315,43 @@ func TestCodexLBGatewayPatrolReadinessUsesStreamingToolsAndMultiTurnContinuation
 		t.Fatalf("gateway streaming request count = %d, want 3 readiness probes plus one continuation", got)
 	}
 }
+
+func TestCodexLBGatewayPatrolReadinessDoesNotContactGatewayWhenCapabilityIsDisabled(t *testing.T) {
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(w, `{"data":[{"id":"owner/model-v1"}]}`)
+	}))
+	defer server.Close()
+
+	persistence := config.NewConfigPersistence(t.TempDir())
+	manager := forkfeatures.NewManager(persistence)
+	persistence.SetForkProfileManager(manager)
+	if err := persistence.SaveAIConfig(config.AIConfig{
+		Enabled:                       true,
+		Model:                         "codex_lb_gateway:owner/model-v1",
+		PatrolModel:                   "codex_lb_gateway:owner/model-v1",
+		CodexLBGatewayEndpoint:        server.URL + "/v1",
+		CodexLBGatewayAPIKey:          "gateway-test-secret",
+		CodexLBGatewayAllowPrivateURL: true,
+		OpenAIAPIKey:                  "legacy-openai-secret",
+	}); err != nil {
+		t.Fatalf("SaveAIConfig(): %v", err)
+	}
+	service := NewService(persistence, nil)
+	if err := service.LoadConfig(); err != nil {
+		t.Fatalf("LoadConfig(): %v", err)
+	}
+
+	result := service.RunPatrolModelReadiness(context.Background(), "", "")
+	if result.Success || result.PatrolCapable {
+		t.Fatalf("disabled gateway capability produced ready result: %+v", result)
+	}
+	if result.Provider != config.AIProviderCodexLBGateway {
+		t.Fatalf("readiness lost selected provider identity: %q", result.Provider)
+	}
+	if got := requests.Load(); got != 0 {
+		t.Fatalf("gateway received %d readiness requests while its capability was disabled", got)
+	}
+}

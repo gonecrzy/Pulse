@@ -11,6 +11,7 @@ const noopSetter: Setter<boolean> = () => false;
 
 const systemPanels: SettingsSystemPanels = {
   systemGeneralPanel: () => null,
+  systemForkCapabilitiesPanel: () => null,
   getNetworkPanelProps: () => ({}) as ReturnType<SettingsSystemPanels['getNetworkPanelProps']>,
   getRecoveryPanelProps: () => ({}) as ReturnType<SettingsSystemPanels['getRecoveryPanelProps']>,
   getUpdatesPanelProps: () => ({}) as ReturnType<SettingsSystemPanels['getUpdatesPanelProps']>,

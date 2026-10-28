@@ -48,6 +48,7 @@ const ALL_TABS: readonly SettingsTab[] = [
   'system-ai',
   'system-ai-patrol',
   'system-ai-agents',
+  'system-fork-capabilities',
   'system-relay',
   'system-billing',
   'support-diagnostics',

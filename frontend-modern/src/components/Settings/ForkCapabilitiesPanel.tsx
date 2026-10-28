@@ -18,7 +18,91 @@ export interface ForkCapabilitiesPanelProps {
   canManage: () => boolean;
 }
 
-const featureLabel = (id: ForkFeatureID): string => id.replace(/^fork\./, '').replaceAll('_', ' ');
+const CAPABILITY_DETAILS: Record<
+  ForkFeatureID,
+  { name: string; description: string; restrictions: string }
+> = {
+  'fork.codex_lb_gateway': {
+    name: 'Codex-LB gateway',
+    description:
+      'Routes Pulse Intelligence exclusively through the configured Sindri Codex-LB OpenAI-compatible gateway.',
+    restrictions:
+      'Requires a configured gateway endpoint and credential. Private destinations require the separate private-network opt-in. Direct OpenAI routes are blocked while this capability is active.',
+  },
+  'fork.ai_investigation': {
+    name: 'AI investigation',
+    description: 'Runs Pulse chat investigations and stores their findings.',
+    restrictions:
+      'Requires Pulse Intelligence to be enabled with a configured provider and selected model. Commercial Patrol features remain governed by their own entitlement checks.',
+  },
+  'fork.governed_actions': {
+    name: 'Governed actions',
+    description: 'Provides Pulse’s typed action planner and canonical action lifecycle.',
+    restrictions:
+      'Availability does not grant action approval or execution authority. Existing authorization, approval, and safety checks still apply.',
+  },
+  'fork.komodo_read_only': {
+    name: 'Komodo read-only',
+    description: 'Enables the read-only Komodo monitoring adapter.',
+    restrictions:
+      'Requires a configured Komodo connection. This capability grants read access only and does not permit Komodo mutations.',
+  },
+  'fork.deterministic_triage': {
+    name: 'Deterministic triage',
+    description: 'Adds deterministic alert triage extensions to Patrol.',
+    restrictions: 'Uses Pulse monitoring data and does not require an AI provider.',
+  },
+  'fork.agent_profiles': {
+    name: 'Agent profiles',
+    description: 'Provides public agent profile management and versioned configuration.',
+    restrictions:
+      'Profile changes remain subject to the existing agent and settings authorization checks.',
+  },
+  'fork.rbac': {
+    name: 'Role-based access control',
+    description: 'Provides organization-scoped roles and permission checks.',
+    restrictions:
+      'Does not grant instance administrator privileges or bypass existing authorization.',
+  },
+  'fork.audit_logging': {
+    name: 'Audit logging',
+    description: 'Stores local append-only audit records and exposes read APIs.',
+    restrictions: 'Enabling this capability does not change audit retention or delivery settings.',
+  },
+  'fork.advanced_reporting': {
+    name: 'Advanced reporting',
+    description: 'Provides local report generation and scheduling.',
+    restrictions:
+      'Report access remains subject to existing settings and organization permissions.',
+  },
+  'fork.external_probe': {
+    name: 'External probes',
+    description: 'Provides operator-configured external availability probes.',
+    restrictions: 'Each probe still requires an explicit operator configuration.',
+  },
+  'fork.action_safety': {
+    name: 'Action safety',
+    description: 'Planned strict remediation policy and safety controls.',
+    restrictions: 'Not implemented. It cannot be enabled from this page.',
+  },
+  'fork.operational_cases': {
+    name: 'Operational cases',
+    description: 'Planned multi-alert operational cases and repair plans.',
+    restrictions: 'Experimental and not implemented. It cannot be enabled from this page.',
+  },
+  'fork.long_term_metrics': {
+    name: 'Long-term metrics',
+    description: 'Planned extended Pulse metric retention tiers.',
+    restrictions: 'Unavailable in this build. It cannot be enabled from this page.',
+  },
+  'fork.discord_ops': {
+    name: 'Discord operations',
+    description: 'Experimental Discord conversational operations.',
+    restrictions: 'Experimental and not implemented. It cannot be enabled from this page.',
+  },
+};
+
+const formatStatus = (status: string): string => status.charAt(0).toUpperCase() + status.slice(1);
 
 const isRevisionConflict = (error: unknown): boolean => {
   if (!error || typeof error !== 'object') return false;
@@ -72,7 +156,7 @@ export const ForkCapabilitiesPanel: Component<ForkCapabilitiesPanelProps> = (pro
 
     const implemented = new Set(
       currentSnapshot.capabilities
-        .filter((capability) => capability.implemented)
+        .filter((capability) => capability.implemented && capability.status === 'supported')
         .map((capability) => capability.id),
     );
     setSaving(true);
@@ -107,8 +191,8 @@ export const ForkCapabilitiesPanel: Component<ForkCapabilitiesPanelProps> = (pro
 
   return (
     <SettingsPanel
-      title="Personal fork capabilities"
-      description="Fork availability is separate from Pulse commercial entitlements."
+      title="Fork Capabilities"
+      description="Manage capabilities implemented by this Pulse fork. Availability is separate from commercial entitlements and action authorization."
       action={
         <Button
           size="sm"
@@ -146,26 +230,34 @@ export const ForkCapabilitiesPanel: Component<ForkCapabilitiesPanelProps> = (pro
             <For each={snapshot().capabilities}>
               {(capability) => {
                 const id = `fork-capability-${capability.id.replaceAll('.', '-')}`;
+                const details = CAPABILITY_DETAILS[capability.id];
                 const selected = () => draft().includes(capability.id);
                 const source = () =>
                   capability.source === 'fork_public' ? 'Public fork' : 'Unavailable';
+                const canEnable = capability.implemented && capability.status === 'supported';
                 return (
                   <div class="flex flex-col gap-2 px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
                     <div class="min-w-0">
-                      <p class="font-medium capitalize text-base-content">
-                        {featureLabel(capability.id)}
-                      </p>
+                      <p class="font-medium text-base-content">{details.name}</p>
                       <p class="break-all font-mono text-xs text-muted">{capability.id}</p>
+                      <p class="mt-1 text-sm text-muted">{details.description}</p>
                       <p class="text-xs text-muted">
-                        {capability.status} ·{' '}
-                        {capability.implemented ? 'implemented' : 'not implemented'} ·{' '}
-                        {capability.enabled ? 'enabled' : 'disabled'} · {source()}
+                        Status: {formatStatus(capability.status)} · Implemented:{' '}
+                        {capability.implemented ? 'Yes' : 'No'} · Profile state:{' '}
+                        {capability.enabled ? 'Enabled' : 'Disabled'} · {source()}
+                      </p>
+                      <p class="text-xs text-muted">
+                        Effective availability: {capability.available ? 'Available' : 'Unavailable'}
+                      </p>
+                      <p class="text-xs text-muted">
+                        Prerequisites or restrictions: {details.restrictions}
                       </p>
                     </div>
-                    <Show when={capability.implemented}>
+                    <Show when={canEnable}>
                       <label for={id} class="inline-flex shrink-0 items-center gap-2 text-sm">
                         <input
                           id={id}
+                          aria-label={capability.id}
                           type="checkbox"
                           checked={selected()}
                           disabled={!props.canManage() || !forkProfile() || saving()}
@@ -177,6 +269,13 @@ export const ForkCapabilitiesPanel: Component<ForkCapabilitiesPanelProps> = (pro
                           {selected() ? 'Enabled in fork profile' : 'Disabled in fork profile'}
                         </span>
                       </label>
+                    </Show>
+                    <Show when={!canEnable}>
+                      <span class="shrink-0 text-xs text-muted">
+                        {capability.implemented
+                          ? 'Enablement unavailable for this maturity level'
+                          : 'Not available to enable'}
+                      </span>
                     </Show>
                   </div>
                 );
@@ -218,7 +317,7 @@ export const ForkCapabilitiesPanel: Component<ForkCapabilitiesPanelProps> = (pro
       </Show>
       <Show when={!props.canManage()}>
         <p class="text-xs text-muted">
-          A settings administrator can manage the validated fork profile.
+          An instance settings administrator can manage the validated fork profile.
         </p>
       </Show>
     </SettingsPanel>
