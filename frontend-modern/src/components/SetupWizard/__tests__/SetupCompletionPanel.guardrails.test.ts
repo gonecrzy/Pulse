@@ -214,9 +214,7 @@ describe('SetupCompletionPanel guardrails', () => {
     expect(setupCompletionPanelSource).toContain('setup.completion.proActivation.title');
     expect(setupCompletionPanelSource).toContain('setup.completion.proActivation.description');
     expect(setupCompletionPanelSource).toContain('setup.completion.proActivation.action');
-    expect(setupCompletionModelSource).toContain(
-      'state.commercialServicesEnabled === true',
-    );
+    expect(setupCompletionModelSource).toContain('state.commercialServicesEnabled === true');
     expect(setupCompletionModelSource).toContain("state.runtimeBuild === 'pro'");
     expect(setupCompletionModelSource).toContain('state.licenseValid === false');
   });

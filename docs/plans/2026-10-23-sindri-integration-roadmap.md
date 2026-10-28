@@ -493,12 +493,12 @@ requests against the test image.
 
 ### Phase 2N — Unified Patrol investigation workspace
 
-**Status (2026-10-28):** Implemented locally on
+**Status (2026-10-28):** Implemented and pushed on
 `feature/komodo-phase2-foundation`; the frontend suite, type-check, lint and
-governance checks passed. Changed frontend files pass Prettier. The whole-tree
-format check reports two pre-existing SetupWizard test files listed below. No live gateway request,
-infrastructure mutation, push, merge, deployment, or image publication is part
-of this checkpoint.
+governance checks passed. The whole-tree format check now passes after
+formatting two existing SetupWizard test fixtures without behavior changes.
+Live gateway qualification, infrastructure mutation, merge, and deployment
+remain outside this checkpoint.
 
 - The existing `/patrol`, `/patrol/protection`, and `/patrol/activity` route
   contract remains intact. The Inbox now includes a compact Sindri operations
@@ -534,10 +534,10 @@ of this checkpoint.
 --maxWorkers=2` passed 1,271 test files and 22,205 tests; one file and three
 tests were skipped. `npm --prefix frontend-modern run type-check` passed.
 `npm --prefix frontend-modern run lint` passed ESLint and all seven frontend
-audits. Prettier passed for all changed frontend files, and `git diff --check`
-passed. The whole-tree `format:check` is not clean on this base checkout: it
-reports only the untouched `src/components/SetupWizard/__tests__/SetupCompletionPanel.guardrails.test.ts`
-and `src/components/SetupWizard/__tests__/SetupCompletionProActivation.test.tsx`.
+audits. The whole-tree `format:check` passed after formatting the existing
+`src/components/SetupWizard/__tests__/SetupCompletionPanel.guardrails.test.ts`
+and `src/components/SetupWizard/__tests__/SetupCompletionProActivation.test.tsx`
+files. Their 17 focused tests passed, and `git diff --check` passed.
 
 Repository governance passed: workflow trust validation and 48 trust tests;
 the canonical mutation registry/AI-tools governance test selection; all tests

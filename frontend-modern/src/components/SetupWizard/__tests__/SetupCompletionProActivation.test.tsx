@@ -96,9 +96,9 @@ describe('shouldShowSetupProActivationPointer', () => {
         commercialServicesEnabled: false,
       }),
     ).toBe(false);
-    expect(
-      shouldShowSetupProActivationPointer({ runtimeBuild: 'pro', licenseValid: false }),
-    ).toBe(false);
+    expect(shouldShowSetupProActivationPointer({ runtimeBuild: 'pro', licenseValid: false })).toBe(
+      false,
+    );
     expect(
       shouldShowSetupProActivationPointer({ runtimeBuild: 'community', licenseValid: false }),
     ).toBe(false);
