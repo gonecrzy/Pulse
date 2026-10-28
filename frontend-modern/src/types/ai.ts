@@ -13,6 +13,7 @@ export type AIProvider =
   | 'cerebras'
   | 'together'
   | 'fireworks'
+  | 'codex_lb_gateway'
   | 'codex-subscription'
   | 'claude-subscription';
 export type AuthMethod = 'api_key' | 'oauth';
@@ -109,6 +110,7 @@ export interface AISettings {
   cerebras_configured?: boolean; // true if Cerebras API key is set
   together_configured?: boolean; // true if Together AI API key is set
   fireworks_configured?: boolean; // true if Fireworks AI API key is set
+  codex_lb_gateway?: CodexLBGatewayStatus;
   codex_subscription_enabled?: boolean; // local Codex CLI signed in with ChatGPT
   claude_subscription_enabled?: boolean; // local Claude CLI signed in with a Claude plan
   ollama_configured: boolean; // true (always available for attempt)
@@ -249,6 +251,9 @@ export interface AISettingsUpdateRequest {
   cerebras_api_key?: string; // Set Cerebras API key
   together_api_key?: string; // Set Together AI API key
   fireworks_api_key?: string; // Set Fireworks AI API key
+  codex_lb_gateway_endpoint?: string;
+  codex_lb_gateway_api_key?: string;
+  codex_lb_gateway_allow_private_url?: boolean;
   ollama_username?: string;
   ollama_password?: string;
   clear_ollama_password?: boolean;
@@ -268,6 +273,7 @@ export interface AISettingsUpdateRequest {
   clear_cerebras_key?: boolean; // Clear Cerebras API key
   clear_together_key?: boolean; // Clear Together AI API key
   clear_fireworks_key?: boolean; // Clear Fireworks AI API key
+  clear_codex_lb_gateway_key?: boolean;
   clear_ollama_url?: boolean; // Clear Ollama URL
   remove_providers?: AIProvider[]; // Remove provider-owned credentials, endpoint, options, and model selections
 
@@ -279,6 +285,18 @@ export interface AISettingsUpdateRequest {
 
   // Infrastructure control settings
   control_level?: 'read_only' | 'controlled' | 'autonomous';
+}
+
+export interface CodexLBGatewayStatus {
+  capability_available: boolean;
+  endpoint?: string;
+  selected_model?: string;
+  credential_configured: boolean;
+  allow_private_url: boolean;
+  connectivity_status: string;
+  tool_calling_readiness: string;
+  streaming_readiness: string;
+  last_successful_qualification?: string;
 }
 
 export interface AITestResult {
@@ -316,6 +334,7 @@ export const PROVIDER_DESCRIPTIONS: Record<AIProvider, string> = {
   cerebras: 'Cerebras Inference models',
   together: 'Together AI hosted models',
   fireworks: 'Fireworks AI hosted models',
+  codex_lb_gateway: 'Sindri exclusive Codex-LB gateway',
   'codex-subscription': 'Models through a locally authenticated Codex CLI',
   'claude-subscription': 'Models through a locally authenticated Claude CLI',
 };

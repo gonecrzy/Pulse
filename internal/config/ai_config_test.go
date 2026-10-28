@@ -410,6 +410,7 @@ func TestAIProviderDefinitions_CanonicalDirectProviderRegistry(t *testing.T) {
 		AIProviderCerebras,
 		AIProviderTogether,
 		AIProviderFireworks,
+		AIProviderCodexLBGateway,
 		AIProviderCodexSubscription,
 		AIProviderClaudeSubscription,
 		AIProviderOllama,

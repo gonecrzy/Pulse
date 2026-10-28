@@ -50,7 +50,7 @@ const (
 )
 
 var registeredFeatures = []FeatureDefinition{
-	{ID: FeatureCodexLBGateway, Status: StatusExperimental, Implementation: "OpenAI-compatible Codex-LB provider enforcement"},
+	{ID: FeatureCodexLBGateway, Implemented: true, Status: StatusSupported, Implementation: "exclusive OpenAI-compatible Codex-LB provider enforcement"},
 	{ID: FeatureKomodoReadOnly, Implemented: true, Status: StatusSupported, Implementation: "read-only Komodo monitoring adapter"},
 	{ID: FeatureDeterministicTriage, Implemented: true, Status: StatusSupported, Implementation: "deterministic alert triage extensions"},
 	{ID: FeatureAIInvestigation, Implemented: true, Status: StatusSupported, Implementation: "Pulse chat investigation runner and findings store"},

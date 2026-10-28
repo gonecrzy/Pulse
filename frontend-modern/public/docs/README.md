@@ -62,6 +62,7 @@ integration against their own vCenter before production use.
 ## Pulse Intelligence
 
 - [Assistant, Patrol, and external-agent overview](AI.md)
+- [Configure the Sindri Codex-LB gateway](CODEX_LB_GATEWAY.md)
 - [Patrol modes and safety](AI_AUTONOMY.md)
 - [Assistant safety model](ASSISTANT_SAFETY.md)
 - [External agent HTTP and MCP substrate](AGENT_SUBSTRATE.md)

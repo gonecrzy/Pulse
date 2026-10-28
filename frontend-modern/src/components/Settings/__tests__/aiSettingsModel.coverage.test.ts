@@ -23,6 +23,7 @@ const ALL_PROVIDERS: AIProvider[] = [
   'cerebras',
   'together',
   'fireworks',
+  'codex_lb_gateway',
   'codex-subscription',
   'claude-subscription',
   'ollama',
@@ -137,15 +138,29 @@ describe('aiSettingsModel - isAIProviderConfigured', () => {
       cerebras: 'cerebras_configured',
       together: 'together_configured',
       fireworks: 'fireworks_configured',
+      codex_lb_gateway: 'codex_lb_gateway',
       'codex-subscription': 'codex_subscription_enabled',
       'claude-subscription': 'claude_subscription_enabled',
       ollama: 'ollama_configured',
     };
 
     for (const provider of ALL_PROVIDERS) {
-      const onlyThis = makeSettings({
-        [fieldByProvider[provider]]: true,
-      } as Partial<AISettings>);
+      const onlyThis = makeSettings(
+        provider === 'codex_lb_gateway'
+          ? {
+              codex_lb_gateway: {
+                capability_available: true,
+                endpoint: 'https://gateway.example/v1',
+                selected_model: 'model-v1',
+                credential_configured: true,
+                allow_private_url: false,
+                connectivity_status: 'ready',
+                tool_calling_readiness: 'ready',
+                streaming_readiness: 'ready',
+              },
+            }
+          : ({ [fieldByProvider[provider]]: true } as Partial<AISettings>),
+      );
 
       expect(isAIProviderConfigured(provider, onlyThis)).toBe(true);
       const other = provider === 'anthropic' ? 'openai' : 'anthropic';

@@ -12,6 +12,7 @@ export const AI_PROVIDER_DISPLAY_NAMES: Record<string, string> = {
   cerebras: 'Cerebras',
   together: 'Together AI',
   fireworks: 'Fireworks AI',
+  codex_lb_gateway: 'Codex-LB gateway',
   'codex-subscription': 'Codex subscription (local)',
   'claude-subscription': 'Claude subscription (local)',
   ollama: 'Ollama',

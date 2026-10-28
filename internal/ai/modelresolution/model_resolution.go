@@ -16,6 +16,9 @@ func ResolveConfiguredModel(ctx context.Context, cfg *config.AIConfig) (string, 
 	if cfg == nil {
 		return "", fmt.Errorf("Pulse Assistant config is nil")
 	}
+	if err := validateCodexLBGatewaySelection(cfg); err != nil {
+		return "", err
+	}
 
 	explicit := strings.TrimSpace(cfg.GetModel())
 	if explicit != "" {
@@ -39,6 +42,9 @@ func ResolveConfiguredModel(ctx context.Context, cfg *config.AIConfig) (string, 
 func ResolveConfiguredChatModel(ctx context.Context, cfg *config.AIConfig) (string, error) {
 	if cfg == nil {
 		return "", fmt.Errorf("Pulse Assistant config is nil")
+	}
+	if err := validateCodexLBGatewaySelection(cfg); err != nil {
+		return "", err
 	}
 
 	explicit := strings.TrimSpace(cfg.GetChatModel())
@@ -64,6 +70,9 @@ func ResolveConfiguredChatModel(ctx context.Context, cfg *config.AIConfig) (stri
 func ResolveConfiguredChatModelOffline(cfg *config.AIConfig) (string, error) {
 	if cfg == nil {
 		return "", fmt.Errorf("Pulse Assistant config is nil")
+	}
+	if err := validateCodexLBGatewaySelection(cfg); err != nil {
+		return "", err
 	}
 
 	explicit := strings.TrimSpace(cfg.GetChatModel())
@@ -99,6 +108,21 @@ func selectedModelProvider(cfg *config.AIConfig, model string) (string, error) {
 		return "", fmt.Errorf("%s provider is not configured for selected model route %q", provider, model)
 	}
 	return provider, nil
+}
+
+func validateCodexLBGatewaySelection(cfg *config.AIConfig) error {
+	enabled, err := cfg.CodexLBGatewayPolicyState()
+	if err != nil {
+		return fmt.Errorf("fork gateway capability policy is unavailable")
+	}
+	if !enabled {
+		return nil
+	}
+	provider, model := config.ParseModelString(cfg.GetModel())
+	if provider != config.AIProviderCodexLBGateway || strings.TrimSpace(model) == "" {
+		return fmt.Errorf("fork.codex_lb_gateway is enabled; configure an explicit Codex-LB gateway model")
+	}
+	return cfg.ValidateProviderRoute(provider, model)
 }
 
 func selectedModelProviderError(cfg *config.AIConfig, model string) error {
@@ -159,6 +183,9 @@ var gatewayEquivalentResolvers = []gatewayEquivalentResolver{
 // without encoding provider-specific fallback policy.
 func GatewayEquivalentChatModels(cfg *config.AIConfig, model string) []string {
 	if cfg == nil {
+		return nil
+	}
+	if gatewayOnly, err := cfg.CodexLBGatewayPolicyState(); err != nil || gatewayOnly {
 		return nil
 	}
 	routes := make([]string, 0, len(gatewayEquivalentResolvers))

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/rcourtman/pulse-go-rewrite/internal/agentcapabilities"
+	"github.com/rcourtman/pulse-go-rewrite/internal/forkfeatures"
 	"github.com/rcourtman/pulse-go-rewrite/internal/unifiedresources"
 )
 
@@ -38,25 +39,29 @@ type AIConfig struct {
 	CustomContext string `json:"custom_context"`         // user-provided context about their infrastructure
 
 	// Multi-provider credentials - each provider can be configured independently
-	AnthropicAPIKey           string `json:"anthropic_api_key,omitempty"`           // Anthropic API key
-	OpenAIAPIKey              string `json:"openai_api_key,omitempty"`              // OpenAI API key
-	OpenRouterAPIKey          string `json:"openrouter_api_key,omitempty"`          // OpenRouter API key
-	DeepSeekAPIKey            string `json:"deepseek_api_key,omitempty"`            // DeepSeek API key
-	GeminiAPIKey              string `json:"gemini_api_key,omitempty"`              // Google Gemini API key
-	ZaiAPIKey                 string `json:"zai_api_key,omitempty"`                 // Z.ai (Zhipu GLM) API key
-	ZaiBaseURL                string `json:"zai_base_url,omitempty"`                // Custom Z.ai OpenAI-compatible base URL (e.g. coding endpoint)
-	GroqAPIKey                string `json:"groq_api_key,omitempty"`                // Groq API key
-	MistralAPIKey             string `json:"mistral_api_key,omitempty"`             // Mistral API key
-	CerebrasAPIKey            string `json:"cerebras_api_key,omitempty"`            // Cerebras API key
-	TogetherAPIKey            string `json:"together_api_key,omitempty"`            // Together AI API key
-	FireworksAPIKey           string `json:"fireworks_api_key,omitempty"`           // Fireworks AI API key
-	CodexSubscriptionEnabled  bool   `json:"codex_subscription_enabled,omitempty"`  // Use the locally authenticated Codex CLI for Pulse model turns
-	ClaudeSubscriptionEnabled bool   `json:"claude_subscription_enabled,omitempty"` // Use the locally authenticated Claude CLI for Pulse model turns
-	OllamaBaseURL             string `json:"ollama_base_url,omitempty"`             // Ollama server URL (default: http://localhost:11434)
-	OllamaUsername            string `json:"ollama_username,omitempty"`             // Optional Basic Auth username for Ollama
-	OllamaPassword            string `json:"ollama_password,omitempty"`             // Optional Basic Auth password for Ollama
-	OllamaKeepAlive           string `json:"ollama_keep_alive"`                     // Ollama keep_alive value; empty uses the server default
-	OpenAIBaseURL             string `json:"openai_base_url,omitempty"`             // Custom OpenAI-compatible base URL (optional)
+	AnthropicAPIKey               string                `json:"anthropic_api_key,omitempty"`                  // Anthropic API key
+	OpenAIAPIKey                  string                `json:"openai_api_key,omitempty"`                     // OpenAI API key
+	OpenRouterAPIKey              string                `json:"openrouter_api_key,omitempty"`                 // OpenRouter API key
+	DeepSeekAPIKey                string                `json:"deepseek_api_key,omitempty"`                   // DeepSeek API key
+	GeminiAPIKey                  string                `json:"gemini_api_key,omitempty"`                     // Google Gemini API key
+	ZaiAPIKey                     string                `json:"zai_api_key,omitempty"`                        // Z.ai (Zhipu GLM) API key
+	ZaiBaseURL                    string                `json:"zai_base_url,omitempty"`                       // Custom Z.ai OpenAI-compatible base URL (e.g. coding endpoint)
+	GroqAPIKey                    string                `json:"groq_api_key,omitempty"`                       // Groq API key
+	MistralAPIKey                 string                `json:"mistral_api_key,omitempty"`                    // Mistral API key
+	CerebrasAPIKey                string                `json:"cerebras_api_key,omitempty"`                   // Cerebras API key
+	TogetherAPIKey                string                `json:"together_api_key,omitempty"`                   // Together AI API key
+	FireworksAPIKey               string                `json:"fireworks_api_key,omitempty"`                  // Fireworks AI API key
+	CodexLBGatewayEndpoint        string                `json:"codex_lb_gateway_endpoint,omitempty"`          // Dedicated Codex-LB OpenAI-compatible endpoint
+	CodexLBGatewayAPIKey          string                `json:"codex_lb_gateway_api_key,omitempty"`           // Gateway credential; encrypted with ai.enc
+	CodexLBGatewayAllowPrivateURL bool                  `json:"codex_lb_gateway_allow_private_url,omitempty"` // Explicitly permit private/loopback gateway destinations
+	CodexSubscriptionEnabled      bool                  `json:"codex_subscription_enabled,omitempty"`         // Use the locally authenticated Codex CLI for Pulse model turns
+	ClaudeSubscriptionEnabled     bool                  `json:"claude_subscription_enabled,omitempty"`        // Use the locally authenticated Claude CLI for Pulse model turns
+	OllamaBaseURL                 string                `json:"ollama_base_url,omitempty"`                    // Ollama server URL (default: http://localhost:11434)
+	OllamaUsername                string                `json:"ollama_username,omitempty"`                    // Optional Basic Auth username for Ollama
+	OllamaPassword                string                `json:"ollama_password,omitempty"`                    // Optional Basic Auth password for Ollama
+	OllamaKeepAlive               string                `json:"ollama_keep_alive"`                            // Ollama keep_alive value; empty uses the server default
+	OpenAIBaseURL                 string                `json:"openai_base_url,omitempty"`                    // Custom OpenAI-compatible base URL (optional)
+	forkProfileManager            *forkfeatures.Manager `json:"-"`
 
 	// Legacy Anthropic OAuth fields are retained only for cleanup/migration.
 	AuthMethod        AuthMethod `json:"auth_method,omitempty"`         // "api_key" or legacy "oauth"
@@ -143,6 +148,7 @@ const (
 	AIProviderCerebras           = "cerebras"
 	AIProviderTogether           = "together"
 	AIProviderFireworks          = "fireworks"
+	AIProviderCodexLBGateway     = "codex_lb_gateway"
 	AIProviderCodexSubscription  = "codex-subscription"
 	AIProviderClaudeSubscription = "claude-subscription"
 	AIProviderQuickstart         = "quickstart" // Retired Pulse-hosted proxy marker retained only for legacy config migration.
@@ -423,6 +429,8 @@ func (c *AIConfig) HasProvider(provider string) bool {
 	switch strings.ToLower(strings.TrimSpace(provider)) {
 	case AIProviderAnthropic:
 		return c.AnthropicAPIKey != ""
+	case AIProviderCodexLBGateway:
+		return strings.TrimSpace(c.CodexLBGatewayEndpoint) != "" && strings.TrimSpace(c.CodexLBGatewayAPIKey) != ""
 	case AIProviderOpenAI:
 		// A custom OpenAI-compatible endpoint may be intentionally keyless
 		// (for example llama.cpp, LocalAI, or LM Studio). The official OpenAI
@@ -506,6 +514,10 @@ func (c *AIConfig) RemoveProvider(provider string) error {
 	case AIProviderAnthropic:
 		c.AnthropicAPIKey = ""
 		c.ClearOAuthTokens()
+	case AIProviderCodexLBGateway:
+		c.CodexLBGatewayEndpoint = ""
+		c.CodexLBGatewayAPIKey = ""
+		c.CodexLBGatewayAllowPrivateURL = false
 	case AIProviderOpenAI:
 		c.OpenAIAPIKey = ""
 		c.OpenAIBaseURL = ""
@@ -583,6 +595,8 @@ func (c *AIConfig) GetAPIKeyForProvider(provider string) string {
 		if c.AnthropicAPIKey != "" {
 			return c.AnthropicAPIKey
 		}
+	case AIProviderCodexLBGateway:
+		return c.CodexLBGatewayAPIKey
 	case AIProviderOpenAI:
 		if c.OpenAIAPIKey != "" {
 			return c.OpenAIAPIKey
@@ -642,6 +656,10 @@ func (c *AIConfig) GetBaseURLForProvider(provider string) string {
 	case AIProviderZai:
 		if c != nil && c.ZaiBaseURL != "" {
 			return c.ZaiBaseURL
+		}
+	case AIProviderCodexLBGateway:
+		if c != nil && c.CodexLBGatewayEndpoint != "" {
+			return c.CodexLBGatewayEndpoint
 		}
 	}
 	if def, ok := LookupAIProviderDefinition(provider); ok {

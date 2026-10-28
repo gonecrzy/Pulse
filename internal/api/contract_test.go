@@ -2325,6 +2325,7 @@ func TestContract_AISettingsUpdateProviderResolutionJSONSnapshot(t *testing.T) {
 		"cerebras_configured":false,
 		"together_configured":false,
 		"fireworks_configured":false,
+		"codex_lb_gateway":{"capability_available":false,"credential_configured":false,"allow_private_url":false,"connectivity_status":"unavailable","tool_calling_readiness":"unavailable","streaming_readiness":"unavailable"},
 		"ollama_configured":true,
 		"ollama_base_url":%q,
 		"ollama_password_set":false,
@@ -2555,6 +2556,7 @@ func TestContract_AISettingsBYOKOverrideDoesNotExposeQuickstartInventoryJSONSnap
 		"cerebras_configured":false,
 		"together_configured":false,
 		"fireworks_configured":false,
+		"codex_lb_gateway":{"capability_available":false,"credential_configured":false,"allow_private_url":false,"connectivity_status":"unavailable","tool_calling_readiness":"unavailable","streaming_readiness":"unavailable"},
 		"ollama_configured":false,
 		"ollama_base_url":"http://localhost:11434",
 		"ollama_password_set":false,
@@ -2593,6 +2595,7 @@ func TestContract_AISettingsProviderRegistryMetadata(t *testing.T) {
 		"cerebras",
 		"together",
 		"fireworks",
+		"codex_lb_gateway",
 		"codex-subscription",
 		"claude-subscription",
 		"ollama",
@@ -2662,6 +2665,12 @@ func TestContract_AISettingsProviderRegistryMetadata(t *testing.T) {
 			defaultBaseURL:      "https://api.fireworks.ai/inference/v1",
 			modelsDevProviderID: "fireworks-ai",
 		},
+		"codex_lb_gateway": {
+			displayName:     "Codex-LB gateway",
+			apiKeyField:     "codex_lb_gateway_api_key",
+			clearKeyField:   "clear_codex_lb_gateway_key",
+			configuredField: "codex_lb_gateway_configured",
+		},
 	}
 	for id, want := range cases {
 		got, ok := byID[id]
@@ -2684,6 +2693,9 @@ func TestContract_AISettingsProviderRegistryMetadata(t *testing.T) {
 
 	if !byID["openai"].Configured {
 		t.Fatal("OpenAI provider metadata should reflect configured API key")
+	}
+	if !byID["codex_lb_gateway"].Gateway {
+		t.Fatal("Codex-LB provider metadata must identify the dedicated gateway route")
 	}
 	if byID["ollama"].RequiresAPIKey {
 		t.Fatal("Ollama provider metadata must not require an API key")
@@ -4799,6 +4811,7 @@ func TestContract_HostedAISettingsDoesNotAutoBootstrapQuickstartJSONSnapshot(t *
 		"cerebras_configured":false,
 		"together_configured":false,
 		"fireworks_configured":false,
+		"codex_lb_gateway":{"capability_available":false,"credential_configured":false,"allow_private_url":false,"connectivity_status":"unavailable","tool_calling_readiness":"unavailable","streaming_readiness":"unavailable"},
 		"ollama_configured":false,
 		"ollama_base_url":"http://localhost:11434",
 		"ollama_password_set":false,
@@ -4867,6 +4880,7 @@ func TestContract_AISettingsRetiredQuickstartAliasJSONSnapshot(t *testing.T) {
 		"cerebras_configured":false,
 		"together_configured":false,
 		"fireworks_configured":false,
+		"codex_lb_gateway":{"capability_available":false,"credential_configured":false,"allow_private_url":false,"connectivity_status":"unavailable","tool_calling_readiness":"unavailable","streaming_readiness":"unavailable"},
 		"ollama_configured":false,
 		"ollama_base_url":"http://localhost:11434",
 		"ollama_password_set":false,
@@ -4940,6 +4954,7 @@ func TestContract_AISettingsOllamaAuthJSONSnapshot(t *testing.T) {
 		"cerebras_configured":false,
 		"together_configured":false,
 		"fireworks_configured":false,
+		"codex_lb_gateway":{"capability_available":false,"credential_configured":false,"allow_private_url":false,"connectivity_status":"unavailable","tool_calling_readiness":"unavailable","streaming_readiness":"unavailable"},
 		"ollama_configured":true,
 		"ollama_base_url":"http://ollama.example:11434",
 		"ollama_username":"unai",
@@ -6210,6 +6225,7 @@ func TestContract_HostedTenantAISettingsDoesNotAutoBootstrapQuickstartJSONSnapsh
 		"cerebras_configured":false,
 		"together_configured":false,
 		"fireworks_configured":false,
+		"codex_lb_gateway":{"capability_available":false,"credential_configured":false,"allow_private_url":false,"connectivity_status":"unavailable","tool_calling_readiness":"unavailable","streaming_readiness":"unavailable"},
 		"ollama_configured":false,
 		"ollama_base_url":"http://localhost:11434",
 		"ollama_password_set":false,

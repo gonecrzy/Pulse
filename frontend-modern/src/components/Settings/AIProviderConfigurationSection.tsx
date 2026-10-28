@@ -272,6 +272,67 @@ export const AIProviderConfigurationSection: Component<AIProviderConfigurationSe
                       )}
                     </For>
 
+                    <Show when={config.provider === 'codex_lb_gateway'}>
+                      <label class="flex items-start gap-3 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-800 dark:bg-amber-950/20 dark:text-amber-100">
+                        <input
+                          type="checkbox"
+                          checked={props.form.codexLBGatewayAllowPrivateURL}
+                          onChange={(event) =>
+                            props.setForm(
+                              'codexLBGatewayAllowPrivateURL',
+                              event.currentTarget.checked,
+                            )
+                          }
+                          disabled={props.saving()}
+                          aria-label="Allow private Codex-LB gateway destinations"
+                          class="mt-0.5 h-4 w-4 rounded-sm border-border"
+                        />
+                        <span>
+                          Allow private network destinations over HTTPS and HTTP only for localhost
+                          or loopback/private IP literals. Use only for a trusted gateway
+                          deployment.
+                        </span>
+                      </label>
+                      <div class="rounded-md border border-border bg-surface p-3 text-xs">
+                        <p class="font-medium text-base-content">Gateway qualification</p>
+                        <Show
+                          when={props.settings()?.codex_lb_gateway}
+                          fallback={<p class="mt-1 text-muted">Status unavailable.</p>}
+                        >
+                          {(status) => (
+                            <div class="mt-1 space-y-1 text-muted">
+                              <p>
+                                Fork capability:{' '}
+                                {status().capability_available ? 'available' : 'unavailable'}
+                              </p>
+                              <p>Connectivity: {status().connectivity_status.replace(/_/g, ' ')}</p>
+                              <p>
+                                Tool calls: {status().tool_calling_readiness.replace(/_/g, ' ')}
+                              </p>
+                              <p>Streaming: {status().streaming_readiness.replace(/_/g, ' ')}</p>
+                              <Show when={status().selected_model}>
+                                <p>Selected model: {status().selected_model}</p>
+                              </Show>
+                              <Show when={status().last_successful_qualification}>
+                                <p>
+                                  Last qualified:{' '}
+                                  {new Date(
+                                    status().last_successful_qualification!,
+                                  ).toLocaleString()}
+                                </p>
+                              </Show>
+                              <p>
+                                Saved credential:{' '}
+                                {status().credential_configured
+                                  ? 'configured (value hidden)'
+                                  : 'not configured'}
+                              </p>
+                            </div>
+                          )}
+                        </Show>
+                      </div>
+                    </Show>
+
                     <Show when={config.provider === 'ollama'}>
                       <p class="text-xs text-muted">
                         {props.settings()?.ollama_password_set

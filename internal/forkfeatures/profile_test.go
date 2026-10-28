@@ -90,7 +90,7 @@ func TestManagerRejectsInvalidAndUnavailableProfileEntries(t *testing.T) {
 	for name, mutate := range map[string]func(*ForkProfile){
 		"version":      func(p *ForkProfile) { p.Version++ },
 		"unknown":      func(p *ForkProfile) { p.EnabledFeatures = []FeatureID{"fork.unknown"} },
-		"experimental": func(p *ForkProfile) { p.EnabledFeatures = []FeatureID{FeatureCodexLBGateway} },
+		"experimental": func(p *ForkProfile) { p.EnabledFeatures = []FeatureID{FeatureOperationalCases} },
 		"unavailable":  func(p *ForkProfile) { p.EnabledFeatures = []FeatureID{FeatureDiscordOps} },
 		"duplicate":    func(p *ForkProfile) { p.EnabledFeatures = []FeatureID{FeatureAIInvestigation, FeatureAIInvestigation} },
 	} {

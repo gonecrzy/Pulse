@@ -20,6 +20,9 @@ export type AIProviderCredentialsFormState = {
   togetherApiKey: string;
   fireworksApiKey: string;
   geminiApiKey: string;
+  codexLBGatewayEndpoint: string;
+  codexLBGatewayAPIKey: string;
+  codexLBGatewayAllowPrivateURL: boolean;
   ollamaBaseUrl: string;
   ollamaKeepAlive: string;
   ollamaUsername: string;
@@ -81,6 +84,7 @@ export const AI_PROVIDERS: AIProvider[] = [
   'cerebras',
   'together',
   'fireworks',
+  'codex_lb_gateway',
   'codex-subscription',
   'claude-subscription',
   'ollama',
@@ -98,12 +102,37 @@ export const AI_SETUP_PROVIDER_OPTIONS: SelectionCardOption<AIProvider>[] = [
   { value: 'cerebras', title: 'Cerebras', description: 'Inference' },
   { value: 'together', title: 'Together', description: 'Open models' },
   { value: 'fireworks', title: 'Fireworks', description: 'Open models' },
+  { value: 'codex_lb_gateway', title: 'Sindri Codex-LB gateway', description: 'Exclusive route' },
   { value: 'codex-subscription', title: 'Codex plan', description: 'Local login' },
   { value: 'claude-subscription', title: 'Claude plan', description: 'Local login' },
   { value: 'ollama', title: 'Ollama', description: 'Local' },
 ];
 
 export const AI_PROVIDER_CONFIGS: AIProviderConfig[] = [
+  {
+    provider: 'codex_lb_gateway',
+    title: 'Sindri Codex-LB gateway',
+    configuredLabel: 'Configured',
+    inputType: 'password',
+    inputField: 'codexLBGatewayAPIKey',
+    inputLabel: 'Gateway credential',
+    placeholder: 'Gateway API key',
+    configuredPlaceholder: '••••••••••• (configured)',
+    actionLinkLabel: 'Configuration guide →',
+    actionLinkHref: 'https://github.com/Soju06/codex-lb/blob/main/docs/client-setup.md',
+    helperText:
+      'Verify that this endpoint belongs to your Codex-LB deployment. OpenAI-compatible syntax alone does not identify it. When the fork capability is enabled, legacy provider settings remain stored but cannot serve inference.',
+    extraFields: [
+      {
+        label: 'Gateway endpoint',
+        inputField: 'codexLBGatewayEndpoint',
+        placeholder: 'https://codex-lb.example/v1',
+        type: 'url',
+        helperText: 'Pulse uses the gateway /models and /chat/completions endpoints.',
+      },
+    ],
+    clearTitle: 'Remove Codex-LB gateway settings',
+  },
   {
     provider: 'anthropic',
     title: 'Anthropic',
@@ -341,6 +370,7 @@ export const createInitialProviderHealth = (): Record<AIProvider, ProviderHealth
   cerebras: { status: 'not_configured', message: '' },
   together: { status: 'not_configured', message: '' },
   fireworks: { status: 'not_configured', message: '' },
+  codex_lb_gateway: { status: 'not_configured', message: '' },
   'codex-subscription': { status: 'not_configured', message: '' },
   'claude-subscription': { status: 'not_configured', message: '' },
   ollama: { status: 'not_configured', message: '' },
@@ -382,6 +412,10 @@ export function isAIProviderConfigured(
       return Boolean(settings.together_configured);
     case 'fireworks':
       return Boolean(settings.fireworks_configured);
+    case 'codex_lb_gateway':
+      return Boolean(
+        settings.codex_lb_gateway?.credential_configured && settings.codex_lb_gateway.endpoint,
+      );
     case 'codex-subscription':
       return Boolean(settings.codex_subscription_enabled);
     case 'claude-subscription':

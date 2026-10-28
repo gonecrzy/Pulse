@@ -285,7 +285,7 @@ Use incremental implementation on `feature/sindri-integration`, one reviewable p
 | 2C. Relationship hardening and live integration preparation | Reject unacknowledged same-provider identity collisions and unavailable link endpoints. Persist directed operator dependency/ownership/routing edges in the existing org resource store, preserve them across registry rebuilds and endpoint disappearance, and expose discovered-edge freshness. | Store/API/registry tests cover collision 409s, reasoned same-provider confirmation, legitimate cross-provider links, stable edge identity, endpoint rewrites, soft removal audit, stale discovered evidence, provider disappearance/recovery, org isolation, and availability-check coexistence. No live Komodo claim until the operator supplies a Core endpoint, actual version, and approved read-only credentials. |
 | 2D. Komodo live qualification | Run the opt-in harness with the approved protected credential and operator attestation. Verify actual Core v2 version, auth, effective scope, pagination, resource fields, parent references, stable IDs, and safe read-only operation. | Passed against Core `2.3.4` through the exact operator-provided test-only LAN HTTP endpoint. The API verified all four list methods and populated-resource base `Read`; the operator attested that effective specific permissions are absent. The certificate-trusted HTTPS production path remains a separate deployment prerequisite. |
 | 2E. Komodo monitoring integration and isolated image qualification | Connect Komodo connection health to the existing alert lifecycle, normalized provider health/incidents to canonical evaluation, alerts/recoveries to `NotificationManager`, sanitized status to existing UI, and safe read-only records to Patrol context. Use the existing explicit identity and dependency model. Build a source-SHA-tagged test image from the production Dockerfile and use a copied data directory; do not deploy it. | Fixture-backed integration and regression tests pass independently of AI. Live inventory and normalization qualification passed. The local runtime image was built and smoke-tested; isolated operator data acceptance and any copied-database schema/rollback exercise remain. Do not publish to stable/latest, use the live writable database, or deploy. |
-| Optional later. Codex-LB AI | Only if separately selected, constrain provider selection and every Patrol/investigation call to the gateway. | Provider/config/AI tests and isolated compatibility prove auth, timeout, malformed-response handling, redaction, and no fallback. AI unavailability must not interrupt Komodo polling, canonical alert evaluation, alerts, or notifications. |
+| 2L. Codex-LB gateway integration | Add exclusive Sindri inference routing through Pulse's OpenAI-compatible adapter. Enforce `fork.codex_lb_gateway` in provider construction and shared AI services, configure the gateway in existing protected AI settings, and qualify it through Patrol's existing readiness and preflight paths. | Mock-backed tests prove endpoint policy, authentication, model selection, streaming/tool-call parsing, bounded continuation, secret masking, no alternate-provider fallback, and deterministic monitoring continuity. Run the applicable full Go and frontend regression suites plus repository governance checks. Live gateway qualification remains opt-in and requires separately supplied protected credentials. |
 | 4. Deterministic triage | Add rules over Pulse alerts/resources, Komodo observations, topology, and metric freshness; Patrol may explain evidence but cannot supply authorization. | `go test ./internal/alerts ./internal/ai/correlation ./internal/ai` plus alert API tests. Replay ordered, duplicate, stale, contradictory, unknown, and recovery fixtures; decisions must be deterministic and unknown must not become healthy. |
 | 5. Canonical action controls and strict policy | Add Disable Automation and Total Emergency Stop at canonical admission; enforce exact allowlists, immutable identities, revisions, durable budgets/cooldowns/concurrency, freshness, actor bindings, audit, failure behavior, and post-action verification. | `go test ./internal/actionplanner ./internal/actionlifecycle ./internal/actionrunner ./internal/agentcapabilities` plus store/API tests. Matrix tests prove manual-vs-automated semantics, pending and in-flight behavior, authenticated administrator emergency-stop clearing, restart persistence, database fail-closed behavior, denied/stale/ambiguous/concurrent/expired requests never dispatch, one approval authorizes the full immutable plan by default, configured higher-risk step approvals work, approved work dispatches once, and uncertain outcomes reconcile without blind retry. |
 | 6. Long-term metrics | Configure retention/rollups against an explicit storage and freshness budget. Targets are 5-minute averages for 30 days, hourly averages for 365 days, and daily averages for 730 days, retaining existing short raw/minute tiers where appropriate. | `go test ./pkg/metrics ./pkg/licensing` plus API history tests and disposable load/restore qualification. Measure representative series cardinality, DB/WAL/index growth, query/write latency, recovery and backup headroom against an operator-approved finite budget. At quota, alert and make write gaps explicit; never silently truncate daily history. Destructive reductions require explicit operator confirmation and a verified recovery plan. |
@@ -402,6 +402,64 @@ that the profile was default-empty and that standalone telemetry was enabled by
 default. The audit remains the source-reference baseline; its historical
 licensing and gateway recommendations are not evidence that those later phases
 have been implemented.
+
+### Phase 2L — Codex-LB exclusive gateway integration
+
+**Status (2026-10-28):** Implemented locally on
+`feature/komodo-phase2-foundation`; focused and full verification passed. No live
+gateway request, push, merge, deployment, or image publication is part of this
+checkpoint. Setup and operator-trust guidance is in
+[`docs/CODEX_LB_GATEWAY.md`](../CODEX_LB_GATEWAY.md).
+
+- `fork.codex_lb_gateway` is now registered as a supported, disabled-by-default
+  local capability. Enabling it admits only the dedicated Codex-LB provider and
+  explicitly selected gateway models. The generic OpenAI-compatible constructor
+  cannot impersonate this provider; direct OpenAI, Claude, Ollama and subscription
+  routes fail provider admission while the capability is active. Legacy provider
+  settings remain encrypted and intact.
+- The endpoint, credential and private-network opt-in use the existing encrypted
+  AI settings file and authenticated settings API. The frontend receives endpoint,
+  selected model, configured-state and readiness evidence, never the stored key.
+  HTTPS is the default. Private-network and localhost routing requires explicit
+  opt-in, and metadata-service destinations remain denied at configuration and
+  request time.
+- Patrol readiness exercises the existing OpenAI-compatible Chat Completions
+  streaming, tool-call and multi-turn continuation path. The provider retains
+  existing usage accounting, timeout and circuit-breaker integration; stream
+  startup now also uses its single bounded retry for a transient 429. Gateway
+  errors do not select an alternate model/provider, and deterministic monitoring
+  remains active when AI is unavailable.
+- No second model client, investigation runner, scheduler, findings store or repair
+  engine was introduced. Existing Pulse commercial compatibility behavior,
+  authentication, tenant boundaries, approval checks and automatic-repair policy
+  remain separate from the fork capability.
+
+**Validation (2026-10-28):**
+
+- Focused gateway and policy Go tests passed: 20 top-level tests and 12 subtests
+  across 6 packages. The full `internal/ai/providers` package also passed after
+  its source-contract check was updated to require `ChatStream`'s selected-model
+  validation call. Focused command:
+  `go test ./internal/config ./internal/forkfeatures ./internal/ai/providers ./internal/ai/modelresolution ./internal/ai ./internal/api -run 'CodexLBGateway|TestContract_AISettings(UpdateProviderResolutionJSONSnapshot|BYOKOverrideDoesNotExposeQuickstartInventoryJSONSnapshot|ProviderRegistryMetadata|RetiredQuickstartAliasJSONSnapshot|OllamaAuthJSONSnapshot|HostedAISettingsDoesNotAutoBootstrapQuickstartJSONSnapshot|HostedTenantAISettingsDoesNotAutoBootstrapQuickstartJSONSnapshot)|TestForkFeatureHandlersRejectForgedAndStaleProfiles' -count=1`.
+- `go test -json ./... -count=1` passed: 20,780 top-level test events and 31,868
+  subtest events passed; 84 top-level and 29 subtest events skipped; zero failed.
+  All 160 packages with tests passed; 13 packages had no test files.
+- Frontend `node node_modules/vitest/vitest.mjs run` (from `frontend-modern`)
+  passed: 1,269 test files passed, 1 skipped; 22,193 tests passed, 3 skipped.
+  TypeScript checking (`node node_modules/typescript/lib/tsc.js --noEmit`), ESLint,
+  frontend audits, 48 workflow trust tests, 15 mutation registry tests, 31 repoctl
+  tests, one boundary regression test, and all six repository boundary enforcement
+  scripts passed.
+- Gateway qualification used local mock servers and fixtures only. No live
+  Codex-LB account or credential was configured or used.
+
+**Limits and follow-up:** The endpoint's identity is an administrator trust
+assertion; OpenAI-compatible syntax alone cannot attest that a service is Codex-LB.
+Pulse uses Chat Completions and does not preserve Codex-LB Responses API reasoning
+state. Unknown model IDs use Pulse's default context estimate and may lack dollar
+pricing metadata. A live test against the operator's pinned Codex-LB deployment,
+with separately supplied protected credentials and explicit authorization, is a
+separate qualification checkpoint.
 
 ## Git checkpoint discipline
 

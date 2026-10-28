@@ -1721,9 +1721,16 @@ func (s *Service) createPatrolProviderForModel(modelStr string) (providers.Strea
 	if providerName == config.AIProviderQuickstart {
 		return nil, fmt.Errorf("quickstart provider is retired; configure a provider API key or Ollama")
 	}
+	gatewayOnly, policyErr := cfg.CodexLBGatewayPolicyState()
+	if policyErr != nil {
+		return nil, fmt.Errorf("fork gateway capability policy is unavailable")
+	}
 
 	provider, err := providers.NewForModel(cfg, modelStr)
 	if err != nil {
+		if gatewayOnly {
+			return nil, err
+		}
 		if streaming, ok := defaultProvider.(providers.StreamingProvider); ok {
 			return streaming, nil
 		}
@@ -2119,12 +2126,19 @@ func (s *Service) Execute(ctx context.Context, req ExecuteRequest) (*ExecuteResp
 	// Determine the model to use for this request
 	modelString := s.getModelForRequest(req)
 	requestSanitizer := s.requestSanitizerForModel(modelString)
+	gatewayOnly, policyErr := cfg.CodexLBGatewayPolicyState()
+	if policyErr != nil {
+		return nil, fmt.Errorf("fork gateway capability policy is unavailable")
+	}
 
 	// Create a provider for this specific model (supports multi-provider switching)
 	provider, err := providers.NewForModel(cfg, modelString)
 	if err != nil {
 		// Fall back to default provider if model-specific provider can't be created
 		log.Debug().Err(err).Str("model", modelString).Msg("could not create provider for model, using default")
+		if gatewayOnly {
+			return nil, err
+		}
 		provider = defaultProvider
 	}
 
@@ -2340,12 +2354,19 @@ func (s *Service) ExecuteStream(ctx context.Context, req ExecuteRequest, callbac
 	// Determine the model to use for this request
 	modelString := s.getModelForRequest(req)
 	requestSanitizer := s.requestSanitizerForModel(modelString)
+	gatewayOnly, policyErr := cfg.CodexLBGatewayPolicyState()
+	if policyErr != nil {
+		return nil, fmt.Errorf("fork gateway capability policy is unavailable")
+	}
 
 	// Create a provider for this specific model (supports multi-provider switching)
 	provider, err := providers.NewForModel(cfg, modelString)
 	if err != nil {
 		// Fall back to default provider if model-specific provider can't be created
 		log.Debug().Err(err).Str("model", modelString).Msg("could not create provider for model, using default")
+		if gatewayOnly {
+			return nil, err
+		}
 		provider = defaultProvider
 	}
 
@@ -4346,11 +4367,15 @@ func (s *Service) TestConnection(ctx context.Context) error {
 	if cfg == nil || !cfg.IsConfigured() {
 		return fmt.Errorf("no provider configured")
 	}
+	gatewayOnly, policyErr := cfg.CodexLBGatewayPolicyState()
+	if policyErr != nil {
+		return fmt.Errorf("fork gateway capability policy is unavailable")
+	}
 
 	// Try to create a provider for the current default model
 	selectedModel, err := ResolveConfiguredModel(ctx, cfg)
 	if err != nil {
-		if defaultProvider != nil {
+		if defaultProvider != nil && !gatewayOnly {
 			return defaultProvider.TestConnection(ctx)
 		}
 		return err
@@ -4359,7 +4384,7 @@ func (s *Service) TestConnection(ctx context.Context) error {
 	if err != nil {
 		// Fall back to default provider or NewFromConfig
 		log.Debug().Err(err).Str("model", selectedModel).Msg("could not create provider for model, using fallback")
-		if defaultProvider != nil {
+		if defaultProvider != nil && !gatewayOnly {
 			provider = defaultProvider
 		} else {
 			return fmt.Errorf("failed to create fallback AI provider: %w", err)
@@ -4391,6 +4416,10 @@ func (s *Service) ListModelsWithCache(ctx context.Context) ([]providers.ModelInf
 	if cfg == nil {
 		return nil, false, fmt.Errorf("Pulse Assistant not configured")
 	}
+	gatewayOnly, policyErr := cfg.CodexLBGatewayPolicyState()
+	if policyErr != nil {
+		return nil, false, fmt.Errorf("fork gateway capability policy is unavailable")
+	}
 
 	cacheKey := buildModelsCacheKey(cfg)
 
@@ -4403,6 +4432,9 @@ func (s *Service) ListModelsWithCache(ctx context.Context) ([]providers.ModelInf
 	s.modelsCache.mu.Unlock()
 
 	providersList := cfg.GetConfiguredProviders()
+	if gatewayOnly {
+		providersList = []string{config.AIProviderCodexLBGateway}
+	}
 
 	allCached := true
 
@@ -4556,6 +4588,17 @@ func buildModelsCacheKey(cfg *config.AIConfig) string {
 
 	b.WriteString("|openai_base=")
 	b.WriteString(cfg.OpenAIBaseURL)
+	b.WriteString("|codex_lb_base=")
+	b.WriteString(cfg.CodexLBGatewayEndpoint)
+	b.WriteString("|codex_lb_private=")
+	b.WriteString(strconv.FormatBool(cfg.CodexLBGatewayAllowPrivateURL))
+	if gatewayOnly, err := cfg.CodexLBGatewayPolicyState(); err != nil {
+		b.WriteString("|codex_lb_policy=unavailable")
+	} else if gatewayOnly {
+		b.WriteString("|codex_lb_policy=exclusive")
+	} else {
+		b.WriteString("|codex_lb_policy=off")
+	}
 	b.WriteString("|ollama_base=")
 	b.WriteString(cfg.OllamaBaseURL)
 	b.WriteString("|ollama_auth=")

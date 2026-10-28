@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"sort"
@@ -14,7 +15,9 @@ import (
 	"time"
 
 	"github.com/rcourtman/pulse-go-rewrite/internal/agentcapabilities"
+	"github.com/rcourtman/pulse-go-rewrite/internal/config"
 	"github.com/rcourtman/pulse-go-rewrite/internal/securityutil"
+	publicsecurityutil "github.com/rcourtman/pulse-go-rewrite/pkg/securityutil"
 	"github.com/rs/zerolog/log"
 )
 
@@ -38,12 +41,14 @@ const (
 // OpenAIClient implements the Provider interface for OpenAI's API
 // Also works with OpenAI-compatible APIs like DeepSeek
 type OpenAIClient struct {
-	providerName string
-	apiKey       string
-	model        string
-	baseURL      string
-	client       *http.Client
-	streamClient *http.Client
+	providerName        string
+	apiKey              string
+	model               string
+	baseURL             string
+	strictModel         bool
+	gatewayRouteAllowed bool
+	client              *http.Client
+	streamClient        *http.Client
 	// completionBudgetLearned records that this endpoint rejected max_tokens
 	// and asked for max_completion_tokens, so every later request sends the
 	// budget in that field without paying another round trip (#1837).
@@ -105,13 +110,81 @@ func NewOpenAICompatibleClient(providerName, apiKey, model, baseURL string, time
 }
 
 func newOpenAICompatibleHTTPClient(timeout time.Duration, streaming bool) *http.Client {
-	options := openAICompatibleOutboundHTTPOptions
+	return newOpenAICompatibleHTTPClientWithOptions(timeout, streaming, openAICompatibleOutboundHTTPOptions)
+}
+
+func newOpenAICompatibleHTTPClientWithOptions(timeout time.Duration, streaming bool, options securityutil.RestrictedOutboundHTTPOptions) *http.Client {
 	clientTimeout := timeout
 	if streaming {
 		clientTimeout = 0
 		options.ResponseHeaderTimeout = timeout
 	}
 	return securityutil.NewRestrictedOutboundHTTPClient(clientTimeout, options)
+}
+
+// newCodexLBGatewayClient reuses the OpenAI-compatible transport while binding
+// requests to the separately configured gateway endpoint and selected model.
+func newCodexLBGatewayClient(apiKey, model, baseURL string, allowPrivate bool, timeout time.Duration) *OpenAIClient {
+	client := NewOpenAICompatibleClient("codex_lb_gateway", apiKey, model, baseURL, timeout)
+	options := securityutil.RestrictedOutboundHTTPOptions{
+		AllowedSchemes: []string{"https"},
+		ResolveIPAddrs: resolveCodexLBGatewayOutboundIPs,
+	}
+	if allowPrivate {
+		options.AllowedSchemes = []string{"http", "https"}
+		options.AllowPrivateIPs = true
+		options.AllowLoopback = true
+	}
+	client.client = newOpenAICompatibleHTTPClientWithOptions(timeout, false, options)
+	client.streamClient = newOpenAICompatibleHTTPClientWithOptions(timeout, true, options)
+	client.strictModel = true
+	client.gatewayRouteAllowed = true
+	return client
+}
+
+func resolveCodexLBGatewayOutboundIPs(ctx context.Context, host string) ([]net.IPAddr, error) {
+	addresses, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+	if err != nil {
+		return nil, err
+	}
+	for _, address := range addresses {
+		candidates := append([]net.IP{address.IP}, publicsecurityutil.EmbeddedIPv4Candidates(address.IP)...)
+		for _, ip := range candidates {
+			if ip.Equal(net.ParseIP("100.100.100.200")) ||
+				ip.Equal(net.ParseIP("168.63.129.16")) ||
+				ip.Equal(net.ParseIP("fd00:ec2::254")) {
+				return nil, fmt.Errorf("metadata service address is not allowed")
+			}
+		}
+	}
+	return addresses, nil
+}
+
+func (c *OpenAIClient) validateGatewayConstruction() error {
+	if c != nil && c.Name() == config.AIProviderCodexLBGateway && !c.gatewayRouteAllowed {
+		return fmt.Errorf("Codex-LB clients must be constructed by the policy-checked provider factory")
+	}
+	return nil
+}
+
+func (c *OpenAIClient) requestModel(requested string) (string, error) {
+	requested = strings.TrimSpace(requested)
+	if requested != "" {
+		requested = stripOpenAICompatibleProviderPrefix(c.Name(), requested)
+	}
+	if c.strictModel {
+		if strings.TrimSpace(c.model) == "" {
+			return "", fmt.Errorf("Codex-LB gateway model is not selected")
+		}
+		if requested != "" && requested != c.model {
+			return "", fmt.Errorf("Codex-LB gateway model %q does not match selected model", requested)
+		}
+		return c.model, nil
+	}
+	if requested == "" {
+		requested = c.model
+	}
+	return requested, nil
 }
 
 func normalizeOpenAICompatibleChatURL(baseURL string) string {
@@ -233,7 +306,8 @@ func isRetryableOpenAIStreamStartupError(err error) bool {
 }
 
 func isRetryableOpenAIStreamStatus(statusCode int) bool {
-	return statusCode == http.StatusBadGateway ||
+	return statusCode == http.StatusTooManyRequests ||
+		statusCode == http.StatusBadGateway ||
 		statusCode == http.StatusServiceUnavailable ||
 		statusCode == http.StatusGatewayTimeout
 }
@@ -461,6 +535,13 @@ func (c *OpenAIClient) applyAuthorization(req *http.Request) {
 	}
 }
 
+func (c *OpenAIClient) redactProviderError(message string) string {
+	if c == nil || c.Name() != config.AIProviderCodexLBGateway || strings.TrimSpace(c.apiKey) == "" {
+		return message
+	}
+	return strings.ReplaceAll(message, c.apiKey, "[REDACTED]")
+}
+
 func (c *OpenAIClient) requestMaxTokens(req ChatRequest) int {
 	if req.MaxTokens > 0 {
 		return req.MaxTokens
@@ -611,17 +692,18 @@ func convertMessagesToOpenAI(req ChatRequest, includeReasoningContent bool) ([]o
 
 // Chat sends a chat request to the OpenAI API
 func (c *OpenAIClient) Chat(ctx context.Context, req ChatRequest) (*ChatResponse, error) {
+	if err := c.validateGatewayConstruction(); err != nil {
+		return nil, err
+	}
 	// Convert messages to OpenAI format
 	messages, err := convertMessagesToOpenAI(req, c.shouldSendReasoningContent())
 	if err != nil {
 		return nil, err
 	}
 
-	// Use provided model or fall back to client default
-	model := req.Model
-	model = stripOpenAICompatibleProviderPrefix(c.Name(), model)
-	if model == "" {
-		model = c.model
+	model, err := c.requestModel(req.Model)
+	if err != nil {
+		return nil, err
 	}
 
 	// Debug log to trace model issues
@@ -753,7 +835,7 @@ func (c *OpenAIClient) Chat(ctx context.Context, req ChatRequest) (*ChatResponse
 			if err := json.Unmarshal(respBody, &errResp); err == nil && errResp.Error.Message != "" {
 				errMsg = errResp.Error.Message
 			}
-			errMsg = appendRateLimitInfo(errMsg, resp)
+			errMsg = c.redactProviderError(appendRateLimitInfo(errMsg, resp))
 			lastErr = fmt.Errorf("API error (%d): %s", resp.StatusCode, errMsg)
 			continue
 		}
@@ -765,7 +847,7 @@ func (c *OpenAIClient) Chat(ctx context.Context, req ChatRequest) (*ChatResponse
 			if err := json.Unmarshal(respBody, &errResp); err == nil && errResp.Error.Message != "" {
 				errMsg = errResp.Error.Message
 			}
-			errMsg = appendRateLimitInfo(errMsg, resp)
+			errMsg = c.redactProviderError(appendRateLimitInfo(errMsg, resp))
 			if !budgetSwitched && openaiReq.MaxTokens > 0 && openAIRejectsMaxTokens(resp.StatusCode, errMsg) {
 				// The endpoint named the field it wants. Re-send once in that
 				// form and remember it; these models also refuse a non-default
@@ -844,7 +926,7 @@ func (c *OpenAIClient) testOpenRouterKey(ctx context.Context) error {
 		if err := json.Unmarshal(respBody, &errResp); err == nil && errResp.Error.Message != "" {
 			errMsg = errResp.Error.Message
 		}
-		errMsg = appendRateLimitInfo(errMsg, resp)
+		errMsg = c.redactProviderError(appendRateLimitInfo(errMsg, resp))
 		return fmt.Errorf("API error (%d): %s", resp.StatusCode, errMsg)
 	}
 	return nil
@@ -1025,16 +1107,18 @@ func normalizeOpenAIStreamStopReason(finishReason string, toolCalls []ToolCall) 
 
 // ChatStream sends a chat request and streams the response via callback
 func (c *OpenAIClient) ChatStream(ctx context.Context, req ChatRequest, callback StreamCallback) error {
+	if err := c.validateGatewayConstruction(); err != nil {
+		return err
+	}
 	// Convert messages to OpenAI format (same as Chat)
 	messages, err := convertMessagesToOpenAI(req, c.shouldSendReasoningContent())
 	if err != nil {
 		return err
 	}
 
-	model := req.Model
-	model = stripOpenAICompatibleProviderPrefix(c.Name(), model)
-	if model == "" {
-		model = c.model
+	model, err := c.requestModel(req.Model)
+	if err != nil {
+		return err
 	}
 
 	openaiReq := openaiStreamRequest{
@@ -1163,7 +1247,7 @@ func (c *OpenAIClient) ChatStream(ctx context.Context, req ChatRequest, callback
 		if err := json.Unmarshal(respBody, &errResp); err == nil && errResp.Error.Message != "" {
 			errMsg = errResp.Error.Message
 		}
-		errMsg = appendRateLimitInfo(errMsg, resp)
+		errMsg = c.redactProviderError(appendRateLimitInfo(errMsg, resp))
 		lastErr = fmt.Errorf("API error (%d): %s", resp.StatusCode, errMsg)
 		if isRetryableOpenAIStreamStatus(resp.StatusCode) {
 			continue
@@ -1425,6 +1509,9 @@ func (c *OpenAIClient) ChatStream(ctx context.Context, req ChatRequest, callback
 
 // ListModels fetches available models from the OpenAI API
 func (c *OpenAIClient) ListModels(ctx context.Context) ([]ModelInfo, error) {
+	if err := c.validateGatewayConstruction(); err != nil {
+		return nil, err
+	}
 	modelsURL := c.modelsEndpoint()
 	req, err := http.NewRequestWithContext(ctx, "GET", modelsURL, nil)
 	if err != nil {
@@ -1445,7 +1532,7 @@ func (c *OpenAIClient) ListModels(ctx context.Context) ([]ModelInfo, error) {
 		if readErr != nil {
 			return nil, fmt.Errorf("failed to read response: %w", readErr)
 		}
-		errMsg := appendRateLimitInfo(string(body), resp)
+		errMsg := c.redactProviderError(appendRateLimitInfo(string(body), resp))
 		return nil, fmt.Errorf("API error (%d): %s", resp.StatusCode, errMsg)
 	}
 	if err := limitProviderResponseBody(resp); err != nil {

@@ -166,9 +166,9 @@ func TestProviderContracts_OpenAIStreamingUsesSharedMessageProjection(t *testing
 		t.Fatal("missing OpenAI ChatStream")
 	}
 	streamText := text[streamStart:]
-	modelStart := strings.Index(streamText, "model := req.Model")
+	modelStart := strings.Index(streamText, "model, err := c.requestModel(req.Model)")
 	if modelStart < 0 {
-		t.Fatal("missing OpenAI ChatStream model setup")
+		t.Fatal("missing OpenAI ChatStream selected-model validation")
 	}
 	streamProjectionText := streamText[:modelStart]
 	for _, forbidden := range []string{

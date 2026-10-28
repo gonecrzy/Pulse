@@ -8,6 +8,7 @@ import (
 	"sort"
 	"sync"
 
+	"github.com/rcourtman/pulse-go-rewrite/internal/forkfeatures"
 	"github.com/rcourtman/pulse-go-rewrite/internal/models"
 	"github.com/rcourtman/pulse-go-rewrite/internal/securityutil"
 	"github.com/rs/zerolog/log"
@@ -18,9 +19,10 @@ var orgIDPattern = regexp.MustCompile(`^[A-Za-z0-9._-]{1,64}$`)
 // MultiTenantPersistence manages a collection of TenantPersistence instances,
 // one for each organization.
 type MultiTenantPersistence struct {
-	baseDataDir string
-	mu          sync.RWMutex
-	tenants     map[string]*ConfigPersistence
+	baseDataDir        string
+	mu                 sync.RWMutex
+	tenants            map[string]*ConfigPersistence
+	forkProfileManager *forkfeatures.Manager
 }
 
 func resolveMultiTenantBaseDataDir(baseDataDir string) (string, error) {
@@ -125,9 +127,25 @@ func (mtp *MultiTenantPersistence) GetPersistence(orgID string) (*ConfigPersiste
 	if err := cp.EnsureConfigDir(); err != nil {
 		return nil, fmt.Errorf("ensure config directory for org %s: %w", orgID, err)
 	}
+	cp.SetForkProfileManager(mtp.forkProfileManager)
 
 	mtp.tenants[orgID] = cp
 	return cp, nil
+}
+
+// SetForkProfileManager applies the installation-wide capability manager to
+// existing and future tenant config stores. Gateway endpoint and credential
+// values remain isolated in each tenant's encrypted AI config.
+func (mtp *MultiTenantPersistence) SetForkProfileManager(manager *forkfeatures.Manager) {
+	if mtp == nil {
+		return
+	}
+	mtp.mu.Lock()
+	defer mtp.mu.Unlock()
+	mtp.forkProfileManager = manager
+	for _, persistence := range mtp.tenants {
+		persistence.SetForkProfileManager(manager)
+	}
 }
 
 // OrgExists checks if an organization exists (directory exists) without creating it.

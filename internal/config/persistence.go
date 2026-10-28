@@ -63,6 +63,7 @@ type ConfigPersistence struct {
 	forkProfileFile            string
 	crypto                     *crypto.CryptoManager
 	fs                         FileSystem
+	forkProfileManager         *forkfeatures.Manager
 
 	// Lazy loaded metadata stores
 	guestMetadataStore  *GuestMetadataStore
@@ -2295,7 +2296,7 @@ func (c *ConfigPersistence) LoadAIConfig() (*AIConfig, error) {
 	if err != nil {
 		if os.IsNotExist(err) {
 			// Return default config if file doesn't exist
-			return NewDefaultAIConfig(), nil
+			return c.attachForkProfileManager(NewDefaultAIConfig()), nil
 		}
 		return nil, err
 	}
@@ -2384,7 +2385,26 @@ func (c *ConfigPersistence) LoadAIConfig() (*AIConfig, error) {
 	}
 
 	log.Info().Str("file", c.aiFile).Bool("enabled", settings.Enabled).Bool("patrol_enabled", settings.PatrolEnabled).Bool("alert_triggered_analysis", settings.AlertTriggeredAnalysis).Msg("AI configuration loaded")
-	return settings, nil
+	return c.attachForkProfileManager(settings), nil
+}
+
+// SetForkProfileManager wires the installation-wide fork capability manager
+// into future AI config loads. It is intentionally runtime-only and never
+// serialized with tenant AI settings.
+func (c *ConfigPersistence) SetForkProfileManager(manager *forkfeatures.Manager) {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	c.forkProfileManager = manager
+	c.mu.Unlock()
+}
+
+func (c *ConfigPersistence) attachForkProfileManager(settings *AIConfig) *AIConfig {
+	if settings != nil {
+		settings.SetForkProfileManager(c.forkProfileManager)
+	}
+	return settings
 }
 
 // HasAIConfig reports whether ai.enc exists on disk, which distinguishes

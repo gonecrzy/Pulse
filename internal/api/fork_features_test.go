@@ -18,7 +18,7 @@ func TestForkFeatureHandlersRejectForgedAndStaleProfiles(t *testing.T) {
 	handlers := NewForkFeatureHandlers(manager)
 
 	for _, body := range []string{
-		`{"version":1,"expected_revision":1,"enabled_features":["fork.codex_lb_gateway"]}`,
+		`{"version":1,"expected_revision":1,"enabled_features":["fork.long_term_metrics"]}`,
 		`{"version":2,"expected_revision":1,"enabled_features":["fork.ai_investigation","fork.ai_investigation"]}`,
 		`{"version":1,"expected_revision":1,"enabled_features":[],"commercial_entitlements":["ai_autofix"]}`,
 	} {

@@ -37,6 +37,9 @@ func NewForProvider(cfg *config.AIConfig, provider, model string) (Provider, err
 	// Get the configured timeout
 	timeout := cfg.GetRequestTimeout()
 	provider = strings.TrimSpace(provider)
+	if err := cfg.ValidateProviderRoute(provider, model); err != nil {
+		return nil, err
+	}
 
 	if config.IsOpenAICompatibleProvider(provider) {
 		apiKey := cfg.GetAPIKeyForProvider(provider)
@@ -44,6 +47,9 @@ func NewForProvider(cfg *config.AIConfig, provider, model string) (Provider, err
 			return nil, fmt.Errorf("%s API key not configured", config.AIProviderDisplayName(provider))
 		}
 		baseURL := cfg.GetBaseURLForProvider(provider)
+		if provider == config.AIProviderCodexLBGateway {
+			return newCodexLBGatewayClient(apiKey, model, baseURL, cfg.CodexLBGatewayAllowPrivateURL, timeout), nil
+		}
 		return NewOpenAICompatibleClient(provider, apiKey, model, baseURL, timeout), nil
 	}
 

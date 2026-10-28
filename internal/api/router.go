@@ -267,6 +267,8 @@ func NewRouter(cfg *config.Config, monitor *monitoring.Monitor, mtMonitor *monit
 		startedPatrolOrgs:               make(map[string]bool),
 	}
 	r.forkProfileManager = forkfeatures.NewManager(r.persistence)
+	r.persistence.SetForkProfileManager(r.forkProfileManager)
+	r.multiTenant.SetForkProfileManager(r.forkProfileManager)
 	r.forkAccess = forkfeatures.AccessResolver{
 		Fork: r.forkProfileManager,
 	}

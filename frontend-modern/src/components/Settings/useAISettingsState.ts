@@ -68,6 +68,11 @@ const AI_SETTINGS_PROVIDER_PAYLOAD_FIELDS: Record<AIProvider, string[]> = {
   cerebras: ['cerebras_api_key'],
   together: ['together_api_key'],
   fireworks: ['fireworks_api_key'],
+  codex_lb_gateway: [
+    'codex_lb_gateway_endpoint',
+    'codex_lb_gateway_api_key',
+    'codex_lb_gateway_allow_private_url',
+  ],
   gemini: ['gemini_api_key'],
   ollama: [
     'ollama_base_url',
@@ -106,6 +111,7 @@ const providerPayloadEntries = (payload: Record<string, unknown>): string[] =>
     AI_SETTINGS_PROVIDER_PAYLOAD_FIELDS[provider].some(
       (field) =>
         payload[field] === true ||
+        (field === 'codex_lb_gateway_allow_private_url' && typeof payload[field] === 'boolean') ||
         (typeof payload[field] === 'string' && String(payload[field]).trim().length > 0),
     ),
   );
@@ -388,6 +394,9 @@ export const useAISettingsState = (options: AISettingsStateOptions = {}) => {
     togetherApiKey: '',
     fireworksApiKey: '',
     geminiApiKey: '',
+    codexLBGatewayEndpoint: '',
+    codexLBGatewayAPIKey: '',
+    codexLBGatewayAllowPrivateURL: false,
     ollamaBaseUrl: 'http://localhost:11434',
     ollamaKeepAlive: '',
     ollamaUsername: '',
@@ -429,6 +438,7 @@ export const useAISettingsState = (options: AISettingsStateOptions = {}) => {
         current.cerebras_configured ||
         current.together_configured ||
         current.fireworks_configured ||
+        Boolean(current.codex_lb_gateway?.credential_configured) ||
         current.gemini_configured ||
         current.codex_subscription_enabled ||
         current.claude_subscription_enabled ||
@@ -480,6 +490,9 @@ export const useAISettingsState = (options: AISettingsStateOptions = {}) => {
         togetherApiKey: '',
         fireworksApiKey: '',
         geminiApiKey: '',
+        codexLBGatewayEndpoint: '',
+        codexLBGatewayAPIKey: '',
+        codexLBGatewayAllowPrivateURL: false,
         ollamaBaseUrl: 'http://localhost:11434',
         ollamaKeepAlive: '',
         ollamaUsername: '',
@@ -525,6 +538,9 @@ export const useAISettingsState = (options: AISettingsStateOptions = {}) => {
       togetherApiKey: '',
       fireworksApiKey: '',
       geminiApiKey: '',
+      codexLBGatewayEndpoint: data.codex_lb_gateway?.endpoint || '',
+      codexLBGatewayAPIKey: '',
+      codexLBGatewayAllowPrivateURL: Boolean(data.codex_lb_gateway?.allow_private_url),
       ollamaBaseUrl: data.ollama_base_url || 'http://localhost:11434',
       ollamaKeepAlive: data.ollama_keep_alive ?? '',
       ollamaUsername: data.ollama_username ?? '',
@@ -553,6 +569,7 @@ export const useAISettingsState = (options: AISettingsStateOptions = {}) => {
     if (data.cerebras_configured) configured.add('cerebras');
     if (data.together_configured) configured.add('together');
     if (data.fireworks_configured) configured.add('fireworks');
+    if (data.codex_lb_gateway?.credential_configured) configured.add('codex_lb_gateway');
     if (data.codex_subscription_enabled) configured.add('codex-subscription');
     if (data.claude_subscription_enabled) configured.add('claude-subscription');
     if (data.ollama_configured) configured.add('ollama');
@@ -1049,6 +1066,18 @@ export const useAISettingsState = (options: AISettingsStateOptions = {}) => {
       }
       if (form.fireworksApiKey.trim()) {
         payload.fireworks_api_key = form.fireworksApiKey.trim();
+      }
+      if (form.codexLBGatewayEndpoint.trim() !== (settings()?.codex_lb_gateway?.endpoint || '')) {
+        payload.codex_lb_gateway_endpoint = form.codexLBGatewayEndpoint.trim();
+      }
+      if (form.codexLBGatewayAPIKey.trim()) {
+        payload.codex_lb_gateway_api_key = form.codexLBGatewayAPIKey.trim();
+      }
+      if (
+        form.codexLBGatewayAllowPrivateURL !==
+        Boolean(settings()?.codex_lb_gateway?.allow_private_url)
+      ) {
+        payload.codex_lb_gateway_allow_private_url = form.codexLBGatewayAllowPrivateURL;
       }
       if (form.geminiApiKey.trim()) {
         payload.gemini_api_key = form.geminiApiKey.trim();

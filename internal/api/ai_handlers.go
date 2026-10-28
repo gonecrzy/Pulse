@@ -1706,6 +1706,9 @@ func aiSettingsUpdateTouchesProviderConfig(req AISettingsUpdateRequest) bool {
 		req.TogetherAPIKey != nil ||
 		req.FireworksAPIKey != nil ||
 		req.GeminiAPIKey != nil ||
+		req.CodexLBGatewayEndpoint != nil ||
+		req.CodexLBGatewayAPIKey != nil ||
+		req.CodexLBGatewayAllowPrivateURL != nil ||
 		req.OllamaBaseURL != nil ||
 		req.OllamaUsername != nil ||
 		req.OllamaPassword != nil ||
@@ -1722,6 +1725,7 @@ func aiSettingsUpdateTouchesProviderConfig(req AISettingsUpdateRequest) bool {
 		req.ClearCerebrasKey != nil ||
 		req.ClearTogetherKey != nil ||
 		req.ClearFireworksKey != nil ||
+		req.ClearCodexLBGatewayKey != nil ||
 		req.ClearGeminiKey != nil ||
 		req.ClearOllamaURL != nil ||
 		req.ClearOllamaUsername != nil ||
@@ -1771,6 +1775,11 @@ func aiSettingsUpdateRequiresPatrolPreflight(oldCfg, newCfg *config.AIConfig) bo
 	}
 	if provider == config.AIProviderCodexSubscription {
 		return oldCfg.CodexSubscriptionEnabled != newCfg.CodexSubscriptionEnabled
+	}
+	if provider == config.AIProviderCodexLBGateway {
+		return oldCfg.CodexLBGatewayEndpoint != newCfg.CodexLBGatewayEndpoint ||
+			oldCfg.CodexLBGatewayAPIKey != newCfg.CodexLBGatewayAPIKey ||
+			oldCfg.CodexLBGatewayAllowPrivateURL != newCfg.CodexLBGatewayAllowPrivateURL
 	}
 	if provider == config.AIProviderClaudeSubscription {
 		return oldCfg.ClaudeSubscriptionEnabled != newCfg.ClaudeSubscriptionEnabled
@@ -2314,6 +2323,7 @@ type AISettingsResponse struct {
 	ClaudeSubscriptionEnabled bool                           `json:"claude_subscription_enabled,omitempty"`
 	ConfiguredProviders       []string                       `json:"configured_providers"` // List of provider names with credentials
 	Providers                 []AIProviderDefinitionResponse `json:"providers"`            // Canonical provider registry metadata
+	CodexLBGateway            CodexLBGatewayStatusResponse   `json:"codex_lb_gateway"`
 	// Cost controls
 	CostBudgetUSD30d float64 `json:"cost_budget_usd_30d,omitempty"`
 	// Request timeout (seconds) - for slow hardware running local models
@@ -2331,6 +2341,97 @@ type AISettingsResponse struct {
 	// separate from the lightweight startup preflight and persists across
 	// restarts while the provider/model configuration remains unchanged.
 	PatrolModelReadiness *PatrolModelReadinessSnapshot `json:"patrol_model_readiness,omitempty"`
+}
+
+// CodexLBGatewayStatusResponse exposes non-secret configuration and the
+// latest readiness evidence for the selected gateway model.
+type CodexLBGatewayStatusResponse struct {
+	CapabilityAvailable         bool   `json:"capability_available"`
+	Endpoint                    string `json:"endpoint,omitempty"`
+	SelectedModel               string `json:"selected_model,omitempty"`
+	CredentialConfigured        bool   `json:"credential_configured"`
+	AllowPrivateURL             bool   `json:"allow_private_url"`
+	ConnectivityStatus          string `json:"connectivity_status"`
+	ToolCallingReadiness        string `json:"tool_calling_readiness"`
+	StreamingReadiness          string `json:"streaming_readiness"`
+	LastSuccessfulQualification string `json:"last_successful_qualification,omitempty"`
+}
+
+func (h *AISettingsHandler) codexLBGatewayStatus(ctx context.Context, settings *config.AIConfig, aiService *ai.Service) CodexLBGatewayStatusResponse {
+	status := CodexLBGatewayStatusResponse{
+		ConnectivityStatus:   "not_checked",
+		ToolCallingReadiness: "not_checked",
+		StreamingReadiness:   "not_checked",
+	}
+	if settings == nil {
+		status.ConnectivityStatus = "not_configured"
+		return status
+	}
+	status.Endpoint = strings.TrimSpace(settings.CodexLBGatewayEndpoint)
+	status.CredentialConfigured = strings.TrimSpace(settings.CodexLBGatewayAPIKey) != ""
+	status.AllowPrivateURL = settings.CodexLBGatewayAllowPrivateURL
+	provider, selectedModel := config.ParseModelString(settings.GetModel())
+	if provider == config.AIProviderCodexLBGateway {
+		status.SelectedModel = selectedModel
+	}
+	decision, err := h.forkFeatureAccess(ctx, forkfeatures.FeatureCodexLBGateway)
+	status.CapabilityAvailable = err == nil && decision.Available
+	if !status.CapabilityAvailable {
+		status.ConnectivityStatus = "unavailable"
+		status.ToolCallingReadiness = "unavailable"
+		status.StreamingReadiness = "unavailable"
+		return status
+	}
+	if status.Endpoint == "" || !status.CredentialConfigured {
+		status.ConnectivityStatus = "not_configured"
+		return status
+	}
+	if provider != config.AIProviderCodexLBGateway || selectedModel == "" {
+		status.ConnectivityStatus = "model_not_selected"
+		return status
+	}
+	if aiService == nil {
+		return status
+	}
+	if strings.TrimSpace(aiService.ProviderInitError()) != "" {
+		status.ConnectivityStatus = "failed"
+	}
+	if result, recordedAt := aiService.CachedPatrolModelReadiness(); result != nil && recordedAt.After(time.Time{}) &&
+		result.Provider == provider && result.Model == selectedModel {
+		status.ConnectivityStatus = readinessStatusLabel(result.Dimensions.Connectivity.Status)
+		status.ToolCallingReadiness = readinessStatusLabel(result.Dimensions.ToolProtocol.Status)
+		status.StreamingReadiness = readinessStatusLabel(result.Dimensions.ToolProtocol.Status)
+		if result.Success && result.PatrolCapable {
+			status.LastSuccessfulQualification = recordedAt.UTC().Format(time.RFC3339)
+		}
+	}
+	if result, recordedAt := aiService.CachedPatrolPreflight(); result != nil && recordedAt.After(time.Time{}) &&
+		result.Provider == provider && result.Model == selectedModel {
+		if result.Success && result.ToolCallObserved {
+			status.ConnectivityStatus = "ready"
+			if status.ToolCallingReadiness == "not_checked" {
+				status.ToolCallingReadiness = "ready"
+			}
+		} else {
+			if status.ToolCallingReadiness == "not_checked" {
+				status.ToolCallingReadiness = "failed"
+			}
+		}
+	}
+	return status
+}
+
+func readinessStatusLabel(value string) string {
+	switch strings.TrimSpace(value) {
+	case ai.PatrolModelReadinessPass:
+		return "ready"
+	case ai.PatrolModelReadinessFail:
+		return "failed"
+	case ai.PatrolModelReadinessWarning:
+		return "warning"
+	default:
+		return "not_checked"
+	}
 }
 
 // AIProviderDefinitionResponse exposes provider metadata without credentials.
@@ -2465,40 +2566,44 @@ type AISettingsUpdateRequest struct {
 	PatrolFindingNotifyMinSeverity    *string `json:"patrol_finding_notify_min_severity,omitempty"`   // "warning" | "critical"
 	UseProactiveThresholds            *bool   `json:"use_proactive_thresholds,omitempty"`             // true if patrol warns before thresholds (default: false = exact thresholds)
 	// Multi-provider credentials
-	AnthropicAPIKey           *string `json:"anthropic_api_key,omitempty"`  // Set Anthropic API key
-	OpenAIAPIKey              *string `json:"openai_api_key,omitempty"`     // Set OpenAI API key
-	OpenRouterAPIKey          *string `json:"openrouter_api_key,omitempty"` // Set OpenRouter API key
-	DeepSeekAPIKey            *string `json:"deepseek_api_key,omitempty"`   // Set DeepSeek API key
-	GeminiAPIKey              *string `json:"gemini_api_key,omitempty"`     // Set Gemini API key
-	ZaiAPIKey                 *string `json:"zai_api_key,omitempty"`        // Set Z.ai (Zhipu) API key
-	GroqAPIKey                *string `json:"groq_api_key,omitempty"`       // Set Groq API key
-	MistralAPIKey             *string `json:"mistral_api_key,omitempty"`    // Set Mistral API key
-	CerebrasAPIKey            *string `json:"cerebras_api_key,omitempty"`   // Set Cerebras API key
-	TogetherAPIKey            *string `json:"together_api_key,omitempty"`   // Set Together AI API key
-	FireworksAPIKey           *string `json:"fireworks_api_key,omitempty"`  // Set Fireworks AI API key
-	OllamaBaseURL             *string `json:"ollama_base_url,omitempty"`    // Set Ollama server URL
-	OllamaUsername            *string `json:"ollama_username,omitempty"`    // Set Ollama Basic Auth username
-	OllamaPassword            *string `json:"ollama_password,omitempty"`    // Set Ollama Basic Auth password
-	OllamaKeepAlive           *string `json:"ollama_keep_alive,omitempty"`  // Set Ollama keep_alive; empty uses server default
-	OpenAIBaseURL             *string `json:"openai_base_url,omitempty"`    // Set custom OpenAI base URL
-	ZaiBaseURL                *string `json:"zai_base_url,omitempty"`       // Set custom Z.ai base URL (e.g. coding endpoint)
-	CodexSubscriptionEnabled  *bool   `json:"codex_subscription_enabled,omitempty"`
-	ClaudeSubscriptionEnabled *bool   `json:"claude_subscription_enabled,omitempty"`
+	AnthropicAPIKey               *string `json:"anthropic_api_key,omitempty"`  // Set Anthropic API key
+	OpenAIAPIKey                  *string `json:"openai_api_key,omitempty"`     // Set OpenAI API key
+	OpenRouterAPIKey              *string `json:"openrouter_api_key,omitempty"` // Set OpenRouter API key
+	DeepSeekAPIKey                *string `json:"deepseek_api_key,omitempty"`   // Set DeepSeek API key
+	GeminiAPIKey                  *string `json:"gemini_api_key,omitempty"`     // Set Gemini API key
+	ZaiAPIKey                     *string `json:"zai_api_key,omitempty"`        // Set Z.ai (Zhipu) API key
+	GroqAPIKey                    *string `json:"groq_api_key,omitempty"`       // Set Groq API key
+	MistralAPIKey                 *string `json:"mistral_api_key,omitempty"`    // Set Mistral API key
+	CerebrasAPIKey                *string `json:"cerebras_api_key,omitempty"`   // Set Cerebras API key
+	TogetherAPIKey                *string `json:"together_api_key,omitempty"`   // Set Together AI API key
+	FireworksAPIKey               *string `json:"fireworks_api_key,omitempty"`  // Set Fireworks AI API key
+	CodexLBGatewayEndpoint        *string `json:"codex_lb_gateway_endpoint,omitempty"`
+	CodexLBGatewayAPIKey          *string `json:"codex_lb_gateway_api_key,omitempty"`
+	CodexLBGatewayAllowPrivateURL *bool   `json:"codex_lb_gateway_allow_private_url,omitempty"`
+	OllamaBaseURL                 *string `json:"ollama_base_url,omitempty"`   // Set Ollama server URL
+	OllamaUsername                *string `json:"ollama_username,omitempty"`   // Set Ollama Basic Auth username
+	OllamaPassword                *string `json:"ollama_password,omitempty"`   // Set Ollama Basic Auth password
+	OllamaKeepAlive               *string `json:"ollama_keep_alive,omitempty"` // Set Ollama keep_alive; empty uses server default
+	OpenAIBaseURL                 *string `json:"openai_base_url,omitempty"`   // Set custom OpenAI base URL
+	ZaiBaseURL                    *string `json:"zai_base_url,omitempty"`      // Set custom Z.ai base URL (e.g. coding endpoint)
+	CodexSubscriptionEnabled      *bool   `json:"codex_subscription_enabled,omitempty"`
+	ClaudeSubscriptionEnabled     *bool   `json:"claude_subscription_enabled,omitempty"`
 	// Clear flags for removing credentials
-	ClearAnthropicKey   *bool `json:"clear_anthropic_key,omitempty"`   // Clear Anthropic API key
-	ClearOpenAIKey      *bool `json:"clear_openai_key,omitempty"`      // Clear OpenAI API key
-	ClearOpenRouterKey  *bool `json:"clear_openrouter_key,omitempty"`  // Clear OpenRouter API key
-	ClearDeepSeekKey    *bool `json:"clear_deepseek_key,omitempty"`    // Clear DeepSeek API key
-	ClearGeminiKey      *bool `json:"clear_gemini_key,omitempty"`      // Clear Gemini API key
-	ClearZaiKey         *bool `json:"clear_zai_key,omitempty"`         // Clear Z.ai (Zhipu) API key
-	ClearGroqKey        *bool `json:"clear_groq_key,omitempty"`        // Clear Groq API key
-	ClearMistralKey     *bool `json:"clear_mistral_key,omitempty"`     // Clear Mistral API key
-	ClearCerebrasKey    *bool `json:"clear_cerebras_key,omitempty"`    // Clear Cerebras API key
-	ClearTogetherKey    *bool `json:"clear_together_key,omitempty"`    // Clear Together AI API key
-	ClearFireworksKey   *bool `json:"clear_fireworks_key,omitempty"`   // Clear Fireworks AI API key
-	ClearOllamaURL      *bool `json:"clear_ollama_url,omitempty"`      // Clear Ollama URL
-	ClearOllamaUsername *bool `json:"clear_ollama_username,omitempty"` // Clear Ollama Basic Auth username
-	ClearOllamaPassword *bool `json:"clear_ollama_password,omitempty"` // Clear Ollama Basic Auth password
+	ClearAnthropicKey      *bool `json:"clear_anthropic_key,omitempty"`  // Clear Anthropic API key
+	ClearOpenAIKey         *bool `json:"clear_openai_key,omitempty"`     // Clear OpenAI API key
+	ClearOpenRouterKey     *bool `json:"clear_openrouter_key,omitempty"` // Clear OpenRouter API key
+	ClearDeepSeekKey       *bool `json:"clear_deepseek_key,omitempty"`   // Clear DeepSeek API key
+	ClearGeminiKey         *bool `json:"clear_gemini_key,omitempty"`     // Clear Gemini API key
+	ClearZaiKey            *bool `json:"clear_zai_key,omitempty"`        // Clear Z.ai (Zhipu) API key
+	ClearGroqKey           *bool `json:"clear_groq_key,omitempty"`       // Clear Groq API key
+	ClearMistralKey        *bool `json:"clear_mistral_key,omitempty"`    // Clear Mistral API key
+	ClearCerebrasKey       *bool `json:"clear_cerebras_key,omitempty"`   // Clear Cerebras API key
+	ClearTogetherKey       *bool `json:"clear_together_key,omitempty"`   // Clear Together AI API key
+	ClearFireworksKey      *bool `json:"clear_fireworks_key,omitempty"`  // Clear Fireworks AI API key
+	ClearCodexLBGatewayKey *bool `json:"clear_codex_lb_gateway_key,omitempty"`
+	ClearOllamaURL         *bool `json:"clear_ollama_url,omitempty"`      // Clear Ollama URL
+	ClearOllamaUsername    *bool `json:"clear_ollama_username,omitempty"` // Clear Ollama Basic Auth username
+	ClearOllamaPassword    *bool `json:"clear_ollama_password,omitempty"` // Clear Ollama Basic Auth password
 	// RemoveProviders deletes provider-owned credentials, endpoints, runtime
 	// options, and model selections. Legacy clear_* fields remain
 	// credential-specific for backwards compatibility.
@@ -2642,6 +2747,7 @@ func (h *AISettingsHandler) HandleGetAISettings(w http.ResponseWriter, r *http.R
 		ClaudeSubscriptionEnabled: settings.ClaudeSubscriptionEnabled,
 		ConfiguredProviders:       settings.GetConfiguredProviders(),
 		Providers:                 aiProviderDefinitionResponses(settings),
+		CodexLBGateway:            h.codexLBGatewayStatus(ctx, settings, aiService),
 		CostBudgetUSD30d:          settings.CostBudgetUSD30d,
 		RequestTimeoutSeconds:     settings.RequestTimeoutSeconds,
 		ControlLevel:              settings.GetAssistantControlLevel(hasAutoFixFeature),
@@ -2796,6 +2902,32 @@ func (h *AISettingsHandler) HandleUpdateAISettings(w http.ResponseWriter, r *htt
 		settings.FireworksAPIKey = ""
 	} else if req.FireworksAPIKey != nil {
 		settings.FireworksAPIKey = strings.TrimSpace(*req.FireworksAPIKey)
+	}
+	if req.ClearCodexLBGatewayKey != nil && *req.ClearCodexLBGatewayKey {
+		settings.CodexLBGatewayAPIKey = ""
+	} else if req.CodexLBGatewayAPIKey != nil && strings.TrimSpace(*req.CodexLBGatewayAPIKey) != "" {
+		settings.CodexLBGatewayAPIKey = strings.TrimSpace(*req.CodexLBGatewayAPIKey)
+	}
+	if req.CodexLBGatewayAllowPrivateURL != nil {
+		settings.CodexLBGatewayAllowPrivateURL = *req.CodexLBGatewayAllowPrivateURL
+	}
+	if req.CodexLBGatewayEndpoint != nil {
+		raw := strings.TrimSpace(*req.CodexLBGatewayEndpoint)
+		if raw == "" {
+			settings.CodexLBGatewayEndpoint = ""
+		} else {
+			if err := config.ValidateCodexLBGatewayEndpoint(raw, settings.CodexLBGatewayAllowPrivateURL); err != nil {
+				http.Error(w, "codex_lb_gateway_endpoint "+err.Error(), http.StatusBadRequest)
+				return
+			}
+			parsed, _ := url.Parse(raw)
+			settings.CodexLBGatewayEndpoint = strings.TrimRight(parsed.String(), "/")
+		}
+	} else if req.CodexLBGatewayAllowPrivateURL != nil && settings.CodexLBGatewayEndpoint != "" {
+		if err := config.ValidateCodexLBGatewayEndpoint(settings.CodexLBGatewayEndpoint, settings.CodexLBGatewayAllowPrivateURL); err != nil {
+			http.Error(w, "codex_lb_gateway_allow_private_url "+err.Error(), http.StatusBadRequest)
+			return
+		}
 	}
 	if req.ClearGeminiKey != nil && *req.ClearGeminiKey {
 		settings.GeminiAPIKey = ""
@@ -3176,6 +3308,7 @@ func (h *AISettingsHandler) HandleUpdateAISettings(w http.ResponseWriter, r *htt
 		ClaudeSubscriptionEnabled: settings.ClaudeSubscriptionEnabled,
 		ConfiguredProviders:       settings.GetConfiguredProviders(),
 		Providers:                 aiProviderDefinitionResponses(settings),
+		CodexLBGateway:            h.codexLBGatewayStatus(r.Context(), settings, aiService),
 		RequestTimeoutSeconds:     settings.RequestTimeoutSeconds,
 		ControlLevel:              settings.GetAssistantControlLevel(hasAutoFixFeature),
 		PatrolReadiness:           ptrToPatrolReadiness(patrolReadiness),
