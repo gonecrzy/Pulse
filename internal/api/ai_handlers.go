@@ -3512,8 +3512,8 @@ func (h *AISettingsHandler) HandleTestProvider(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	// Validate provider name: only allow lowercase alphanumeric and hyphens,
-	// max 64 chars. This rejects path traversal, slashes, and injection attempts.
+	// Validate provider ID characters and length before reading settings or
+	// constructing a provider. Separators and punctuation remain rejected.
 	if len(provider) > 64 || !isValidProviderName(provider) {
 		http.Error(w, `{"error":"Invalid provider name"}`, http.StatusBadRequest)
 		return
@@ -3604,10 +3604,12 @@ func (h *AISettingsHandler) HandleTestProvider(w http.ResponseWriter, r *http.Re
 }
 
 // isValidProviderName returns true if s contains only lowercase letters, digits,
-// and hyphens. This prevents path traversal, URL injection, and log injection.
+// hyphens, and underscores. These provider-ID characters are safe in a single
+// URL path segment; separators, whitespace, punctuation, and uppercase letters
+// remain rejected to prevent path traversal, URL injection, and log injection.
 func isValidProviderName(s string) bool {
 	for _, c := range s {
-		if !((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-') {
+		if !((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' || c == '_') {
 			return false
 		}
 	}

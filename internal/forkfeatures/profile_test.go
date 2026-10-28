@@ -34,6 +34,27 @@ func TestDefaultProfileEnablesSupportedLocalCapabilitiesOnly(t *testing.T) {
 	}
 }
 
+func TestCodexLBGatewayIsImplementedButExplicitlyDisabledByDefault(t *testing.T) {
+	manager := NewManager(nil)
+	snapshot, err := manager.Snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, capability := range snapshot.Capabilities {
+		if capability.ID != FeatureCodexLBGateway {
+			continue
+		}
+		if !capability.Implemented || capability.Status != StatusSupported {
+			t.Fatalf("Codex-LB gateway implementation metadata = implemented %v, status %q", capability.Implemented, capability.Status)
+		}
+		if capability.Enabled || capability.Available || capability.Source != "unavailable" {
+			t.Fatalf("default Codex-LB gateway capability = %+v, want implemented but disabled and unavailable", capability)
+		}
+		return
+	}
+	t.Fatal("Codex-LB gateway capability is missing from the registry snapshot")
+}
+
 func TestLocalLicenseMappingsAreExplicitAndExcludeCompositeEntitlements(t *testing.T) {
 	for licenseFeature, want := range map[string]FeatureID{
 		"agent_profiles":     FeatureAgentProfiles,

@@ -15,6 +15,34 @@ import (
 	"github.com/rcourtman/pulse-go-rewrite/internal/models"
 )
 
+func newEnabledCodexLBGatewayServiceForTest(t *testing.T, endpoint string) *Service {
+	t.Helper()
+	persistence := config.NewConfigPersistence(t.TempDir())
+	manager := forkfeatures.NewManager(persistence)
+	profile := forkfeatures.DefaultProfile()
+	profile.EnabledFeatures = append(profile.EnabledFeatures, forkfeatures.FeatureCodexLBGateway)
+	if _, err := manager.Replace(profile, profile.Revision); err != nil {
+		t.Fatalf("enable Codex-LB capability: %v", err)
+	}
+	persistence.SetForkProfileManager(manager)
+	if err := persistence.SaveAIConfig(config.AIConfig{
+		Enabled:                       true,
+		Model:                         "codex_lb_gateway:owner/model-v1",
+		PatrolModel:                   "codex_lb_gateway:owner/model-v1",
+		CodexLBGatewayEndpoint:        endpoint,
+		CodexLBGatewayAPIKey:          "gateway-test-secret",
+		CodexLBGatewayAllowPrivateURL: true,
+		OpenAIAPIKey:                  "legacy-openai-secret",
+	}); err != nil {
+		t.Fatalf("SaveAIConfig(): %v", err)
+	}
+	service := NewService(persistence, nil)
+	if err := service.LoadConfig(); err != nil {
+		t.Fatalf("LoadConfig(): %v", err)
+	}
+	return service
+}
+
 func TestCodexLBGatewayAuthenticationFailureDoesNotFallbackAndPatrolTriageContinues(t *testing.T) {
 	var gatewayRequests atomic.Int32
 	var alternateRequests atomic.Int32
@@ -80,6 +108,72 @@ func TestCodexLBGatewayAuthenticationFailureDoesNotFallbackAndPatrolTriageContin
 	triage := patrol.runDeterministicTriageState(context.Background(), patrolRuntimeStateForTest(patrol, state), nil, nil)
 	if len(triage.Flags) == 0 {
 		t.Fatal("deterministic Patrol triage stopped producing findings after the gateway failure")
+	}
+}
+
+func TestCodexLBGatewayModelDiscoveryUsesCanonicalProviderIdentifier(t *testing.T) {
+	seenAuthorization := make(chan string, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/models" {
+			http.NotFound(w, r)
+			return
+		}
+		seenAuthorization <- r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(w, `{"data":[{"id":"owner/model-v1","name":"Model V1"}]}`)
+	}))
+	defer server.Close()
+
+	service := newEnabledCodexLBGatewayServiceForTest(t, server.URL+"/v1")
+	models, cached, err := service.ListModelsWithCache(context.Background())
+	if err != nil {
+		t.Fatalf("ListModelsWithCache(): %v", err)
+	}
+	if cached || len(models) != 1 {
+		t.Fatalf("model discovery returned %+v cached=%v; want one fresh gateway model", models, cached)
+	}
+	if models[0].Provider != config.AIProviderCodexLBGateway || models[0].ID != "codex_lb_gateway:owner/model-v1" {
+		t.Fatalf("discovered model lost canonical provider identity: %+v", models[0])
+	}
+	if got := <-seenAuthorization; got != "Bearer gateway-test-secret" {
+		t.Fatalf("gateway Authorization = %q, want configured credential", got)
+	}
+}
+
+func TestCodexLBGatewayPatrolPreflightUsesCanonicalProviderIdentifier(t *testing.T) {
+	type seenRequest struct {
+		authorization string
+		model         string
+	}
+	seen := make(chan seenRequest, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/chat/completions" {
+			http.NotFound(w, r)
+			return
+		}
+		authorization := r.Header.Get("Authorization")
+		var request struct {
+			Model string `json:"model"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Errorf("decode preflight request: %v", err)
+			http.Error(w, "invalid request", http.StatusBadRequest)
+			return
+		}
+		seen <- seenRequest{authorization: authorization, model: request.Model}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(w, `{"id":"preflight-1","model":"owner/model-v1","choices":[{"index":0,"message":{"role":"assistant","content":null,"tool_calls":[{"id":"call-1","type":"function","function":{"name":"verify_pulse_patrol","arguments":"{\"ok\":true}"}}]},"finish_reason":"tool_calls"}]}`)
+	}))
+	defer server.Close()
+
+	service := newEnabledCodexLBGatewayServiceForTest(t, server.URL+"/v1")
+	result := service.RunPatrolToolPreflight(context.Background(), config.AIProviderCodexLBGateway, "owner/model-v1")
+	if !result.Success || !result.ToolCallObserved || result.Provider != config.AIProviderCodexLBGateway {
+		t.Fatalf("gateway Patrol preflight = success %v tool_call %v provider %q summary %q", result.Success, result.ToolCallObserved, result.Provider, result.Summary)
+	}
+	got := <-seen
+	if got.model != "owner/model-v1" || got.authorization != "Bearer gateway-test-secret" {
+		t.Fatalf("preflight request model/auth = %q/%q; want selected model and gateway credential", got.model, got.authorization)
 	}
 }
 

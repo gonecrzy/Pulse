@@ -5,9 +5,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 
+	"github.com/rcourtman/pulse-go-rewrite/internal/ai"
 	"github.com/rcourtman/pulse-go-rewrite/internal/config"
+	"github.com/rcourtman/pulse-go-rewrite/internal/forkfeatures"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -265,7 +268,7 @@ func TestRouteTestProvider_InvalidProviderNames(t *testing.T) {
 		{"uppercase", "Ollama"},
 		{"special_chars", "ollama<script>"},
 		{"too_long", strings.Repeat("a", 65)},
-		{"underscore", "my_provider"},
+		{"dot", "my.provider"},
 		{"at_sign", "user@host"},
 	}
 
@@ -355,11 +358,117 @@ func TestRouteTestProvider_ValidProviderNameEdgeCases(t *testing.T) {
 	}
 }
 
+func TestRouteTestProvider_CodexLBGatewayIdentifier(t *testing.T) {
+	const gatewayCredential = "gateway-test-secret"
+	seenAuthorization := make(chan string, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/models" {
+			http.NotFound(w, r)
+			return
+		}
+		seenAuthorization <- r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{"id":"owner/model-v1"}]}`))
+	}))
+	defer server.Close()
+
+	router, token := setupCodexLBGatewayProviderRouter(t, server.URL+"/v1", true)
+	req := httptest.NewRequest(http.MethodPost, "/api/ai/test/codex_lb_gateway", strings.NewReader(
+		`{"model":"codex_lb_gateway:owner/model-v1"}`,
+	))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-Token", token)
+	rec := httptest.NewRecorder()
+	router.Handler().ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	var response struct {
+		Success  bool   `json:"success"`
+		Provider string `json:"provider"`
+		Model    string `json:"model"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &response))
+	assert.True(t, response.Success)
+	assert.Equal(t, config.AIProviderCodexLBGateway, response.Provider)
+	assert.Equal(t, "codex_lb_gateway:owner/model-v1", response.Model)
+	assert.Equal(t, "Bearer "+gatewayCredential, <-seenAuthorization)
+	assert.NotContains(t, rec.Body.String(), gatewayCredential)
+}
+
+func TestRouteTestProvider_CodexLBGatewayStillRequiresForkCapability(t *testing.T) {
+	var gatewayRequests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gatewayRequests.Add(1)
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	router, token := setupCodexLBGatewayProviderRouter(t, server.URL+"/v1", false)
+	req := httptest.NewRequest(http.MethodPost, "/api/ai/test/codex_lb_gateway", strings.NewReader(
+		`{"model":"codex_lb_gateway:owner/model-v1"}`,
+	))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-Token", token)
+	rec := httptest.NewRecorder()
+	router.Handler().ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	var response struct {
+		Success  bool   `json:"success"`
+		Provider string `json:"provider"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &response))
+	assert.False(t, response.Success)
+	assert.Equal(t, config.AIProviderCodexLBGateway, response.Provider)
+	assert.Zero(t, gatewayRequests.Load(), "a configured gateway must not be contacted while its fork capability is disabled")
+}
+
+func setupCodexLBGatewayProviderRouter(t *testing.T, endpoint string, enableCapability bool) (*Router, string) {
+	t.Helper()
+	lockAIRouteAuthStoreTests(t)
+	resetPersistentAuthStoresForTests()
+	t.Cleanup(resetPersistentAuthStoresForTests)
+
+	rawToken := "ai-route-token-" + t.Name() + ".12345678"
+	record := newTokenRecord(t, rawToken, []string{config.ScopeSettingsWrite}, nil)
+	appConfig := newTestConfigWithTokens(t, record)
+	persistence := config.NewConfigPersistence(appConfig.DataPath)
+	profile := forkfeatures.DefaultProfile()
+	if enableCapability {
+		profile.EnabledFeatures = append(profile.EnabledFeatures, forkfeatures.FeatureCodexLBGateway)
+	}
+	if err := persistence.SaveForkProfile(profile); err != nil {
+		t.Fatalf("SaveForkProfile: %v", err)
+	}
+	if err := persistence.SaveAIConfig(config.AIConfig{
+		Enabled:                       true,
+		Model:                         "codex_lb_gateway:owner/model-v1",
+		PatrolModel:                   "codex_lb_gateway:owner/model-v1",
+		CodexLBGatewayEndpoint:        endpoint,
+		CodexLBGatewayAPIKey:          "gateway-test-secret",
+		CodexLBGatewayAllowPrivateURL: true,
+	}); err != nil {
+		t.Fatalf("SaveAIConfig: %v", err)
+	}
+
+	router := NewRouter(appConfig, nil, nil, nil, nil, "1.0.0")
+	t.Cleanup(router.shutdownBackgroundWorkers)
+	persistence.SetForkProfileManager(router.forkProfileManager)
+	router.aiSettingsHandler.defaultConfig = appConfig
+	router.aiSettingsHandler.defaultPersistence = persistence
+	service := ai.NewService(persistence, nil)
+	if err := service.LoadConfig(); err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	router.aiSettingsHandler.defaultAIService = service
+	return router, rawToken
+}
+
 // TestIsValidProviderName is a unit test for the isValidProviderName helper.
 func TestIsValidProviderName(t *testing.T) {
 	t.Parallel()
 
-	valid := []string{"ollama", "openai", "deep-seek", "provider123", "a", "my-ai-1"}
+	valid := []string{"ollama", "openai", "deep-seek", "provider123", "a", "my-ai-1", "codex_lb_gateway"}
 	for _, name := range valid {
 		assert.True(t, isValidProviderName(name), "expected %q to be valid", name)
 	}

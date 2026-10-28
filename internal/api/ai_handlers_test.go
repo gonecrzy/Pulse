@@ -3670,6 +3670,29 @@ func TestAISettingsHandler_PatrolPreflight_RejectsInvalidProviderName(t *testing
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
 }
 
+func TestAISettingsHandler_PatrolPreflight_AcceptsCodexLBGatewayIdentifier(t *testing.T) {
+	t.Parallel()
+
+	tmp := t.TempDir()
+	persistence := config.NewConfigPersistence(tmp)
+	aiCfg := config.NewDefaultAIConfig()
+	aiCfg.Enabled = false
+	require.NoError(t, persistence.SaveAIConfig(*aiCfg))
+	handler := newTestAISettingsHandler(&config.Config{DataPath: tmp}, persistence, nil)
+
+	req := newLoopbackRequest(http.MethodPost, "/api/ai/patrol/preflight",
+		bytes.NewReader([]byte(`{"provider":"codex_lb_gateway"}`)))
+	rec := httptest.NewRecorder()
+	handler.HandlePatrolPreflight(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	var response struct {
+		Cause string `json:"cause"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &response))
+	assert.Equal(t, string(ai.PatrolFailureCauseAssistantDisabled), response.Cause)
+}
+
 func TestAISettingsHandler_PatrolPreflight_DelegatesDeadlineToAIRuntime(t *testing.T) {
 	source, err := os.ReadFile("ai_handlers.go")
 	require.NoError(t, err)
@@ -3734,6 +3757,28 @@ func TestAISettingsHandler_PatrolModelReadiness_RejectsInvalidProviderName(t *te
 	handler.HandlePatrolModelReadiness(rec, req)
 
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestAISettingsHandler_PatrolModelReadiness_AcceptsCodexLBGatewayIdentifier(t *testing.T) {
+	t.Parallel()
+
+	tmp := t.TempDir()
+	persistence := config.NewConfigPersistence(tmp)
+	aiCfg := config.NewDefaultAIConfig()
+	aiCfg.Enabled = false
+	require.NoError(t, persistence.SaveAIConfig(*aiCfg))
+	handler := newTestAISettingsHandler(&config.Config{DataPath: tmp}, persistence, nil)
+
+	req := newLoopbackRequest(http.MethodPost, "/api/ai/patrol/readiness",
+		bytes.NewReader([]byte(`{"provider":"codex_lb_gateway"}`)))
+	rec := httptest.NewRecorder()
+	handler.HandlePatrolModelReadiness(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	var response PatrolModelReadinessSnapshot
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &response))
+	require.NotNil(t, response.PatrolModelReadinessResult)
+	assert.Equal(t, ai.PatrolFailureCauseAssistantDisabled, response.Cause)
 }
 
 func TestPatrolModelReadinessBudgetScalesWithRequestTimeout(t *testing.T) {
