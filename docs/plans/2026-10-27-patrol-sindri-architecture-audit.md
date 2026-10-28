@@ -26,7 +26,7 @@ Pulse license checks, fork availability, API/provider authentication and billing
 
 The audit inspected the runtime paths in `internal/ai`, `internal/api`, `internal/actionlifecycle`, `internal/actionplanner`, `internal/komodo`, `internal/forkfeatures`, `internal/license`, `internal/config`, `pkg/licensing`, and `frontend-modern/src`. It also reviewed the existing Sindri roadmap and Phase 2G/2I topology notes. Statements about Komodo live qualification refer only to the already recorded isolated qualification in the roadmap; this audit made no live provider call.
 
-Codex-LB compatibility was compared with its current [Chat Completions compatibility specification](https://github.com/Soju06/codex-lb/blob/main/openspec/specs/chat-completions-compat/spec.md) and [client setup notes](https://github.com/Soju06/codex-lb/blob/main/docs/client-setup.md). Those sources document the upstream project's contract; they do not certify a specific local Codex-LB deployment.
+Codex-LB compatibility was compared with the v1.25.0-beta.9 [Chat Completions compatibility specification](https://github.com/Soju06/codex-lb/blob/69f128afcbc616d9f8e924ca6583f7031d75cf82/openspec/specs/chat-completions-compat/spec.md) and [client setup notes](https://github.com/Soju06/codex-lb/blob/69f128afcbc616d9f8e924ca6583f7031d75cf82/docs/client-setup.md). Those sources document the upstream project's contract; they do not certify a specific local Codex-LB deployment.
 
 ## A. Existing capabilities matrix
 

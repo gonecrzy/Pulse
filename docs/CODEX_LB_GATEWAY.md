@@ -9,7 +9,7 @@ but cannot be used for inference under this policy.
 ## Configure the gateway
 
 1. Configure Codex-LB and its upstream account or source using the
-   [Codex-LB client setup guide](https://github.com/Soju06/codex-lb/blob/main/docs/client-setup.md).
+   [Codex-LB client setup guide](https://github.com/Soju06/codex-lb/blob/69f128afcbc616d9f8e924ca6583f7031d75cf82/docs/client-setup.md).
    Confirm the endpoint and gateway API key with the administrator responsible
    for that deployment.
 2. In Pulse, open **Settings → Fork Capabilities**, enable
@@ -61,9 +61,9 @@ assembly, and the bounded multi-turn tool-result continuation. Ordinary
 provider usage fields continue to feed Pulse's existing token and cost
 accounting.
 
-Codex-LB's Chat Completions compatibility surface uses `/v1/chat/completions`,
+Codex-LB v1.25.0-beta.9's Chat Completions compatibility surface uses `/v1/chat/completions`,
 streamed `chat.completion.chunk` events, and OpenAI-style tool-call and error
-envelopes per its [compatibility specification](https://github.com/Soju06/codex-lb/blob/main/openspec/specs/chat-completions-compat/spec.md).
+envelopes per its [compatibility specification](https://github.com/Soju06/codex-lb/blob/69f128afcbc616d9f8e924ca6583f7031d75cf82/openspec/specs/chat-completions-compat/spec.md).
 Pulse currently speaks Chat Completions; it does not claim Codex-LB Responses
 API reasoning-state preservation. Context sizing uses Pulse's existing model
 limits and Patrol readiness fixtures, so unknown model IDs use Pulse's default

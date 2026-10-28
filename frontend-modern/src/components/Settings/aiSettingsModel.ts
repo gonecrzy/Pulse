@@ -108,6 +108,10 @@ export const AI_SETUP_PROVIDER_OPTIONS: SelectionCardOption<AIProvider>[] = [
   { value: 'ollama', title: 'Ollama', description: 'Local' },
 ];
 
+const CODEX_LB_SETUP_GUIDE_URL =
+  'https://github.com/Soju06/codex-lb/blob/' +
+  '69f128afcbc616d9f8e924ca6583f7031d75cf82/docs/client-setup.md';
+
 export const AI_PROVIDER_CONFIGS: AIProviderConfig[] = [
   {
     provider: 'codex_lb_gateway',
@@ -119,7 +123,7 @@ export const AI_PROVIDER_CONFIGS: AIProviderConfig[] = [
     placeholder: 'Gateway API key',
     configuredPlaceholder: '••••••••••• (configured)',
     actionLinkLabel: 'Configuration guide →',
-    actionLinkHref: 'https://github.com/Soju06/codex-lb/blob/main/docs/client-setup.md',
+    actionLinkHref: CODEX_LB_SETUP_GUIDE_URL,
     helperText:
       'Verify that this endpoint belongs to your Codex-LB deployment. OpenAI-compatible syntax alone does not identify it. When the fork capability is enabled, legacy provider settings remain stored but cannot serve inference.',
     extraFields: [
