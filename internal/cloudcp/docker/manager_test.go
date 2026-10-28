@@ -441,10 +441,15 @@ func TestPrepareTenantRuntimeMountSourcesAlignsOwnershipAndPermissions(t *testin
 		}
 	}
 
-	// Tenant bind mounts are owned by the tenant runtime identity, which can
-	// differ from the test process identity when tests run as root.
+	// Tenant bind mounts are owned by the tenant runtime identity. Unprivileged
+	// CI runners cannot chown files to the default 1000:1000 identity, so use
+	// the current identity there while retaining the default-path check as root.
 	uid := tenantRuntimeUIDFor(ManagerConfig{})
 	gid := tenantRuntimeGIDFor(ManagerConfig{})
+	if os.Geteuid() != 0 {
+		uid = os.Geteuid()
+		gid = os.Getegid()
+	}
 	if err := prepareTenantRuntimeMountSources(tenantDataDir, uid, gid); err != nil {
 		t.Fatalf("prepareTenantRuntimeMountSources: %v", err)
 	}
