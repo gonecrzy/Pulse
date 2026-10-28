@@ -77,6 +77,19 @@ Ollama, or a subscription agent. Deterministic monitoring and triage continue
 without model success. Fix proposals remain proposals; this integration does
 not dispatch infrastructure mutations or enable automatic repairs.
 
+## Phase 2M live qualification status
+
+Live qualification was not performed in this checkout on 2026-10-28. The
+`PULSE_DATA_DIR` override is unset, and the default runtime directory has no
+`ai.enc` settings file. No gateway endpoint, selected model, or credential is
+available here, so no live request was sent. Phase 2L mock tests establish
+adapter behavior against local fixtures; they are not live Codex-LB evidence.
+
+To qualify a deployment, make its approved Pulse AI settings available, enable
+`fork.codex_lb_gateway`, configure the gateway endpoint and credential in Pulse,
+select the gateway model, and explicitly authorize the synthetic read-only
+qualification requests. Do not reuse credentials from unrelated applications.
+
 ## Credential rotation and removal
 
 Enter a replacement key and save to rotate it. The current value remains

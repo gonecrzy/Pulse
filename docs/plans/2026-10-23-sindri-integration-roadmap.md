@@ -461,6 +461,35 @@ pricing metadata. A live test against the operator's pinned Codex-LB deployment,
 with separately supplied protected credentials and explicit authorization, is a
 separate qualification checkpoint.
 
+### Phase 2M — Live Codex-LB qualification
+
+**Status (2026-10-28): Not performed.** This checkout has no `PULSE_DATA_DIR`
+override and no `ai.enc` file in the default `/etc/pulse` runtime directory.
+Therefore no approved gateway endpoint, selected model, or credential is
+available here. No network request was sent. Phase 2L local fixtures are not
+treated as live compatibility evidence.
+
+| Qualification area | Live result | Existing local evidence |
+| --- | --- | --- |
+| Connectivity, authentication, model discovery | Not tested | Provider fixtures cover request/auth handling; no gateway identity or live auth confirmed. |
+| Chat Completions and streaming | Not tested | Local mock coverage passed in Phase 2L; live SSE compatibility is unknown. |
+| Sequential and parallel tool protocol | Not tested | Sequential tool serialization/continuation has local mock coverage; live parallel support is unknown. |
+| Context quality and long context | Not tested | Patrol context fixtures passed locally; model-specific live limits are unknown. |
+| Latency, timeouts, cancellation, usage | Not tested | Local tests cover adapter behavior; live latency and usage accounting are unverified. |
+| Patrol readiness and investigation continuation | Not tested | Bounded local readiness continuation passed; live readiness classification is unknown. |
+| Failure fallback and deterministic monitoring | Not tested live | Phase 2L tests verify no provider fallback and deterministic monitoring continuity during mocked gateway failures. |
+
+**Adapter decision:** The existing Chat Completions adapter is exercised by
+local fixtures, but live sufficiency cannot be determined without the operator's
+gateway. A Responses API implementation is not justified by current evidence;
+reconsider it only if live compatibility exposes a concrete need for preserved
+reasoning state or behavior Chat Completions cannot provide. **Patrol UI
+integration: no-go** until the gateway is configured and the read-only live
+qualification matrix passes. Required prerequisites are an approved Pulse AI
+settings file, enabled `fork.codex_lb_gateway`, a configured endpoint and
+credential, an explicitly selected gateway model, and operator authorization
+for synthetic diagnostic requests.
+
 ## Git checkpoint discipline
 
 - The current focused checkpoint is `feature/komodo-phase2-foundation`, based on current `origin/sindri`. Preserve the historical `feature/sindri-integration` branch and checkpoint history. Create descriptive, logically separated commits for approved implementation phases.
