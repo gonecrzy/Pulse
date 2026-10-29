@@ -7,14 +7,16 @@ import (
 
 // TestFindingJSONMirrorStaysInSync enforces the deliberate marshal-mirror
 // relationship between Finding and findingJSON: identical field names and
-// types, identical json tags, with AlertIdentifier as the only sanctioned
-// divergence (hidden via `json:"-"` on the public struct, round-tripped as
-// "alert_identifier" by the mirror).
+// types, identical json tags, with AlertIdentifier as the persistence-only
+// divergence and InvestigationCanRetry as a derived wire projection.
 func TestFindingJSONMirrorStaysInSync(t *testing.T) {
 	assertMarshalMirrorInSync(t,
 		reflect.TypeOf(Finding{}),
 		reflect.TypeOf(findingJSON{}),
-		map[string]string{"AlertIdentifier": "alert_identifier,omitempty"},
+		map[string]string{
+			"AlertIdentifier":       "alert_identifier,omitempty",
+			"InvestigationCanRetry": "investigation_can_retry",
+		},
 	)
 }
 

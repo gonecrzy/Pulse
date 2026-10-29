@@ -121,7 +121,7 @@ export function resetForkCapabilities(): void {
 
 export function hasForkCapability(id: ForkFeatureID): boolean {
   return (
-    snapshot()?.capabilities.some((capability) => capability.id === id && capability.available) ??
+    snapshot()?.capabilities?.some((capability) => capability.id === id && capability.available) ??
     false
   );
 }

@@ -41,6 +41,7 @@ func (p *PatrolService) Start(ctx context.Context) {
 		return
 	}
 	p.running = true
+	p.investigationStopping = false
 	p.stopCh = make(chan struct{})
 	p.configChanged = make(chan struct{}, 1) // Buffered to allow non-blocking send
 	p.mu.Unlock()
@@ -64,10 +65,18 @@ func (p *PatrolService) Stop() {
 		return
 	}
 	p.running = false
+	p.investigationStopping = true
 	close(p.stopCh)
 	orchestrator := p.investigationOrchestrator
 	findings := p.findings
+	cancels := make([]context.CancelFunc, 0, len(p.investigationTaskCancels))
+	for _, cancel := range p.investigationTaskCancels {
+		cancels = append(cancels, cancel)
+	}
 	p.mu.Unlock()
+	for _, cancel := range cancels {
+		cancel()
+	}
 
 	log.Info().Msg("stopping AI Patrol Service")
 
@@ -103,6 +112,51 @@ func (p *PatrolService) Stop() {
 	}
 
 	log.Info().Msg("AI Patrol Service stopped")
+}
+
+// StartInvestigationTask runs one explicitly requested investigation inside
+// Patrol's existing shutdown and persistence lifecycle. It adds no scheduler
+// or separate run store: the finding remains the durable run record.
+func (p *PatrolService) StartInvestigationTask(parent context.Context, timeout time.Duration, task func(context.Context)) bool {
+	if p == nil || task == nil {
+		return false
+	}
+	if parent == nil {
+		parent = context.Background()
+	}
+
+	p.mu.Lock()
+	if p.investigationStopping {
+		p.mu.Unlock()
+		return false
+	}
+	p.investigationTaskSequence++
+	taskID := p.investigationTaskSequence
+	var ctx context.Context
+	var cancel context.CancelFunc
+	if timeout > 0 {
+		ctx, cancel = context.WithTimeout(parent, timeout)
+	} else {
+		ctx, cancel = context.WithCancel(parent)
+	}
+	if p.investigationTaskCancels == nil {
+		p.investigationTaskCancels = make(map[uint64]context.CancelFunc)
+	}
+	p.investigationTaskCancels[taskID] = cancel
+	p.investigationWg.Add(1)
+	p.mu.Unlock()
+
+	go func() {
+		defer p.investigationWg.Done()
+		defer cancel()
+		defer func() {
+			p.mu.Lock()
+			delete(p.investigationTaskCancels, taskID)
+			p.mu.Unlock()
+		}()
+		task(ctx)
+	}()
+	return true
 }
 
 // patrolLoop is the main background loop

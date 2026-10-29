@@ -83,6 +83,7 @@ import {
   getInvestigationStatusBadgeTone,
   getPatrolFindingActionableState,
   getPatrolFindingQueueSummary,
+  isPatrolRuntimeFinding,
 } from '@/utils/aiFindingPresentation';
 import { copyToClipboard } from '@/utils/clipboard';
 
@@ -132,6 +133,10 @@ interface FindingsPanelProps {
   showScopeWarnings?: boolean;
   runtimeState?: PatrolRuntimeState;
   autonomyLevel?: PatrolAutonomyLevel;
+  investigationCapabilityAvailable?: boolean;
+  investigationReady?: boolean;
+  investigationReadinessMessage?: string;
+  canInvestigate?: boolean;
   blockedReason?: string;
   overallHealth?: IntelligenceHealthScore;
   historicalRegressionCount?: number;
@@ -229,6 +234,25 @@ export const FindingsPanel: Component<FindingsPanelProps> = (props) => {
     props.runSnapshot === undefined &&
     expandedId() !== finding.id &&
     Boolean(getFindingPrimaryActionPresentation(finding));
+  const hasInvestigationRun = (finding: UnifiedFinding) =>
+    hasFindingInvestigationDetails(finding) ||
+    Boolean(finding.investigationOutcome || finding.lastInvestigatedAt);
+  const canShowFindingInvestigationControls = (finding: UnifiedFinding) =>
+    isPatrolFindingsSource() &&
+    props.runSnapshot === undefined &&
+    !isPatrolRuntimeFinding(finding) &&
+    !getFindingPrimaryActionPresentation(finding);
+  const shouldShowInvestigationAction = (finding: UnifiedFinding) =>
+    canShowFindingInvestigationControls(finding) &&
+    props.investigationCapabilityAvailable === true &&
+    finding.status === 'active';
+  const shouldShowLatestInvestigation = (finding: UnifiedFinding) =>
+    canShowFindingInvestigationControls(finding) && hasInvestigationRun(finding);
+  const canStartInvestigation = (finding: UnifiedFinding) =>
+    shouldShowInvestigationAction(finding) &&
+    props.canInvestigate === true &&
+    finding.investigationCanRetry === true &&
+    !hasInvestigationRun(finding);
   const shouldShowInlineManualControls = (finding: UnifiedFinding) =>
     finding.status === 'active' && !isPatrolFindingsSource();
   const sourceFindings = createMemo(() =>
@@ -701,7 +725,12 @@ export const FindingsPanel: Component<FindingsPanelProps> = (props) => {
       const result = await reinvestigateFinding(finding.id);
       setActionLoading(null);
       if (result.success) {
-        notificationStore.success('Patrol is investigating this finding');
+        setExpandedId(finding.id);
+        notificationStore.success(
+          result.already_running
+            ? 'Opened the active Sindri investigation'
+            : 'Sindri investigation started',
+        );
         void Promise.all([
           aiIntelligenceStore.loadFindings(),
           aiIntelligenceStore.loadPatrolFindings(),
@@ -713,6 +742,11 @@ export const FindingsPanel: Component<FindingsPanelProps> = (props) => {
       setActionLoading(null);
       notificationStore.error(err instanceof Error ? err.message : 'Failed to start investigation');
     }
+  };
+
+  const handleViewInvestigation = (finding: UnifiedFinding, e: Event) => {
+    e.stopPropagation();
+    setExpandedId(finding.id);
   };
 
   const handleStartEditNote = (finding: UnifiedFinding, e: Event) => {
@@ -1229,6 +1263,33 @@ export const FindingsPanel: Component<FindingsPanelProps> = (props) => {
                 </a>
               )}
             </Show>
+            <Show when={shouldShowLatestInvestigation(finding)}>
+              <button
+                type="button"
+                onClick={(e) => handleViewInvestigation(finding, e)}
+                disabled={actionLoading() === finding.id}
+                class="inline-flex min-h-11 items-center rounded-sm bg-blue-600 px-2 py-1 text-xs font-semibold text-white transition-colors hover:bg-blue-700 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-primary/40 disabled:opacity-50 sm:min-h-0"
+                title="Open the latest Sindri investigation"
+              >
+                View investigation
+              </button>
+            </Show>
+            <Show when={canStartInvestigation(finding)}>
+              <button
+                type="button"
+                onClick={(e) => handleInvestigate(finding, e)}
+                disabled={actionLoading() === finding.id || props.investigationReady !== true}
+                class="inline-flex min-h-11 items-center rounded-sm bg-blue-600 px-2 py-1 text-xs font-semibold text-white transition-colors hover:bg-blue-700 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-primary/40 disabled:opacity-50 sm:min-h-0"
+                title={
+                  props.investigationReady === true
+                    ? 'Have Sindri investigate this finding'
+                    : (props.investigationReadinessMessage ??
+                      'Verify Sindri gateway and model readiness before investigating')
+                }
+              >
+                {actionLoading() === finding.id ? 'Starting…' : 'Investigate with Sindri'}
+              </button>
+            </Show>
             <Show when={shouldShowInlineManualControls(finding)}>
               <Show when={manualControls.acknowledge && !finding.acknowledgedAt}>
                 <button
@@ -1295,14 +1356,14 @@ export const FindingsPanel: Component<FindingsPanelProps> = (props) => {
             >
               <button
                 type="button"
-                aria-label={`Finding options for ${title.label}`}
+                aria-label={`Finding management for ${title.label}`}
                 aria-expanded={manageOpenId() === finding.id}
                 aria-controls={`finding-${finding.id}-manage`}
                 onClick={toggleFindingOptions}
                 class="inline-flex min-h-11 items-center rounded-sm border border-border bg-surface px-2 py-1 text-xs font-medium text-base-content transition-colors hover:bg-surface-hover focus:outline-hidden focus-visible:ring-2 focus-visible:ring-primary/40 sm:min-h-0"
                 title="Resolve, dismiss, remember as expected, or create a rule"
               >
-                Finding options
+                Finding management
               </button>
             </Show>
             <button
@@ -1599,27 +1660,27 @@ export const FindingsPanel: Component<FindingsPanelProps> = (props) => {
               </a>
             )}
           </Show>
-          <Show
-            when={
-              !primaryAction &&
-              isPatrolFindingsSource() &&
-              finding.status === 'active' &&
-              !finding.investigationStatus &&
-              !finding.investigationOutcome &&
-              !finding.lastInvestigatedAt &&
-              !!props.autonomyLevel &&
-              props.autonomyLevel !== 'monitor'
-            }
-          >
+          <Show when={canStartInvestigation(finding)}>
             <button
               type="button"
               onClick={(e) => handleInvestigate(finding, e)}
-              disabled={actionLoading() === finding.id}
+              disabled={actionLoading() === finding.id || props.investigationReady !== true}
               class="inline-flex items-center gap-1 rounded-sm bg-blue-600 px-3 py-1.5 font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-              title="Have Patrol investigate this finding"
+              title={
+                props.investigationReady === true
+                  ? 'Have Sindri investigate this finding'
+                  : (props.investigationReadinessMessage ??
+                    'Verify Sindri gateway and model readiness before investigating')
+              }
             >
-              {actionLoading() === finding.id ? 'Investigating…' : 'Investigate'}
+              {actionLoading() === finding.id ? 'Starting…' : 'Investigate with Sindri'}
             </button>
+            <Show when={props.investigationReady !== true}>
+              <p class="w-full text-xs text-muted" role="status">
+                {props.investigationReadinessMessage ??
+                  'Verify Sindri gateway and model readiness before investigating.'}
+              </p>
+            </Show>
           </Show>
           <Show when={proHandoff}>
             <div class="flex flex-wrap items-center gap-2">
@@ -1659,7 +1720,7 @@ export const FindingsPanel: Component<FindingsPanelProps> = (props) => {
               onToggle={(event) => setManageOpenId(event.currentTarget.open ? finding.id : null)}
             >
               <summary class="list-none cursor-pointer rounded-sm border border-border bg-surface px-3 py-1.5 font-medium text-base-content hover:bg-surface-hover focus:outline-hidden focus-visible:ring-2 focus-visible:ring-primary/40">
-                Resolve or dismiss
+                Finding management
               </summary>
               <div class="mt-1 flex min-w-48 flex-col gap-1 rounded-sm border border-border bg-surface p-1 shadow-xs">
                 <Show when={editingNoteId() !== finding.id && !finding.userNote}>
@@ -1931,6 +1992,13 @@ export const FindingsPanel: Component<FindingsPanelProps> = (props) => {
             investigationOutcome={finding.investigationOutcome}
             investigationAttempts={finding.investigationAttempts}
             investigationRecord={finding.investigationRecord}
+            canReinvestigate={
+              shouldShowInvestigationAction(finding) &&
+              props.canInvestigate === true &&
+              finding.investigationCanRetry === true
+            }
+            investigationReady={props.investigationReady === true}
+            investigationReadinessMessage={props.investigationReadinessMessage}
           />
         </Show>
 

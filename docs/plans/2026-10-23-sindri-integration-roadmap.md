@@ -592,6 +592,65 @@ workflow trust validation, mutation registry governance tests, all `repoctl`
 tests, repository boundary checks, and all private-boundary enforcement modes
 passed. The activation script passed a shell syntax check; it was not executed.
 
+### Phase 2P — End-to-end operator investigation workflow
+
+**Status (2026-10-29):** Implemented and locally verified on
+`feature/komodo-phase2-foundation`. No live settings, external request, image,
+deployment, push, merge, or infrastructure mutation is part of this checkpoint.
+
+- The missing Inbox action came from tying explicit investigations to an
+  autonomy level above `monitor`. The Patrol finding row now exposes
+  **Investigate with Sindri** when the effective `fork.ai_investigation`
+  capability, gateway/model readiness, retry eligibility, and operator
+  permission all allow it. The server repeats capability, scope, readiness,
+  organization-scoped finding, active-state, and retry checks. Monitor mode
+  remains read-only and can start an explicit investigation.
+- The existing fork endpoint now returns an accepted session ID immediately,
+  deduplicates a concurrent start to the current session, and tracks the work
+  through Patrol's existing cancellation and shutdown wait group. Progress,
+  evidence IDs, tools, call counts, outcomes, and failures are saved into the
+  current finding's investigation record. Existing detail and message GETs
+  follow that finding-backed session even if another orchestrator is installed.
+  A source finding description is never used as a completed model conclusion.
+- The detail view follows the accepted run, polls progress, and refreshes the
+  finding/activity projections after completion. It distinguishes observed
+  evidence from model-authored hypotheses, reports empty evidence and empty
+  interpretations, and does not render private reasoning text. It keeps using
+  the existing bounded canonical topology query and `/actions` lifecycle.
+  Investigation prompts classify direct, verified, shared, indirect, stale,
+  and unknown resource relationships and forbid inferring a shared storage or
+  host root cause from proximity alone. TrueNAS names remain acceptance
+  fixtures, not application behavior.
+- A **Finding management** section separates acknowledge, resolve, snooze,
+  suppress, remember-as-expected, dismiss, and suppression-rule controls from
+  investigation. Existing runs have a view link; eligible retries stay behind
+  capability, permission, readiness, and backend retry policy.
+- The operations overview previously used `GetStatus().Healthy` as the
+  monitoring-engine badge. That backend flag includes active infrastructure
+  findings (`FindingsSummary.IsHealthy`) and is also cleared when Patrol is
+  blocked. The view now reports runtime/monitoring state separately from
+  infrastructure severity counts and gateway readiness. Run errors remain
+  visible as errors without claiming they all came from deterministic
+  collectors.
+- Patrol remains the only investigation runtime and durable finding/history
+  owner. No new engine, scheduler, database, orchestrator, approval flow,
+  automatic repair, or Komodo mutation was added. Provider selection,
+  private-network opt-in, credential protection, no-fallback behavior, and
+  commercial-policy boundaries are unchanged.
+
+**Verification:** `go test -json ./... -count=1 -timeout=15m` passed 52,666
+test and subtest events across 160 packages. The full frontend suite passed
+1,273 files and 22,221 tests; one file and three tests were skipped. Focused
+investigation/API regressions passed (11 Go tests); the focused frontend
+regressions passed (95 tests), and the topology component file passed 17 tests.
+Type-check, lint, and format checks passed. Repository
+governance passed: workflow trust validation and 48 tests, mutation-registry
+selection (15 tests), all `repoctl` tests (31 tests), repository-boundary
+regression, and private-boundary enforcement with zero new private leakage.
+The live gateway, current TrueNAS observations, and infrastructure
+relationships are not qualified by fixture tests and require a separately
+authorized test-image acceptance run.
+
 ## Git checkpoint discipline
 
 - The current focused checkpoint is `feature/komodo-phase2-foundation`, based on current `origin/sindri`. Preserve the historical `feature/sindri-integration` branch and checkpoint history. Create descriptive, logically separated commits for approved implementation phases.

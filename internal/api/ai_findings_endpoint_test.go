@@ -12,7 +12,22 @@ import (
 	"github.com/rcourtman/pulse-go-rewrite/internal/ai"
 	"github.com/rcourtman/pulse-go-rewrite/internal/config"
 	"github.com/rcourtman/pulse-go-rewrite/internal/forkfeatures"
+	"github.com/rcourtman/pulse-go-rewrite/pkg/aicontracts"
 )
+
+func addForkInvestigationTestFinding(t *testing.T, router *Router) {
+	t.Helper()
+	service := router.aiSettingsHandler.GetAIService(context.Background())
+	patrol := service.GetPatrolService()
+	if patrol == nil || patrol.GetFindings() == nil {
+		t.Fatal("expected initialized Patrol findings store")
+	}
+	patrol.GetFindings().Add(&ai.Finding{
+		ID: "f-1", Severity: ai.FindingSeverityWarning, Category: ai.FindingCategoryReliability,
+		ResourceID: "vm-1", ResourceName: "database", ResourceType: "vm",
+		Title: "Synthetic service health finding", Description: "A test-only finding.",
+	})
+}
 
 // --- HandleGetInvestigation ---
 
@@ -118,8 +133,8 @@ func TestHandleGetInvestigation_NoOrchestrator(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/ai/findings/f-1/investigation", nil)
 	rec := httptest.NewRecorder()
 	handler.HandleGetInvestigation(rec, req)
-	if rec.Code != http.StatusServiceUnavailable {
-		t.Fatalf("expected 503 for nil orchestrator, got %d: %s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for a finding with no investigation, got %d: %s", rec.Code, rec.Body.String())
 	}
 }
 
@@ -304,8 +319,8 @@ func TestHandleGetInvestigationMessages_NoOrchestrator(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/ai/findings/f-1/investigation/messages", nil)
 	rec := httptest.NewRecorder()
 	handler.HandleGetInvestigationMessages(rec, req)
-	if rec.Code != http.StatusServiceUnavailable {
-		t.Fatalf("expected 503, got %d: %s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for a finding with no investigation, got %d: %s", rec.Code, rec.Body.String())
 	}
 }
 
@@ -399,9 +414,142 @@ func TestHandleGetInvestigationMessages_EmptyMessageList(t *testing.T) {
 	if resp["investigation_id"] != "inv-1" {
 		t.Fatalf("expected investigation_id inv-1, got %v", resp["investigation_id"])
 	}
+	if resp["session_id"] != "session-1" {
+		t.Fatalf("expected chat session_id session-1, got %v", resp["session_id"])
+	}
 	msgs := resp["messages"].([]interface{})
 	if len(msgs) != 0 {
 		t.Fatalf("expected 0 messages, got %d", len(msgs))
+	}
+}
+
+func TestStartForkFindingInvestigation_ReturnsCurrentRunWithoutStartingDuplicate(t *testing.T) {
+	findings := ai.NewFindingsStore()
+	findings.Add(&ai.Finding{
+		ID: "finding-deduplicate", Severity: ai.FindingSeverityWarning,
+		Title: "Synthetic fixture finding", ResourceID: "vm-100",
+	})
+	handler := &AISettingsHandler{}
+	startedAt := time.Now().UTC()
+	first, firstAttempt, alreadyRunning, err := handler.startForkFindingInvestigation(
+		findings, "finding-deduplicate", "investigation-current", startedAt,
+	)
+	if err != nil || alreadyRunning || firstAttempt != 1 || first == nil {
+		t.Fatalf("first start = finding %v, attempt %d, alreadyRunning %t, err %v", first, firstAttempt, alreadyRunning, err)
+	}
+	second, secondAttempt, alreadyRunning, err := handler.startForkFindingInvestigation(
+		findings, "finding-deduplicate", "investigation-duplicate", startedAt.Add(time.Second),
+	)
+	if err != nil || !alreadyRunning || secondAttempt != 1 || second == nil {
+		t.Fatalf("duplicate start = finding %v, attempt %d, alreadyRunning %t, err %v", second, secondAttempt, alreadyRunning, err)
+	}
+	if second.InvestigationSessionID != "investigation-current" || second.InvestigationAttempts != 1 {
+		t.Fatalf("duplicate start changed current run: session=%q attempts=%d", second.InvestigationSessionID, second.InvestigationAttempts)
+	}
+}
+
+func TestWriteForkInvestigationAcceptedReturnsFollowableSession(t *testing.T) {
+	rec := httptest.NewRecorder()
+	writeForkInvestigationAccepted(rec, "investigation-current", true)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want 202", rec.Code)
+	}
+	var payload struct {
+		Success         bool                            `json:"success"`
+		InvestigationID string                          `json:"investigation_id"`
+		Status          aicontracts.InvestigationStatus `json:"status"`
+		AlreadyRunning  bool                            `json:"already_running"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode accepted response: %v", err)
+	}
+	if !payload.Success || !payload.AlreadyRunning || payload.Status != aicontracts.InvestigationStatusRunning || payload.InvestigationID != "investigation-current" {
+		t.Fatalf("accepted response missing current run identity: %+v", payload)
+	}
+}
+
+func TestHandleGetInvestigation_UsesCurrentFindingRecordWithoutOrchestrator(t *testing.T) {
+	startedAt := time.Date(2026, 10, 28, 9, 0, 0, 0, time.UTC)
+	endingID := "investigation-finding-backed"
+	tmp := t.TempDir()
+	handler := newTestAISettingsHandler(&config.Config{DataPath: tmp}, config.NewConfigPersistence(tmp), nil)
+	svc := handler.GetAIService(context.Background())
+	svc.SetStateProvider(&MockStateProvider{})
+	patrol := svc.GetPatrolService()
+	if patrol == nil {
+		t.Fatal("expected Patrol service")
+	}
+	patrol.GetFindings().Add(&ai.Finding{
+		ID: "finding-fallback", Source: "ai-patrol", Severity: ai.FindingSeverityWarning,
+		Category: ai.FindingCategoryCapacity, ResourceID: "truenas:pool/single_disk_2TB",
+		ResourceName: "single_disk_2TB", ResourceType: "storage", Title: "Storage nearly full",
+		Description: "Original observed storage usage is high.", DetectedAt: startedAt,
+		InvestigationSessionID: endingID, InvestigationStatus: string(ai.InvestigationStatusRunning),
+		LastInvestigatedAt: &startedAt,
+		InvestigationRecord: &aicontracts.InvestigationRecord{
+			ID: endingID, FindingID: "finding-fallback", SessionID: endingID,
+			Status: aicontracts.InvestigationStatusRunning, StartedAt: startedAt,
+			Evidence: []aicontracts.InvestigationRecordEvidence{}, Verification: []string{},
+			Rollback: []string{}, ToolsUsed: []string{},
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/ai/findings/finding-fallback/investigation", nil)
+	rec := httptest.NewRecorder()
+	handler.HandleGetInvestigation(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected finding-backed run response, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var payload aicontracts.InvestigationSession
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode investigation response: %v", err)
+	}
+	if payload.SessionID != endingID || payload.Status != aicontracts.InvestigationStatusRunning || !payload.StartedAt.Equal(startedAt) {
+		t.Fatalf("response does not identify the active run: %+v", payload)
+	}
+	if payload.Summary != "" {
+		t.Fatalf("original finding description was misreported as investigation summary: %q", payload.Summary)
+	}
+}
+
+func TestHandleGetInvestigationMessages_UsesCurrentFindingSessionWithoutOrchestrator(t *testing.T) {
+	startedAt := time.Date(2026, 10, 28, 9, 0, 0, 0, time.UTC)
+	const sessionID = "investigation-message-fallback"
+	tmp := t.TempDir()
+	handler := newTestAISettingsHandler(&config.Config{DataPath: tmp}, config.NewConfigPersistence(tmp), nil)
+	svc := handler.GetAIService(context.Background())
+	svc.SetStateProvider(&MockStateProvider{})
+	svc.SetChatService(&stubChatService{messages: []ai.ChatMessage{{
+		ID: "message-1", Role: "user", Content: "synthetic investigation prompt", Timestamp: startedAt,
+	}}})
+	patrol := svc.GetPatrolService()
+	if patrol == nil {
+		t.Fatal("expected Patrol service")
+	}
+	patrol.GetFindings().Add(&ai.Finding{
+		ID: "finding-message-fallback", Severity: ai.FindingSeverityWarning,
+		ResourceID: "vm-100", DetectedAt: startedAt,
+		InvestigationSessionID: sessionID, InvestigationStatus: string(ai.InvestigationStatusRunning),
+		LastInvestigatedAt: &startedAt,
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/ai/findings/finding-message-fallback/investigation/messages", nil)
+	rec := httptest.NewRecorder()
+	handler.HandleGetInvestigationMessages(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected finding-backed messages, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var payload struct {
+		SessionID string `json:"session_id"`
+		Messages  []struct {
+			Content string `json:"content"`
+		} `json:"messages"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode messages response: %v", err)
+	}
+	if payload.SessionID != sessionID || len(payload.Messages) != 1 || payload.Messages[0].Content != "synthetic investigation prompt" {
+		t.Fatalf("messages response does not follow current session: %+v", payload)
 	}
 }
 
@@ -496,14 +644,19 @@ func TestFindingsRouterDispatch_SindriReinvestigationUsesLocalAdmission(t *testi
 	record := newTokenRecord(t, rawToken, []string{config.ScopeAIExecute}, nil)
 	cfg := newTestConfigWithTokens(t, record)
 	router := NewRouter(cfg, nil, nil, nil, nil, "1.0.0")
+	addForkInvestigationTestFinding(t, router)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/ai/findings/f-1/reinvestigate", strings.NewReader(`{}`))
 	req.Header.Set("X-API-Token", rawToken)
 	rec := httptest.NewRecorder()
 	router.Handler().ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusServiceUnavailable {
-		t.Fatalf("expected runner-readiness 503 after local admission, got %d: %s", rec.Code, rec.Body.String())
+	var response APIError
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode readiness response: %v", err)
+	}
+	if rec.Code != http.StatusConflict || response.Code != "investigation_not_ready" {
+		t.Fatalf("expected provider-readiness rejection after local admission, got %d (%s): %s", rec.Code, response.Code, rec.Body.String())
 	}
 }
 
@@ -533,6 +686,7 @@ func TestForkInvestigationRouteReachesPublicHandlerWithoutCommercialEntitlement(
 	if _, err := router.forkProfileManager.Replace(profile, profile.Revision); err != nil {
 		t.Fatal(err)
 	}
+	addForkInvestigationTestFinding(t, router)
 	req := httptest.NewRequest(http.MethodPost, "/api/ai/findings/f-1/reinvestigate", strings.NewReader(`{}`))
 	req.Header.Set("X-API-Token", rawToken)
 	rec := httptest.NewRecorder()
@@ -540,8 +694,12 @@ func TestForkInvestigationRouteReachesPublicHandlerWithoutCommercialEntitlement(
 	if rec.Code == http.StatusPaymentRequired {
 		t.Fatalf("public fork capability was treated as a commercial entitlement: %s", rec.Body.String())
 	}
-	if rec.Code != http.StatusServiceUnavailable {
-		t.Fatalf("expected request to reach the public handler and fail only because Patrol is not initialized, got %d: %s", rec.Code, rec.Body.String())
+	var response APIError
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode readiness response: %v", err)
+	}
+	if rec.Code != http.StatusConflict || response.Code != "investigation_not_ready" {
+		t.Fatalf("expected public fork handler provider-readiness response, got %d (%s): %s", rec.Code, response.Code, rec.Body.String())
 	}
 }
 

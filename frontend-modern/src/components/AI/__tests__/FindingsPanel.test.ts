@@ -188,7 +188,7 @@ describe('FindingsPanel source wiring', () => {
 
   it('keeps expanded finding actions behind a canonical primary action and explicit outcome menu', () => {
     expect(findingsPanelSource).toContain('getFindingPrimaryActionPresentation(finding)');
-    expect(findingsPanelSource).toContain('Resolve or dismiss');
+    expect(findingsPanelSource).toContain('Finding management');
     expect(findingsPanelSource).toContain('min-w-48');
     expect(findingsPanelSource).not.toContain('min-w-40');
   });

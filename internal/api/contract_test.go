@@ -4519,6 +4519,7 @@ func TestContract_FindingJSONSnapshot(t *testing.T) {
 		"investigation_outcome":"fix_queued",
 		"last_investigated_at":"2026-02-08T13:29:15Z",
 		"investigation_attempts":2,
+		"investigation_can_retry":false,
 		"investigation_record":{"id":"investigation-1","finding_id":"finding-1","subject":{"resource_id":"vm-100","resource_name":"web-server","resource_type":"vm","node":"pve-1"},"trigger":{"finding_key":"cpu-high","source":"ai-analysis","severity":"critical","category":"performance","title":"High CPU usage","detected_at":"2026-02-08T13:14:15Z","description":"CPU sustained above 95%"},"status":"completed","outcome":"fix_queued","confidence":"medium","evidence":[{"kind":"finding_evidence","summary":"cpu=96%"}],"conclusion":"CPU sustained above 95%","recommended_action":"Investigate processes and load","verification":[],"rollback":[],"tools_used":["ssh.exec"],"started_at":"2026-02-08T13:14:15Z","approval_id":"approval-1"},
 		"loop_state":"remediation_planned",
 		"lifecycle":[{"at":"2026-02-08T13:14:15Z","type":"state_change","message":"Moved to investigating","from":"detected","to":"investigating","metadata":{"from":"detected","to":"investigating"}}],

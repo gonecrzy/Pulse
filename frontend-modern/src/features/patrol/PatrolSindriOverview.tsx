@@ -101,6 +101,29 @@ export function PatrolSindriOverview(props: PatrolSindriOverviewProps) {
             <p class="mt-1 text-xs leading-5 text-muted">
               Last completed run: {relativeTime(model().lastCompletedAt, 'No completed run yet')}
             </p>
+            <Show when={model().monitoring.detail}>
+              <p class="mt-1 text-xs leading-5 text-amber-700 dark:text-amber-300">
+                {model().monitoring.detail}
+              </p>
+            </Show>
+            <div class="mt-3 border-t border-border-subtle pt-2">
+              <div class="flex flex-wrap items-center justify-between gap-2">
+                <h4 class="text-xs font-semibold text-base-content">Infrastructure health</h4>
+                <MetadataBadge
+                  tone={model().infrastructure.healthy ? 'success' : 'warning'}
+                  size="xs"
+                  shape="rounded"
+                >
+                  {model().infrastructure.label}
+                </MetadataBadge>
+              </div>
+              <p class="mt-1 text-xs leading-5 text-muted">{model().infrastructure.detail}</p>
+              <Show when={status() && !status()!.healthy}>
+                <p class="mt-1 text-xs leading-5 text-muted">
+                  Infrastructure findings do not mean the Patrol monitoring engine is degraded.
+                </p>
+              </Show>
+            </div>
           </article>
 
           <article class="rounded-md border border-border-subtle p-3">

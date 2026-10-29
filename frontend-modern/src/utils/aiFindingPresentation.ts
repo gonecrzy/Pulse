@@ -428,6 +428,34 @@ export const getFindingActiveRuntimeSortOrder = (
   finding: Pick<UnifiedFinding, 'status' | 'resourceId' | 'resourceName' | 'title'>,
 ): number => (finding.status === 'active' && isPatrolRuntimeFinding(finding) ? 0 : 1);
 
+export const getActiveFindings = <TFinding extends Pick<UnifiedFinding, 'status'>>(
+  findings: readonly TFinding[],
+): TFinding[] => findings.filter((finding) => finding.status === 'active');
+
+export const getActiveFindingSeverityCounts = (
+  findings: readonly Pick<UnifiedFinding, 'severity'>[],
+): { critical: number; warning: number; watch: number; info: number } =>
+  findings.reduce(
+    (counts, finding) => {
+      if (finding.severity in counts) {
+        counts[finding.severity as keyof typeof counts] += 1;
+      }
+      return counts;
+    },
+    { critical: 0, warning: 0, watch: 0, info: 0 },
+  );
+
+export const getActiveFindingInvestigationCount = (
+  findings: readonly Pick<UnifiedFinding, 'investigationStatus'>[],
+): number =>
+  findings.reduce(
+    (count, finding) =>
+      finding.investigationStatus === 'pending' || finding.investigationStatus === 'running'
+        ? count + 1
+        : count,
+    0,
+  );
+
 export const getPatrolFindingsBadgePresentation = (
   findings: Pick<UnifiedFinding, 'status' | 'severity' | 'resourceId' | 'resourceName' | 'title'>[],
 ): PatrolFindingsBadgePresentation => {

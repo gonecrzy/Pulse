@@ -268,6 +268,47 @@ func TestHandleGetPatrolFindings_AppliesResourceCriticalityFromOperatorState(t *
 	}
 }
 
+func TestHandleGetPatrolFindings_ExposesRetryEligibility(t *testing.T) {
+	t.Parallel()
+	handler := createTestAIHandler(t)
+	patrol := ai.NewPatrolService(nil, nil)
+	now := time.Now().UTC()
+	patrol.GetFindings().Add(&ai.Finding{
+		ID: "retry-eligible", ResourceID: "vm:101", ResourceType: "vm",
+		Severity: ai.FindingSeverityWarning, Category: ai.FindingCategoryReliability,
+		DetectedAt: now, Title: "Eligible finding",
+	})
+	patrol.GetFindings().Add(&ai.Finding{
+		ID: "retry-cooldown", ResourceID: "vm:102", ResourceType: "vm",
+		Severity: ai.FindingSeverityWarning, Category: ai.FindingCategoryReliability,
+		DetectedAt: now, Title: "Cooling down", InvestigationAttempts: 1,
+		InvestigationOutcome: string(ai.InvestigationOutcomeTimedOut),
+		LastInvestigatedAt:   &now,
+	})
+	setUnexportedField(t, handler.defaultAIService, "patrolService", patrol)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/ai/patrol/findings", nil)
+	rec := httptest.NewRecorder()
+	handler.HandleGetPatrolFindings(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var findings []struct {
+		ID                    string `json:"id"`
+		InvestigationCanRetry bool   `json:"investigation_can_retry"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &findings); err != nil {
+		t.Fatalf("decode findings: %v", err)
+	}
+	canRetry := map[string]bool{}
+	for _, finding := range findings {
+		canRetry[finding.ID] = finding.InvestigationCanRetry
+	}
+	if !canRetry["retry-eligible"] || canRetry["retry-cooldown"] {
+		t.Fatalf("retry eligibility = %+v, want only the active finding eligible", canRetry)
+	}
+}
+
 func TestHandleForcePatrol_MethodNotAllowed(t *testing.T) {
 	t.Parallel()
 	handler := createTestAIHandler(t)

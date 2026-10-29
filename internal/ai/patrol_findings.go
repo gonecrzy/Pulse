@@ -1861,10 +1861,8 @@ func (p *PatrolService) maybeInvestigateFinding(f *Finding) bool {
 	}
 
 	// Trigger investigation in background with a timeout to prevent indefinite runs.
-	// Track with WaitGroup so graceful shutdown can wait for completion.
-	p.investigationWg.Add(1)
-	go func() {
-		defer p.investigationWg.Done()
+	// Track it in Patrol's existing task lifecycle so shutdown can cancel and wait.
+	if !p.StartInvestigationTask(context.Background(), 0, func(taskCtx context.Context) {
 
 		// Re-read autonomy level at execution time to avoid using a stale value
 		// captured before the goroutine was scheduled.
@@ -1878,7 +1876,7 @@ func (p *PatrolService) maybeInvestigateFinding(f *Finding) bool {
 		// The orchestrator enforces the configured investigation timeout; this
 		// outer deadline is a safety net, so it follows that timeout rather than
 		// cutting longer configured or subscription-agent runs short.
-		ctx, cancel := context.WithTimeout(context.Background(), currentCfg.GetPatrolInvestigationTimeout()+investigationRunGrace)
+		ctx, cancel := context.WithTimeout(taskCtx, currentCfg.GetPatrolInvestigationTimeout()+investigationRunGrace)
 		defer cancel()
 		if err := orchestrator.InvestigateFinding(ctx, invFinding, currentAutonomy); err != nil {
 			log.Error().
@@ -1937,7 +1935,9 @@ func (p *PatrolService) maybeInvestigateFinding(f *Finding) bool {
 		// proposal channel: the investigation's ActionReference points at
 		// the canonical action audit, so no command-shaped remediation
 		// plan artifact is generated from investigation prose.
-	}()
+	}) {
+		return false
+	}
 
 	log.Info().
 		Str("finding_id", f.ID).

@@ -5,6 +5,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { FindingsPanel } from '../FindingsPanel';
 import { RELATIVE_TIME_TICK_MS } from '@/utils/relativeTimeClock';
 
+const reinvestigateFindingMock = vi.hoisted(() => vi.fn());
+
+vi.mock('@/api/patrol', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/api/patrol')>()),
+  reinvestigateFinding: reinvestigateFindingMock,
+}));
+
 const mockState = vi.hoisted(() => {
   const loadFindings = vi.fn();
   const loadPatrolFindings = vi.fn();
@@ -345,7 +352,7 @@ describe('FindingsPanel resource links', () => {
     expect(
       screen.getByRole('complementary', { name: 'Review Provider connection issue' }),
     ).toBeInTheDocument();
-    expect(screen.getByText('Resolve or dismiss')).toBeInTheDocument();
+    expect(screen.getByText('Finding management', { selector: 'summary' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Open in Assistant' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Acknowledge' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Snooze 24h' })).toBeInTheDocument();
@@ -586,14 +593,14 @@ describe('FindingsPanel resource links', () => {
     await waitFor(() => expect(mockState.loadPatrolFindings).toHaveBeenCalled());
 
     const options = screen.getByRole('button', {
-      name: 'Finding options for Provider connection issue',
+      name: 'Finding management for Provider connection issue',
     });
     expect(options).toHaveAttribute('aria-expanded', 'false');
 
     fireEvent.click(options);
 
     expect(options).toHaveAttribute('aria-expanded', 'true');
-    expect(screen.getByText('Resolve or dismiss')).toBeInTheDocument();
+    expect(screen.getByText('Finding management', { selector: 'summary' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Dismiss: Not an issue' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Remember as expected' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Dismiss: Later' })).toBeInTheDocument();
@@ -682,6 +689,7 @@ describe('FindingsPanel resource links', () => {
 
 describe('FindingsPanel investigate action gating', () => {
   beforeEach(() => {
+    reinvestigateFindingMock.mockReset();
     mockState.patrolFindings = [
       {
         id: 'finding-provider-issue',
@@ -707,18 +715,114 @@ describe('FindingsPanel investigate action gating', () => {
       screen.getByRole('button', { name: 'Review issue for Provider connection issue' }),
     );
 
-  it('shows an Investigate action above Watch-only mode on an un-investigated patrol finding', async () => {
-    render(() => <FindingsPanel findingsSource="patrol" autonomyLevel="approval" />);
+  const renderInvestigationFinding = (overrides: Record<string, unknown> = {}) => {
+    mockState.patrolFindings = [
+      {
+        id: 'finding-investigation-eligible',
+        source: 'ai-patrol',
+        resourceId: 'vm-100',
+        resourceName: 'database',
+        resourceType: 'vm',
+        category: 'reliability',
+        severity: 'warning',
+        title: 'Health check failed',
+        description: 'The service returned an error.',
+        detectedAt: '2026-03-30T11:00:00Z',
+        status: 'active',
+        investigationCanRetry: true,
+        ...overrides,
+      },
+    ];
+  };
+
+  it('shows a primary Investigate with Sindri action in monitor mode when capability, readiness and permission allow it', async () => {
+    renderInvestigationFinding();
+    render(() => (
+      <FindingsPanel
+        findingsSource="patrol"
+        autonomyLevel="monitor"
+        investigationCapabilityAvailable
+        investigationReady
+        canInvestigate
+      />
+    ));
     await waitFor(() => expect(mockState.loadPatrolFindings).toHaveBeenCalled());
-    expandRow();
-    expect(screen.getByRole('button', { name: /Investigate/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Investigate with Sindri' })).toBeInTheDocument();
   });
 
-  it('hides the Investigate action in Watch-only (monitor) mode', async () => {
-    render(() => <FindingsPanel findingsSource="patrol" autonomyLevel="monitor" />);
+  it('starts an investigation and opens its detail from the finding row', async () => {
+    reinvestigateFindingMock.mockResolvedValue({
+      success: true,
+      investigation_id: 'investigation-1',
+      status: 'running',
+      already_running: false,
+    });
+    renderInvestigationFinding();
+    render(() => (
+      <FindingsPanel
+        findingsSource="patrol"
+        autonomyLevel="monitor"
+        investigationCapabilityAvailable
+        investigationReady
+        canInvestigate
+      />
+    ));
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Investigate with Sindri' }));
+
+    await waitFor(() =>
+      expect(reinvestigateFindingMock).toHaveBeenCalledWith('finding-investigation-eligible'),
+    );
+    expect(
+      screen.getByRole('button', { name: 'Close review for Health check failed' }),
+    ).toHaveAttribute('aria-expanded', 'true');
+  });
+
+  it.each([
+    [
+      'capability unavailable',
+      { investigationCapabilityAvailable: false, investigationReady: true, canInvestigate: true },
+    ],
+    [
+      'readiness unavailable',
+      { investigationCapabilityAvailable: true, investigationReady: false, canInvestigate: true },
+    ],
+    [
+      'operator lacks permission',
+      { investigationCapabilityAvailable: true, investigationReady: true, canInvestigate: false },
+    ],
+  ])('does not launch investigation when %s', async (_case, gates) => {
+    renderInvestigationFinding();
+    render(() => <FindingsPanel findingsSource="patrol" autonomyLevel="monitor" {...gates} />);
     await waitFor(() => expect(mockState.loadPatrolFindings).toHaveBeenCalled());
-    expandRow();
-    expect(screen.queryByRole('button', { name: /^Investigate$/ })).toBeNull();
+    const action = screen.queryByRole('button', { name: 'Investigate with Sindri' });
+    if (
+      gates.investigationCapabilityAvailable &&
+      gates.canInvestigate &&
+      !gates.investigationReady
+    ) {
+      expect(action).toBeDisabled();
+    } else {
+      expect(action).toBeNull();
+    }
+  });
+
+  it('offers a view action for an existing run instead of starting a duplicate', async () => {
+    renderInvestigationFinding({
+      investigationStatus: 'running',
+      investigationSessionId: 'session-1',
+    });
+    render(() => (
+      <FindingsPanel
+        findingsSource="patrol"
+        investigationCapabilityAvailable
+        investigationReady
+        canInvestigate
+      />
+    ));
+    await waitFor(() => expect(mockState.loadPatrolFindings).toHaveBeenCalled());
+    expect(screen.getByRole('button', { name: 'View investigation' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Investigate with Sindri' })).toBeNull();
   });
 
   it('renders the Watch-only mode nudge in the expanded row and fires its switch callback', async () => {

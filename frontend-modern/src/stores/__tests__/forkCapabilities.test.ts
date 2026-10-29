@@ -45,6 +45,16 @@ describe('fork capability store', () => {
     expect(forkCapabilitiesError()?.message).toBe('unavailable');
   });
 
+  it('fails closed when a capability response is missing its capability list', async () => {
+    api.getCapabilities.mockResolvedValueOnce(
+      {} as Awaited<ReturnType<typeof ForkCapabilitiesAPI.getCapabilities>>,
+    );
+
+    await loadForkCapabilities(true);
+
+    expect(hasForkCapability('fork.ai_investigation')).toBe(false);
+  });
+
   it('publishes resolved server state and versioned profile updates', async () => {
     api.getCapabilities.mockResolvedValueOnce({
       profile_version: 1,

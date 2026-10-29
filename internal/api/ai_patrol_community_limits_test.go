@@ -32,14 +32,21 @@ func TestReinvestigateSindriAdmissionDoesNotRequirePulseLicense(t *testing.T) {
 	record := newTokenRecord(t, rawToken, []string{config.ScopeAIExecute}, nil)
 	cfg := newTestConfigWithTokens(t, record)
 	router := NewRouter(cfg, nil, nil, nil, nil, "1.0.0")
+	service := router.aiSettingsHandler.GetAIService(context.Background())
+	service.SetLicenseChecker(communityLicenseChecker{})
+	addForkInvestigationTestFinding(t, router)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/ai/findings/f-1/reinvestigate", strings.NewReader(`{}`))
 	req.Header.Set("X-API-Token", rawToken)
 	rec := httptest.NewRecorder()
 	router.Handler().ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusServiceUnavailable {
-		t.Fatalf("expected runner-readiness 503 after local admission, got %d: %s", rec.Code, rec.Body.String())
+	var response APIError
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode readiness response: %v", err)
+	}
+	if rec.Code != http.StatusConflict || response.Code != "investigation_not_ready" {
+		t.Fatalf("expected provider-readiness rejection without Pulse license, got %d (%s): %s", rec.Code, response.Code, rec.Body.String())
 	}
 }
 

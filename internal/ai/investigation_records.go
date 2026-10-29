@@ -48,6 +48,9 @@ func BuildFindingInvestigationRecord(f *Finding, session *InvestigationSession) 
 
 	if session != nil {
 		normalized := session.NormalizeCollections()
+		// An explicit run with no useful summary must stay empty. The finding's
+		// original description is an observation, not an investigation result.
+		record.Conclusion = ""
 		record.ID = fallbackInvestigationRecordID(f.ID, normalized.ID)
 		record.SessionID = firstNonEmpty(normalized.SessionID, f.InvestigationSessionID, normalized.ID)
 		if normalized.FindingID != "" {
@@ -61,13 +64,14 @@ func BuildFindingInvestigationRecord(f *Finding, session *InvestigationSession) 
 		}
 		record.StartedAt = normalized.StartedAt
 		record.CompletedAt = normalized.CompletedAt
+		record.TurnCount = normalized.TurnCount
+		record.EvidenceCallCount = normalized.EvidenceCallCount
+		record.ToolCallCount = normalized.ToolCallCount
 		record.ToolsUsed = uniqueNonEmptyStrings(normalized.ToolsUsed)
 		record.ApprovalID = strings.TrimSpace(normalized.ApprovalID)
 		record.Action = aicontracts.CloneActionReference(normalized.Action)
 		record.Error = strings.TrimSpace(normalized.Error)
-		if summary := strings.TrimSpace(normalized.Summary); summary != "" {
-			record.Conclusion = summary
-		}
+		record.Conclusion = strings.TrimSpace(normalized.Summary)
 		record.Evidence = append(record.Evidence, investigationRecordEvidenceIDs(normalized.EvidenceIDs)...)
 		if normalized.ProposedFix != nil {
 			record.ProposedFix = investigationRecordFixFromSession(normalized.ProposedFix)

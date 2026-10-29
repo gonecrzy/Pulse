@@ -23,7 +23,7 @@ interface InvestigationMessagesProps {
 
 /** Returns true if a message has no displayable content */
 function isEmptyMessage(msg: ChatMessage): boolean {
-  return !msg.content && !msg.reasoning_content && !msg.tool_calls?.length && !msg.tool_result;
+  return !msg.content && !msg.tool_calls?.length && !msg.tool_result;
 }
 
 export const InvestigationMessages: Component<InvestigationMessagesProps> = (props) => {
@@ -76,18 +76,6 @@ export const InvestigationMessages: Component<InvestigationMessagesProps> = (pro
                           : 'bg-surface text-base-content'
                     }`}
                   >
-                    {/* Reasoning content (extended thinking) */}
-                    <Show when={msg.reasoning_content}>
-                      <details class="mb-1">
-                        <summary class="text-[10px] text-muted cursor-pointer hover:text-base-content hover:underline">
-                          Show reasoning
-                        </summary>
-                        <div class="mt-1 text-[10px] text-muted whitespace-pre-wrap wrap-break-word border-l-2 border-border pl-2">
-                          {msg.reasoning_content}
-                        </div>
-                      </details>
-                    </Show>
-
                     {/* Text content: assistant turns carry model markdown;
                         render it through the shared sanitizing renderer
                         instead of raw text. */}

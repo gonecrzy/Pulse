@@ -117,6 +117,17 @@ func (c *ProposalCapture) RecordEvidence(id string) {
 	c.identity.EvidenceIDs = append(c.identity.EvidenceIDs, id)
 }
 
+// EvidenceIDs returns the bounded set of observations recorded for this run.
+// IDs identify tool results and do not assert that those results prove a diagnosis.
+func (c *ProposalCapture) EvidenceIDs() []string {
+	if c == nil {
+		return []string{}
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]string(nil), c.identity.EvidenceIDs...)
+}
+
 func (c *ProposalCapture) Capabilities(ctx context.Context, resourceID string) ([]unified.ResourceCapability, error) {
 	if c == nil || c.catalog == nil {
 		return nil, errors.New("no capability catalog is wired for this investigation")

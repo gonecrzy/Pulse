@@ -65,4 +65,33 @@ describe('InvestigationMessages', () => {
     expect(screen.queryByText('completed')).not.toBeInTheDocument();
     expect(screen.queryByText('failed')).not.toBeInTheDocument();
   });
+
+  it('never renders model reasoning text as investigation evidence', async () => {
+    getMessages.mockResolvedValue({
+      messages: [
+        {
+          id: 'turn-3',
+          role: 'assistant',
+          content: 'The storage relationship is a hypothesis pending fresh metrics.',
+          reasoning_content: 'PRIVATE MODEL REASONING',
+          timestamp: '2026-09-06',
+        },
+        {
+          id: 'turn-4',
+          role: 'assistant',
+          content: '',
+          reasoning_content: 'REASONING ONLY',
+          timestamp: '2026-09-06',
+        },
+      ],
+    });
+
+    render(() => <InvestigationMessages findingId="finding-3" />);
+    expect(
+      await screen.findByText('The storage relationship is a hypothesis pending fresh metrics.'),
+    ).toBeVisible();
+    expect(screen.queryByText('PRIVATE MODEL REASONING')).not.toBeInTheDocument();
+    expect(screen.queryByText('REASONING ONLY')).not.toBeInTheDocument();
+    expect(screen.queryByText('Show reasoning')).not.toBeInTheDocument();
+  });
 });

@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from '@solidjs/testing-library';
+import { cleanup, fireEvent, render, screen, waitFor } from '@solidjs/testing-library';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { InvestigationRecord } from '@/api/ai';
 import type { Investigation } from '@/api/patrol';
@@ -14,6 +14,7 @@ const getInvestigationMock = vi.hoisted(() => vi.fn<() => Promise<Investigation>
 const getResourceMock = vi.hoisted(() => vi.fn());
 const reinvestigateFindingMock = vi.hoisted(() => vi.fn());
 const loadFindingsMock = vi.hoisted(() => vi.fn());
+const loadPatrolFindingsMock = vi.hoisted(() => vi.fn());
 
 vi.mock('@/api/patrol', () => ({
   getInvestigation: getInvestigationMock,
@@ -35,6 +36,7 @@ vi.mock('@/stores/notifications', () => ({
 vi.mock('@/stores/aiIntelligence', () => ({
   aiIntelligenceStore: {
     loadFindings: loadFindingsMock,
+    loadPatrolFindings: loadPatrolFindingsMock,
   },
 }));
 
@@ -48,6 +50,7 @@ describe('InvestigationSection', () => {
     getResourceMock.mockReset();
     reinvestigateFindingMock.mockReset();
     loadFindingsMock.mockReset();
+    loadPatrolFindingsMock.mockReset();
   });
 
   afterEach(() => {
@@ -66,6 +69,8 @@ describe('InvestigationSection', () => {
       status: 'running',
       started_at: '2026-03-08T10:00:00.000Z',
       turn_count: 2,
+      evidence_call_count: 3,
+      tool_call_count: 4,
       summary: 'Investigation is active.',
       tools_used: ['ssh'],
     } satisfies Investigation);
@@ -76,6 +81,7 @@ describe('InvestigationSection', () => {
     expect(getInvestigationStatusBadgeTone('running')).toBe('info');
     expect(statusBadge.className).toContain('inline-flex');
     expect(statusBadge.className).toContain('border-blue-200');
+    expect(screen.getByRole('status')).toHaveTextContent('3 evidence reads · 4 tool calls');
   });
 
   it('renders investigation outcome badges from the shared finding presentation contract', async () => {
@@ -99,6 +105,48 @@ describe('InvestigationSection', () => {
     expect(outcomeBadge.className).toContain('border-amber-200');
   });
 
+  it('refreshes Patrol findings after the latest investigation reaches a terminal status', async () => {
+    getInvestigationMock.mockResolvedValue({
+      id: 'inv-completed-refresh',
+      finding_id: 'finding-completed-refresh',
+      session_id: 'session-completed-refresh',
+      status: 'completed',
+      started_at: '2026-10-28T10:00:00Z',
+      turn_count: 1,
+      summary: 'Current observations are stable.',
+    } satisfies Investigation);
+
+    render(() => <InvestigationSection findingId="finding-completed-refresh" />);
+
+    expect(await screen.findByText('Investigation')).toBeVisible();
+    await waitFor(() => expect(loadPatrolFindingsMock).toHaveBeenCalled());
+  });
+
+  it('keeps reinvestigation behind operator admission and gateway readiness', async () => {
+    getInvestigationMock.mockResolvedValue({
+      id: 'inv-retry-gate',
+      finding_id: 'finding-retry-gate',
+      session_id: 'session-retry-gate',
+      status: 'failed',
+      outcome: 'timed_out',
+      started_at: '2026-10-28T10:00:00Z',
+      turn_count: 1,
+    } satisfies Investigation);
+
+    render(() => (
+      <InvestigationSection
+        findingId="finding-retry-gate"
+        canReinvestigate
+        investigationReady={false}
+        investigationReadinessMessage="Sindri gateway is not ready"
+      />
+    ));
+
+    const retry = await screen.findByRole('button', { name: 'Reinvestigate with Sindri' });
+    expect(retry).toBeDisabled();
+    expect(retry).toHaveAttribute('title', 'Sindri gateway is not ready');
+  });
+
   it('offers another run after a run that ended without a clear conclusion', async () => {
     getInvestigationMock.mockResolvedValue({
       id: 'inv-unclassified',
@@ -118,7 +166,7 @@ describe('InvestigationSection', () => {
     const outcomeBadge = await screen.findByText('No clear conclusion');
     expect(outcomeBadge.className).toContain('border-amber-200');
     expect(screen.getByText('The service restarted twice; the logs do not say why.')).toBeVisible();
-    expect(screen.getByRole('button', { name: 'Re-investigate' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Reinvestigate with Sindri' })).toBeInTheDocument();
   });
 
   it('presents a run cut short by a restart as information, not as an error', async () => {
@@ -166,7 +214,7 @@ describe('InvestigationSection', () => {
     const noteBox = screen.getByText(note);
     expect(noteBox.className).toContain('text-muted');
     expect(noteBox.className).not.toContain('bg-red-50');
-    expect(screen.getByRole('button', { name: 'Re-investigate' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Reinvestigate with Sindri' })).toBeInTheDocument();
   });
 
   it('does not offer another run while a planned fix is queued', async () => {
@@ -185,7 +233,9 @@ describe('InvestigationSection', () => {
 
     // The run failed after planning a fix; the fix is still waiting for approval.
     await screen.findByText(getInvestigationOutcomeLabel('fix_queued'));
-    expect(screen.queryByRole('button', { name: 'Re-investigate' })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Reinvestigate with Sindri' }),
+    ).not.toBeInTheDocument();
     // The run's note is information beside the queued fix, not an alarm.
     const noteBox = screen.getByText('The provider stopped responding.');
     expect(noteBox.className).toContain('text-muted');
@@ -340,6 +390,116 @@ describe('InvestigationSection', () => {
     expect(screen.getByText(/Canonical resource/)).toBeInTheDocument();
   });
 
+  it('presents TrueNAS dataset and pool observations as linked fixture evidence without asserting a shared cause', async () => {
+    getInvestigationMock.mockResolvedValue(undefined as unknown as Investigation);
+    const poolId = 'truenas:pool/single_disk_2TB';
+    const datasetId = 'truenas:dataset/single_disk_2TB/prox_backups';
+    getResourceMock.mockResolvedValue({
+      id: datasetId,
+      type: 'storage',
+      name: 'single_disk_2TB/prox_backups',
+      displayName: 'single_disk_2TB/prox_backups',
+      status: 'online',
+      lastSeen: '2026-10-28T09:00:00Z',
+      canonicalIdentity: {
+        primaryId: datasetId,
+        displayName: 'single_disk_2TB/prox_backups',
+      },
+      sources: ['truenas'],
+      sourceStatus: { truenas: { status: 'current', lastSeen: '2026-10-28T09:00:00Z' } },
+      relationshipContext: {
+        resources: [
+          {
+            id: poolId,
+            type: 'storage',
+            name: 'single_disk_2TB',
+            status: 'online',
+            sources: ['truenas'],
+            incidentCount: 2,
+            incidentSummary: 'Pool utilization observations are at capacity.',
+          },
+          {
+            id: datasetId,
+            type: 'storage',
+            name: 'single_disk_2TB/prox_backups',
+            status: 'online',
+            parentId: poolId,
+            sources: ['truenas'],
+            canonicalIdentity: {
+              primaryId: datasetId,
+              displayName: 'single_disk_2TB/prox_backups',
+            },
+          },
+        ],
+        relationships: [
+          {
+            sourceId: datasetId,
+            targetId: poolId,
+            type: 'stores_on',
+            confidence: 1,
+            active: true,
+            discoverer: 'truenas_adapter',
+            evidenceSource: 'truenas',
+            evidenceFreshness: 'current',
+            observedAt: '2026-10-28T09:00:00Z',
+            lastSeenAt: '2026-10-28T09:00:00Z',
+          },
+        ],
+        relationshipDetails: [
+          {
+            relationship: {
+              sourceId: datasetId,
+              targetId: poolId,
+              type: 'stores_on',
+              confidence: 1,
+              active: true,
+              discoverer: 'truenas_adapter',
+              evidenceSource: 'truenas',
+              evidenceFreshness: 'current',
+              observedAt: '2026-10-28T09:00:00Z',
+              lastSeenAt: '2026-10-28T09:00:00Z',
+            },
+            scope: 'direct',
+            classification: 'verified_hardware_backing',
+            distance: 1,
+            traversalPath: [datasetId, poolId],
+          },
+        ],
+        truncated: false,
+      },
+    });
+
+    render(() => (
+      <InvestigationSection
+        findingId="finding-truenas-fixture"
+        investigationRecord={{
+          id: 'record-truenas-fixture',
+          finding_id: 'finding-truenas-fixture',
+          subject: { resource_id: datasetId, resource_name: 'single_disk_2TB/prox_backups' },
+          trigger: { detected_at: '2026-10-28T09:00:00Z' },
+          status: 'completed',
+          evidence: [],
+          verification: [],
+          rollback: [],
+          tools_used: [],
+          started_at: '2026-10-28T09:00:00Z',
+        }}
+      />
+    ));
+
+    fireEvent.click(screen.getByText('Infrastructure context'));
+    expect(await screen.findByTestId('patrol-investigation-relationship-map')).toBeInTheDocument();
+    expect(screen.getByTestId('resource-canonical-relationships')).toHaveTextContent(
+      'single_disk_2TB/prox_backups',
+    );
+    const poolNode = screen.getByTestId(`resource-topology-tree-node-${poolId}`);
+    expect(poolNode).toHaveTextContent('2 active incidents');
+    fireEvent.click(poolNode.querySelector('summary')!);
+    fireEvent(poolNode, new Event('toggle'));
+    expect(screen.getByTestId(`resource-topology-tree-entry-${datasetId}`)).toBeInTheDocument();
+    expect(screen.queryByText(/same root cause/i)).not.toBeInTheDocument();
+  });
+
   it('keeps the investigation usable and reports unavailable topology without exposing API errors', async () => {
     getInvestigationMock.mockResolvedValue(undefined as unknown as Investigation);
     getResourceMock.mockRejectedValue(new Error('organization B resource denied'));
@@ -394,6 +554,33 @@ describe('InvestigationSection', () => {
 
     expect(await screen.findByText('Patrol record')).toBeInTheDocument();
     expect(screen.getByText('Running')).toBeInTheDocument();
+  });
+
+  it('states clearly when a completed investigation produced no useful evidence or interpretation', async () => {
+    getInvestigationMock.mockResolvedValue(undefined as unknown as Investigation);
+
+    render(() => (
+      <InvestigationSection
+        findingId="finding-empty-investigation"
+        investigationRecord={{
+          id: 'record-empty-investigation',
+          finding_id: 'finding-empty-investigation',
+          subject: { resource_id: 'storage-1' },
+          trigger: { title: 'Storage capacity alert', detected_at: '2026-10-28T09:00:00Z' },
+          status: 'failed',
+          started_at: '2026-10-28T09:00:00Z',
+          evidence: [],
+          verification: [],
+          rollback: [],
+          tools_used: [],
+        }}
+      />
+    ));
+
+    expect(
+      await screen.findByText('No diagnostic interpretation was produced for this run.'),
+    ).toBeVisible();
+    expect(screen.getByText('No useful evidence was recorded during this run.')).toBeVisible();
   });
 
   it.each([false, true])(

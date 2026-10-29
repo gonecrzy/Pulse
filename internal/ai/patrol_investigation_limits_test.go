@@ -1,6 +1,7 @@
 package ai
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -12,6 +13,33 @@ type sessionReportingOrchestrator struct {
 	stubInvestigationOrchestrator
 	sessions map[string]*InvestigationSession
 	store    aicontracts.InvestigationStore
+}
+
+func TestStartInvestigationTaskCancelsAndWaitsDuringPatrolStop(t *testing.T) {
+	patrol := &PatrolService{
+		running:  true,
+		stopCh:   make(chan struct{}),
+		findings: NewFindingsStore(),
+	}
+	started := make(chan struct{})
+	finished := make(chan struct{})
+	if !patrol.StartInvestigationTask(context.Background(), 0, func(ctx context.Context) {
+		close(started)
+		<-ctx.Done()
+		close(finished)
+	}) {
+		t.Fatal("Patrol refused an investigation task before shutdown")
+	}
+	<-started
+	patrol.Stop()
+	select {
+	case <-finished:
+	default:
+		t.Fatal("Patrol returned from Stop before the investigation observed cancellation")
+	}
+	if patrol.StartInvestigationTask(context.Background(), 0, func(context.Context) {}) {
+		t.Fatal("Patrol accepted a new investigation after shutdown began")
+	}
 }
 
 func (s *sessionReportingOrchestrator) GetInvestigationByFinding(findingID string) *InvestigationSession {

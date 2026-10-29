@@ -1262,6 +1262,9 @@ func TestInvestigationServicePreservesUncertainDiagnosisAfterProposal(t *testing
 	if result.Proposal == nil || result.Proposal.CausalResourceID != "vm:dependency" {
 		t.Fatalf("proposal attribution lost: %+v", result.Proposal)
 	}
+	if len(result.EvidenceIDs) != 1 || result.EvidenceIDs[0] != "evidence-1" {
+		t.Fatalf("run evidence references = %v, want the completed observation even when a proposal exists", result.EvidenceIDs)
+	}
 	if result.Content != conclusion || streamed.String() != conclusion {
 		t.Fatalf("service promoted proposal rationale into diagnosis: result=%q stream=%q", result.Content, streamed.String())
 	}

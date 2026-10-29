@@ -57,6 +57,9 @@ type InvestigationRunResult struct {
 	ModelTurns    int
 	EvidenceCalls int
 	ToolCalls     int
+	// EvidenceIDs reference the bounded observation results collected during
+	// the run, including when no typed action proposal was produced.
+	EvidenceIDs []string
 	// Conclusion is the typed conclusion the model recorded with
 	// patrol_conclude_investigation, nil when it recorded none. It survives
 	// a later provider failure, like a persisted proposal.
@@ -217,6 +220,7 @@ func (s *Service) ExecuteInvestigationStream(ctx context.Context, req Investigat
 		ModelTurns:    loop.GetTotalModelTurns(),
 		EvidenceCalls: loop.GetTotalEvidenceCalls(),
 		ToolCalls:     loop.GetTotalToolCalls(),
+		EvidenceIDs:   capture.EvidenceIDs(),
 	}
 	if runErr != nil || proposalErr != nil {
 		// A provider failure cannot erase a persisted action. The caller must

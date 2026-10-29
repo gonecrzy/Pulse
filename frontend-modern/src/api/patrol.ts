@@ -52,6 +52,7 @@ export interface Finding {
   investigation_outcome?: InvestigationOutcome;
   last_investigated_at?: string;
   investigation_attempts: number;
+  investigation_can_retry?: boolean;
   investigation_record?: InvestigationRecord;
   loop_state?: string;
   lifecycle?: Array<{
@@ -274,6 +275,8 @@ export interface Investigation {
   started_at: string;
   completed_at?: string;
   turn_count: number;
+  evidence_call_count?: number;
+  tool_call_count?: number;
   outcome?: InvestigationOutcome;
   tools_available?: string[];
   tools_used?: string[];
@@ -736,9 +739,14 @@ export async function getInvestigationMessages(findingId: string): Promise<Inves
 /**
  * Trigger re-investigation of a finding
  */
-export async function reinvestigateFinding(
-  findingId: string,
-): Promise<{ success: boolean; message: string }> {
+export async function reinvestigateFinding(findingId: string): Promise<{
+  success: boolean;
+  message: string;
+  investigation_id?: string;
+  status?: InvestigationStatus;
+  outcome?: InvestigationOutcome;
+  already_running?: boolean;
+}> {
   return apiFetchJSON(`/api/ai/findings/${encodeURIComponent(findingId)}/reinvestigate`, {
     method: 'POST',
   });

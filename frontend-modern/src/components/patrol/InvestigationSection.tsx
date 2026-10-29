@@ -63,6 +63,9 @@ interface InvestigationSectionProps {
   investigationOutcome?: string;
   investigationAttempts?: number;
   investigationRecord?: InvestigationRecord;
+  canReinvestigate?: boolean;
+  investigationReady?: boolean;
+  investigationReadinessMessage?: string;
 }
 
 export const InvestigationSection: Component<InvestigationSectionProps> = (props) => {
@@ -70,6 +73,7 @@ export const InvestigationSection: Component<InvestigationSectionProps> = (props
   const [showInfrastructureContext, setShowInfrastructureContext] = createSignal(false);
   const [reinvestigating, setReinvestigating] = createSignal(false);
   const [cooldownUntil, setCooldownUntil] = createSignal(0);
+  let lastTerminalRefreshKey = '';
   const investigationRecord = createMemo(() =>
     buildPatrolInvestigationRecordPresentation(props.investigationRecord),
   );
@@ -94,6 +98,18 @@ export const InvestigationSection: Component<InvestigationSectionProps> = (props
     getInvestigationSectionState(investigation.loading, hasInvestigationContext()),
   );
 
+  createEffect(() => {
+    const current = investigation();
+    if (!current || current.status === 'running' || current.status === 'pending') return;
+    const refreshKey = `${current.session_id}:${current.status}:${current.outcome ?? ''}`;
+    if (refreshKey === lastTerminalRefreshKey) return;
+    lastTerminalRefreshKey = refreshKey;
+    void Promise.all([
+      aiIntelligenceStore.loadFindings(),
+      aiIntelligenceStore.loadPatrolFindings(),
+    ]);
+  });
+
   // Auto-poll while investigation is active
   createEffect(() => {
     const inv = investigation();
@@ -108,6 +124,7 @@ export const InvestigationSection: Component<InvestigationSectionProps> = (props
   });
 
   const canReinvestigate = () => {
+    if (props.canReinvestigate === false) return false;
     if (Date.now() < cooldownUntil()) return false;
     const inv = investigation();
     if (!inv) return true; // No investigation yet
@@ -180,11 +197,17 @@ export const InvestigationSection: Component<InvestigationSectionProps> = (props
           <button
             type="button"
             onClick={handleReinvestigate}
-            disabled={reinvestigating()}
+            disabled={reinvestigating() || props.investigationReady === false}
             class="flex items-center gap-1 whitespace-nowrap px-2 py-1 text-xs font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/25 rounded-sm transition-colors disabled:opacity-50"
+            title={
+              props.investigationReady === false
+                ? (props.investigationReadinessMessage ??
+                  'Verify Sindri gateway and model readiness before investigating')
+                : 'Reinvestigate this finding with Sindri'
+            }
           >
             <RefreshCwIcon class={`w-3 h-3 ${reinvestigating() ? 'animate-spin' : ''}`} />
-            Re-investigate
+            Reinvestigate with Sindri
           </button>
         </Show>
         <Show when={!canReinvestigate() && Date.now() < cooldownUntil()}>
@@ -273,6 +296,17 @@ export const InvestigationSection: Component<InvestigationSectionProps> = (props
               )}
             />
           </Show>
+          <Show
+            when={
+              !investigationRecord().conclusion &&
+              props.investigationRecord?.status !== 'running' &&
+              props.investigationRecord?.status !== 'pending'
+            }
+          >
+            <p class="mt-2 text-xs italic text-muted" role="status">
+              No diagnostic interpretation was produced for this run.
+            </p>
+          </Show>
           <Show when={investigationRecord().recommendedAction}>
             <p class="mt-1 text-xs text-muted">
               <span class="font-medium text-base-content">Recommended action:</span>{' '}
@@ -326,7 +360,14 @@ export const InvestigationSection: Component<InvestigationSectionProps> = (props
               <div class="text-[10px] font-medium uppercase text-muted">Observed evidence</div>
               <Show
                 when={investigationRecord().evidenceSummaries.length > 0}
-                fallback={<p class="mt-1 text-xs italic text-muted">No evidence was recorded.</p>}
+                fallback={
+                  <p class="mt-1 text-xs italic text-muted">
+                    {props.investigationRecord?.status === 'running' ||
+                    props.investigationRecord?.status === 'pending'
+                      ? 'No evidence has been recorded yet.'
+                      : 'No useful evidence was recorded during this run.'}
+                  </p>
+                }
               >
                 <ul class="mt-1 space-y-1 text-xs text-muted">
                   <For each={investigationRecord().evidenceSummaries}>
@@ -404,6 +445,12 @@ export const InvestigationSection: Component<InvestigationSectionProps> = (props
       <Show when={!investigation.loading && investigation()}>
         {(inv) => (
           <div class="space-y-2">
+            <Show when={inv().status === 'running' || inv().status === 'pending'}>
+              <p class="text-xs text-muted" role="status" aria-live="polite">
+                Collecting read-only observations · {inv().evidence_call_count ?? 0} evidence reads
+                · {inv().tool_call_count ?? 0} tool calls
+              </p>
+            </Show>
             {/* Error message for failed investigations */}
             <Show
               when={

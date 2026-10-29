@@ -99,6 +99,46 @@ func TestBuildFindingInvestigationRecord_FromSession(t *testing.T) {
 	}
 }
 
+func TestBuildFindingInvestigationRecord_EmptyRunSummaryDoesNotUseFindingDescription(t *testing.T) {
+	startedAt := time.Date(2026, 10, 29, 12, 0, 0, 0, time.UTC)
+	finding := &Finding{
+		ID:          "finding-empty-summary",
+		Description: "Collector reported a failed probe.",
+		DetectedAt:  startedAt,
+	}
+	session := &InvestigationSession{
+		ID:                "investigation-empty-summary",
+		FindingID:         finding.ID,
+		SessionID:         "session-empty-summary",
+		StartedAt:         startedAt,
+		Status:            aicontracts.InvestigationStatusCompleted,
+		EvidenceCallCount: 2,
+		ToolCallCount:     3,
+		ToolsUsed:         []string{"patrol.inspect", "patrol.inspect"},
+		EvidenceIDs:       []string{"evidence-1", "evidence-1"},
+	}
+
+	record := BuildFindingInvestigationRecord(finding, session)
+	if record == nil {
+		t.Fatal("expected investigation record")
+	}
+	if record.Conclusion != "" {
+		t.Fatalf("empty run summary must remain empty, got %q", record.Conclusion)
+	}
+	if record.Trigger.Description != finding.Description {
+		t.Fatalf("finding observation was lost: %q", record.Trigger.Description)
+	}
+	if record.EvidenceCallCount != 2 || record.ToolCallCount != 3 {
+		t.Fatalf("run counts = evidence:%d tools:%d", record.EvidenceCallCount, record.ToolCallCount)
+	}
+	if len(record.ToolsUsed) != 1 || record.ToolsUsed[0] != "patrol.inspect" {
+		t.Fatalf("tools were not normalized: %#v", record.ToolsUsed)
+	}
+	if len(record.Evidence) != 1 || record.Evidence[0].ID != "evidence-1" {
+		t.Fatalf("evidence IDs were not normalized: %#v", record.Evidence)
+	}
+}
+
 func TestBuildFindingInvestigationRecordCarriesTypedActionReference(t *testing.T) {
 	now := time.Now().UTC()
 	finding := &Finding{ID: "finding-1", ResourceID: "vm:42", DetectedAt: now, InvestigationOutcome: string(InvestigationOutcomeFixQueued)}

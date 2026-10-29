@@ -194,6 +194,7 @@ export interface UnifiedFinding {
   investigationOutcome?: InvestigationOutcome;
   lastInvestigatedAt?: string;
   investigationAttempts?: number;
+  investigationCanRetry?: boolean;
   investigationRecord?: InvestigationRecord;
   loopState?: string;
   lifecycle?: Array<{
@@ -324,6 +325,7 @@ function normalizePatrolFindingRecord(item: PatrolFinding, now: number): Unified
     investigationOutcome: validateInvestigationOutcome(item.investigation_outcome),
     lastInvestigatedAt: item.last_investigated_at || undefined,
     investigationAttempts: item.investigation_attempts || 0,
+    investigationCanRetry: item.investigation_can_retry === true,
     investigationRecord: item.investigation_record,
     loopState: item.loop_state || undefined,
     lifecycle: item.lifecycle || [],

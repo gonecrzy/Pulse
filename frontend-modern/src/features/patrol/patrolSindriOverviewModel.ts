@@ -2,6 +2,12 @@ import type { AttentionSummary } from '@/api/patrolAttention';
 import type { PatrolRunRecord, PatrolStatus } from '@/api/patrol';
 import type { UnifiedFinding } from '@/stores/aiIntelligence';
 import type { CodexLBGatewayStatus } from '@/types/ai';
+import {
+  getActiveFindingInvestigationCount,
+  getActiveFindingSeverityCounts,
+  getActiveFindings,
+  getFindingEmptyStateCopy,
+} from '@/utils/aiFindingPresentation';
 
 export interface PatrolSindriOverviewInput {
   patrolEnabled: boolean;
@@ -15,7 +21,8 @@ export interface PatrolSindriOverviewInput {
 }
 
 export interface PatrolSindriOverviewModel {
-  monitoring: { label: string; operational: boolean };
+  monitoring: { label: string; operational: boolean; detail?: string };
+  infrastructure: { label: string; healthy: boolean; detail: string };
   gateway: {
     label: string;
     ready: boolean;
@@ -76,13 +83,12 @@ export function buildPatrolSindriOverviewModel(
 ): PatrolSindriOverviewModel {
   const status = input.status;
   const monitoringOperational = Boolean(
-    status?.healthy &&
     input.patrolEnabled &&
-    status.enabled &&
-    status.runtime_state !== 'disabled' &&
-    status.runtime_state !== 'unavailable',
+    status?.enabled &&
+    (status.runtime_state === 'active' || status.runtime_state === 'running'),
   );
   let monitoringLabel = 'Status unavailable';
+  let monitoringDetail: string | undefined;
   if (status) {
     if (!input.patrolEnabled || !status.enabled || status.runtime_state === 'disabled') {
       monitoringLabel = 'Paused';
@@ -91,11 +97,21 @@ export function buildPatrolSindriOverviewModel(
     } else if (status.runtime_state === 'blocked') {
       monitoringLabel = 'Blocked';
     } else if (monitoringOperational) {
-      monitoringLabel = 'Operational';
+      monitoringLabel = status.running ? 'Running' : 'Operational';
+      if (status.error_count > 0) {
+        monitoringDetail = `The last Patrol run reported ${status.error_count} error${status.error_count === 1 ? '' : 's'}. See Activity for the run record.`;
+      }
     } else {
       monitoringLabel = 'Degraded';
     }
   }
+  const infrastructureHealthy = status?.healthy === true;
+  const infrastructureSummary = status?.summary;
+  const infrastructureDetail = infrastructureSummary
+    ? `${infrastructureSummary.critical} critical, ${infrastructureSummary.warning} warning, ${infrastructureSummary.watch} watch, ${infrastructureSummary.info} informational`
+    : status
+      ? 'Finding summary unavailable.'
+      : 'Infrastructure status unavailable.';
 
   const ready = isCodexLBGatewayReady(input.gateway);
   const gatewayLabel = !input.settingsLoaded
@@ -112,18 +128,24 @@ export function buildPatrolSindriOverviewModel(
               : 'Not qualified'
         : 'Unavailable';
 
-  const activeFindings = input.findings?.filter((finding) => finding.status === 'active');
-  const severityCounts = activeFindings
-    ? {
-        critical: activeFindings.filter((finding) => finding.severity === 'critical').length,
-        warning: activeFindings.filter((finding) => finding.severity === 'warning').length,
-        watch: activeFindings.filter((finding) => finding.severity === 'watch').length,
-        info: activeFindings.filter((finding) => finding.severity === 'info').length,
-      }
-    : null;
+  const activeFindings = input.findings ? getActiveFindings(input.findings) : undefined;
+  const severityCounts = activeFindings ? getActiveFindingSeverityCounts(activeFindings) : null;
 
   return {
-    monitoring: { label: monitoringLabel, operational: monitoringOperational },
+    monitoring: {
+      label: monitoringLabel,
+      operational: monitoringOperational,
+      detail: monitoringDetail,
+    },
+    infrastructure: {
+      label: status
+        ? infrastructureHealthy
+          ? getFindingEmptyStateCopy('active').title
+          : 'Issues detected'
+        : 'Unavailable',
+      healthy: infrastructureHealthy,
+      detail: infrastructureDetail,
+    },
     gateway: {
       label: gatewayLabel,
       ready,
@@ -136,11 +158,9 @@ export function buildPatrolSindriOverviewModel(
       lastSuccessfulQualification: input.gateway?.last_successful_qualification,
     },
     activeFindingCount: activeFindings?.length ?? null,
-    activeInvestigationCount:
-      activeFindings?.filter(
-        (finding) =>
-          finding.investigationStatus === 'pending' || finding.investigationStatus === 'running',
-      ).length ?? null,
+    activeInvestigationCount: activeFindings
+      ? getActiveFindingInvestigationCount(activeFindings)
+      : null,
     activeIncidentCount:
       input.attentionSummary?.coverageState === 'unavailable'
         ? null

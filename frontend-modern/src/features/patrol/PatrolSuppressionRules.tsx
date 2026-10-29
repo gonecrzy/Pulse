@@ -193,7 +193,7 @@ export function PatrolSuppressionRules(props: { openForLink?: boolean } = {}) {
           <p class="text-sm leading-5 text-muted">
             Review permanent rules created with Create rule. Removing one allows future matching
             Patrol findings. It does not reopen dismissed findings or erase history. Use Reopen
-            finding in Finding options and history to undo an individual dismissal.
+            finding in Finding management and history to undo an individual dismissal.
           </p>
           <Button
             variant="secondary"
@@ -265,7 +265,7 @@ export function PatrolSuppressionRules(props: { openForLink?: boolean } = {}) {
               <p class="text-xs leading-5 text-muted">
                 {otherCount()} other remembered{' '}
                 {otherCount() === 1 ? 'decision is' : 'decisions are'} not manual rules and cannot
-                be removed here. Finding dismissals remain in Finding options and history.
+                be removed here. Finding dismissals remain in Finding management and history.
               </p>
             </Show>
           </Show>

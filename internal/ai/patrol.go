@@ -551,6 +551,9 @@ type PatrolService struct {
 	// Investigation orchestrator for autonomous investigation of findings
 	investigationOrchestrator InvestigationOrchestrator
 	investigationWg           sync.WaitGroup // Tracks in-flight investigation goroutines
+	investigationStopping     bool
+	investigationTaskSequence uint64
+	investigationTaskCancels  map[uint64]context.CancelFunc
 
 	// Unified findings callback - pushes findings to unified store
 	unifiedFindingCallback UnifiedFindingCallback

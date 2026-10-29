@@ -234,16 +234,20 @@ type Finding struct {
 	RemindCount int `json:"remind_count,omitempty"`
 
 	// Investigation fields - tracks autonomous AI investigation of findings
-	InvestigationSessionID string                           `json:"investigation_session_id,omitempty"` // Chat session ID if being investigated
-	InvestigationStatus    string                           `json:"investigation_status,omitempty"`     // pending, running, completed, failed, needs_attention
-	InvestigationOutcome   string                           `json:"investigation_outcome,omitempty"`    // resolved, fix_queued, fix_executed, fix_failed, fix_rejected, fix_verified, fix_verification_failed, needs_attention, cannot_fix
-	LastInvestigatedAt     *time.Time                       `json:"last_investigated_at,omitempty"`     // When last investigation completed
-	InvestigationAttempts  int                              `json:"investigation_attempts"`             // Number of investigation attempts
-	InvestigationRecord    *aicontracts.InvestigationRecord `json:"investigation_record,omitempty"`     // Durable contextual summary for Assistant/unified intelligence
-	LoopState              string                           `json:"loop_state,omitempty"`               // detected, investigating, remediating, resolved, etc.
-	Lifecycle              []FindingLifecycleEvent          `json:"lifecycle,omitempty"`                // Bounded, append-only lifecycle log
-	RegressionCount        int                              `json:"regression_count,omitempty"`         // Times the issue reappeared after resolution
-	LastRegressionAt       *time.Time                       `json:"last_regression_at,omitempty"`       // Timestamp of most recent regression
+	InvestigationSessionID string     `json:"investigation_session_id,omitempty"` // Chat session ID if being investigated
+	InvestigationStatus    string     `json:"investigation_status,omitempty"`     // pending, running, completed, failed, needs_attention
+	InvestigationOutcome   string     `json:"investigation_outcome,omitempty"`    // resolved, fix_queued, fix_executed, fix_failed, fix_rejected, fix_verified, fix_verification_failed, needs_attention, cannot_fix
+	LastInvestigatedAt     *time.Time `json:"last_investigated_at,omitempty"`     // When last investigation completed
+	InvestigationAttempts  int        `json:"investigation_attempts"`             // Number of investigation attempts
+	// InvestigationCanRetry is a derived API projection. MarshalJSON always
+	// recomputes it from the active finding state; callers cannot grant retry
+	// authority by setting this field.
+	InvestigationCanRetry bool                             `json:"-"`
+	InvestigationRecord   *aicontracts.InvestigationRecord `json:"investigation_record,omitempty"` // Durable contextual summary for Assistant/unified intelligence
+	LoopState             string                           `json:"loop_state,omitempty"`           // detected, investigating, remediating, resolved, etc.
+	Lifecycle             []FindingLifecycleEvent          `json:"lifecycle,omitempty"`            // Bounded, append-only lifecycle log
+	RegressionCount       int                              `json:"regression_count,omitempty"`     // Times the issue reappeared after resolution
+	LastRegressionAt      *time.Time                       `json:"last_regression_at,omitempty"`   // Timestamp of most recent regression
 	// CapacityForecast is the deterministic capacity trend for this finding's
 	// resource (when applicable). Computed by Patrol independently of the
 	// model prose and surfaced as a first-class urgency signal. Nil when no
@@ -313,6 +317,7 @@ type findingJSON struct {
 	InvestigationOutcome       string                              `json:"investigation_outcome,omitempty"`
 	LastInvestigatedAt         *time.Time                          `json:"last_investigated_at,omitempty"`
 	InvestigationAttempts      int                                 `json:"investigation_attempts"`
+	InvestigationCanRetry      bool                                `json:"investigation_can_retry"`
 	InvestigationRecord        *aicontracts.InvestigationRecord    `json:"investigation_record,omitempty"`
 	LoopState                  string                              `json:"loop_state,omitempty"`
 	Lifecycle                  []FindingLifecycleEvent             `json:"lifecycle,omitempty"`
@@ -364,6 +369,7 @@ func (f Finding) MarshalJSON() ([]byte, error) {
 		InvestigationOutcome:       f.InvestigationOutcome,
 		LastInvestigatedAt:         f.LastInvestigatedAt,
 		InvestigationAttempts:      f.InvestigationAttempts,
+		InvestigationCanRetry:      f.IsActive() && f.CanRetryInvestigation(),
 		InvestigationRecord:        f.InvestigationRecord,
 		LoopState:                  f.LoopState,
 		Lifecycle:                  f.Lifecycle,
@@ -431,6 +437,7 @@ func (f *Finding) UnmarshalJSON(data []byte) error {
 		MirrorsAlertID:             payload.MirrorsAlertID,
 		MirrorsAlertType:           payload.MirrorsAlertType,
 	}
+	f.InvestigationCanRetry = f.IsActive() && f.CanRetryInvestigation()
 	return nil
 }
 

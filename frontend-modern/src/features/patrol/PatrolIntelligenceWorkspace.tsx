@@ -48,6 +48,8 @@ import {
   type PatrolIntelligenceState,
 } from './usePatrolIntelligenceState';
 import { getUpgradeActionDestination } from '@/stores/licenseCommercial';
+import { hasForkCapability } from '@/stores/forkCapabilities';
+import { sessionCanRunPatrol } from '@/stores/sessionSettingsCapabilities';
 import {
   presentationPolicyHidesCommercialSurfaces,
   presentationPolicyHidesUpgradePrompts,
@@ -294,6 +296,10 @@ export function PatrolIntelligenceWorkspace(props: {
               showScopeWarnings={Boolean(state.selectedRun())}
               runtimeState={state.runtimeState()}
               autonomyLevel={state.autonomyLevel()}
+              investigationCapabilityAvailable={hasForkCapability('fork.ai_investigation')}
+              investigationReady={state.patrolReadiness()?.ready === true}
+              investigationReadinessMessage={state.patrolReadiness()?.summary}
+              canInvestigate={sessionCanRunPatrol()}
               blockedReason={state.blockedReason()}
               overallHealth={state.intelligenceSummary()?.overall_health}
               historicalRegressionCount={state.historicalRegressionCount()}

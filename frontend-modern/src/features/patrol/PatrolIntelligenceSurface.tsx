@@ -14,6 +14,7 @@ import { MetadataBadge } from '@/components/shared/MetadataBadge';
 import { actionInboxStore } from '@/stores/actionInbox';
 import { aiIntelligenceStore } from '@/stores/aiIntelligence';
 import { patrolAttentionStore } from '@/stores/patrolAttention';
+import { hasForkCapability, loadForkCapabilities } from '@/stores/forkCapabilities';
 import { aiRuntimeSettings, aiRuntimeSettingsLoaded } from '@/stores/aiRuntimeState';
 import { usePatrolIntelligenceState } from './usePatrolIntelligenceState';
 import { PatrolIntelligenceHeader } from './PatrolIntelligenceHeader';
@@ -37,6 +38,9 @@ export function PatrolIntelligenceSurface() {
   const location = useLocation();
   const navigate = useNavigate();
   const activeView = createMemo(() => parsePatrolWorkspaceView(location.pathname));
+  createEffect(() => {
+    if (!hasForkCapability('fork.ai_investigation')) void loadForkCapabilities();
+  });
   const [findingsOpen, setFindingsOpen] = createSignal(false);
   const [findingResourceScope, setFindingResourceScope] = createSignal<FindingResourceScope>();
   const workspaceTabs: Partial<Record<PatrolWorkspaceView, HTMLButtonElement>> = {};
@@ -243,7 +247,7 @@ export function PatrolIntelligenceSurface() {
                   </span>
                   <span class="min-w-0">
                     <span class="text-sm font-semibold text-base-content">
-                      Finding options and history
+                      Finding management and history
                     </span>
                     <span class="mt-1 block text-xs font-normal leading-5 text-muted">
                       Resolve or dismiss findings, remember expected behavior, create rules, and
@@ -269,7 +273,7 @@ export function PatrolIntelligenceSurface() {
             open={findingsOpen()}
             onToggle={(event) => setFindingsOpen(event.currentTarget.open)}
           >
-            <summary class="sr-only">Finding options and history</summary>
+            <summary class="sr-only">Finding management and history</summary>
             <div class="space-y-4 border-t border-border p-4 sm:p-5">
               <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <p class="text-xs leading-5 text-muted">
@@ -277,7 +281,7 @@ export function PatrolIntelligenceSurface() {
                     when={findingResourceScope()}
                     fallback={
                       <>
-                        Choose Finding options on an active finding to resolve it, dismiss it,
+                        Choose Finding management on an active finding to resolve it, dismiss it,
                         remember it as expected, or create a suppression rule. Check history remains
                         available here for the forensic trail.
                       </>
@@ -285,7 +289,7 @@ export function PatrolIntelligenceSurface() {
                   >
                     {(scope) => (
                       <>
-                        Showing Patrol findings for {scope().name}. Choose Finding options for a
+                        Showing Patrol findings for {scope().name}. Choose Finding management for a
                         lasting outcome. Alert lifecycle controls remain separate from finding
                         outcomes.
                       </>

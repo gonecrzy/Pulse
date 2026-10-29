@@ -351,6 +351,9 @@ export interface InvestigationRecord {
   verification: string[];
   rollback: string[];
   tools_used: string[];
+  turn_count?: number;
+  evidence_call_count?: number;
+  tool_call_count?: number;
   started_at: string;
   completed_at?: string;
   approval_id?: string;

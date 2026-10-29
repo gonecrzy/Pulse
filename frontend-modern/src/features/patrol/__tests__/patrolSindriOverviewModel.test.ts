@@ -12,6 +12,7 @@ const healthyStatus = {
   runtime_state: 'active',
   running: false,
   enabled: true,
+  last_patrol_at: '2026-10-28T09:00:00Z',
   last_duration_ms: 1200,
   resources_checked: 10,
   findings_count: 2,
@@ -19,7 +20,7 @@ const healthyStatus = {
   healthy: true,
   interval_ms: 600000,
   fixed_count: 0,
-  summary: { critical: 1, warning: 1, watch: 0, info: 0 },
+  summary: { critical: 0, warning: 0, watch: 0, info: 0 },
 } as PatrolStatus;
 
 const readyGateway: CodexLBGatewayStatus = {
@@ -76,6 +77,29 @@ describe('patrolSindriOverviewModel', () => {
     expect(model.monitoring).toMatchObject({ label: 'Operational', operational: true });
     expect(model.gateway).toMatchObject({ ready: false, label: 'Unavailable' });
     expect(model.showMonitoringWithoutAIMessage).toBe(true);
+  });
+
+  it('does not classify a completed Patrol run as degraded because infrastructure findings exist', () => {
+    const model = buildPatrolSindriOverviewModel({
+      patrolEnabled: true,
+      status: {
+        ...healthyStatus,
+        healthy: false,
+        summary: { critical: 1, warning: 2, watch: 0, info: 1 },
+      },
+      settingsLoaded: true,
+      gateway: readyGateway,
+      findings: [finding()],
+      attentionSummary,
+      pendingActionCount: 0,
+    });
+
+    expect(model.monitoring).toMatchObject({ label: 'Operational', operational: true });
+    expect(model.infrastructure).toMatchObject({
+      label: 'Issues detected',
+      healthy: false,
+      detail: '1 critical, 2 warning, 0 watch, 1 informational',
+    });
   });
 
   it('requires the fork capability, endpoint, credential, explicit model, streaming and tools', () => {

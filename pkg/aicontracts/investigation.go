@@ -267,6 +267,9 @@ type InvestigationRecord struct {
 	Verification      []string                      `json:"verification"`
 	Rollback          []string                      `json:"rollback"`
 	ToolsUsed         []string                      `json:"tools_used"`
+	TurnCount         int                           `json:"turn_count,omitempty"`
+	EvidenceCallCount int                           `json:"evidence_call_count,omitempty"`
+	ToolCallCount     int                           `json:"tool_call_count,omitempty"`
 	StartedAt         time.Time                     `json:"started_at"`
 	CompletedAt       *time.Time                    `json:"completed_at,omitempty"`
 	// ApprovalID and ProposedFix are migration-only legacy fields; new
